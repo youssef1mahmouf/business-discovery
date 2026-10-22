@@ -1322,8 +1322,12 @@ create table if not exists public.bd_profiles (
   full_name text not null default '',
   username text,
   phone text not null default '',
+  site_role text not null default 'member',
   created_at timestamptz not null default now()
 );
+alter table public.bd_profiles add column if not exists site_role text not null default 'member';
+alter table public.bd_profiles drop constraint if exists bd_profiles_site_role_check;
+alter table public.bd_profiles add constraint bd_profiles_site_role_check check (site_role in ('member', 'site_admin'));
 
 create unique index if not exists bd_profiles_username_unique
   on public.bd_profiles (lower(username)) where username is not null;
@@ -1552,8 +1556,78 @@ grant execute on function public.bd_list_workspace_members(uuid) to authenticate
 grant select, insert, update, delete on public.bd_account_data to authenticated;
 grant select on public.bd_profiles to authenticated;
 grant select on public.bd_workspaces to authenticated;
+
+create or replace function public.bd_get_my_site_role()
+returns text language sql security definer set search_path = ''
+as $$
+  select coalesce((select p.site_role from public.bd_profiles p where p.user_id = auth.uid()), 'member'::text);
+$$;
+
+create or replace function public.bd_admin_list_accounts()
+returns jsonb language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_accounts jsonb;
+begin
+  if auth.uid() is null or not exists (
+    select 1 from public.bd_profiles p where p.user_id = auth.uid() and p.site_role = 'site_admin'
+  ) then raise exception 'لوحة مدير الموقع متاحة للحساب الإداري فقط'; end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'user_id', u.id,
+    'email', u.email,
+    'full_name', coalesce(p.full_name, ''),
+    'username', coalesce(p.username, ''),
+    'phone', coalesce(p.phone, ''),
+    'site_role', coalesce(p.site_role, 'member'),
+    'created_at', u.created_at,
+    'private_data', coalesce(a.data, '{}'::jsonb),
+    'shared_projects', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'workspace_id', w.id,
+        'role', case when w.owner_id = u.id then 'owner' else coalesce(m.role, 'assistant') end,
+        'project', w.project
+      ) order by w.updated_at desc)
+      from public.bd_workspaces w
+      left join public.bd_workspace_members m on m.workspace_id = w.id and m.user_id = u.id
+      where w.owner_id = u.id or w.partner_id = u.id or exists (
+        select 1 from public.bd_workspace_members m2 where m2.workspace_id = w.id and m2.user_id = u.id
+      )
+    ), '[]'::jsonb)
+  ) order by lower(coalesce(p.full_name, u.email))) , '[]'::jsonb)
+    into v_accounts
+    from auth.users u
+    left join public.bd_profiles p on p.user_id = u.id
+    left join public.bd_account_data a on a.user_id = u.id;
+  return v_accounts;
+end;
+$$;
+
+create or replace function public.bd_admin_set_site_role(p_user_id uuid, p_role text)
+returns void language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_count integer;
+begin
+  if auth.uid() is null or not exists (
+    select 1 from public.bd_profiles p where p.user_id = auth.uid() and p.site_role = 'site_admin'
+  ) then raise exception 'تغيير صلاحيات الموقع متاح لمدير الموقع فقط'; end if;
+  if p_role not in ('member', 'site_admin') then raise exception 'الدور المطلوب غير صالح'; end if;
+  if p_user_id = auth.uid() then raise exception 'لا يمكن تغيير صلاحية حساب مدير الموقع الحالي'; end if;
+  update public.bd_profiles set site_role = p_role where user_id = p_user_id;
+  get diagnostics v_count = row_count;
+  if v_count <> 1 then raise exception 'الحساب المطلوب غير موجود'; end if;
+end;
+$$;
+
+revoke all on function public.bd_get_my_site_role() from public;
+revoke all on function public.bd_admin_list_accounts() from public;
+revoke all on function public.bd_admin_set_site_role(uuid, text) from public;
+grant execute on function public.bd_get_my_site_role() to authenticated;
+grant execute on function public.bd_admin_list_accounts() to authenticated;
+grant execute on function public.bd_admin_set_site_role(uuid, text) to authenticated;
 `;
-    let SUPA = null, AUTH_USER = null, AUTH_ROLE = null, CLOUD_BUSY = false, SYNC_QUEUED = false;
+    let SUPA = null, AUTH_USER = null, AUTH_ROLE = null, AUTH_SITE_ROLE = 'member', CLOUD_BUSY = false, SYNC_QUEUED = false;
     let WORKSPACE_ROLES = Object.create(null);
     const READ_ONLY_ACTIONS = new Set(['export-json', 'export-csv', 'print-report', 'open-project']);
 
@@ -1735,12 +1809,14 @@ grant select on public.bd_workspaces to authenticated;
         (!signup ? '<button class="btn link" id="forgotPassword" style="margin-top:8px">نسيت كلمة المرور؟</button>' : '') +
         '<div class="hint" style="margin-top:12px">' + esc(message || 'بيانات كل حساب خاصة به. عند مشاركة مشروع، يستطيع الشريك الوصول إلى هذا المشروع فقط.') + '</div>' +
         (!cloudReady && AUTH_ROLE === 'owner' ? '<details id="cloudSetupDetails" style="margin-top:14px" open><summary style="cursor:pointer">إعداد صاحب المشروع: ربط Supabase</summary>' +
-          '<div style="margin-top:12px;line-height:1.8"><p><strong>ليه الإعداد ده مطلوب؟</strong><br>GitHub يعرض صفحة الموقع، وSupabase يحفظ حسابات المستخدمين وبياناتهم. من غير مشروع Supabase، نموذج الدخول مش هيقدر ينشئ حسابات حقيقية.</p>' +
+          '<div style="margin-top:12px;line-height:1.8"><div class="hint">تدخل رابط المشروع والمفتاح مرة واحدة في هذا المتصفح، وبعدها تقدر تنشئ حسابات وتدخل من غير إعادة إدخاله. عشان ما يظهرش الإعداد على أجهزة الشركاء، احفظ الاتصال ثم اضغط «تجهيز نسخة الموقع للشركاء» وارفع النسخة الناتجة إلى GitHub.</div><p><strong>ليه الإعداد ده مطلوب؟</strong><br>GitHub يعرض صفحة الموقع، وSupabase يحفظ حسابات المستخدمين وبياناتهم. من غير مشروع Supabase، نموذج الدخول مش هيقدر ينشئ حسابات حقيقية.</p>' +
           '<ol style="padding-inline-start:24px"><li>افتح <a href="https://supabase.com/dashboard" target="_blank" rel="noopener">لوحة Supabase</a> وأنشئ مشروعًا جديدًا وانتظر لحد ما يجهز.</li>' +
           '<li>في المشروع اضغط <strong>Connect</strong>، وانسخ <strong>Project URL</strong> و<strong>Publishable key</strong>. تقدر تلاقي المفاتيح كمان في <strong>Settings → API Keys</strong>.</li>' +
           '<li>ارجع هنا ونزّل إعداد قاعدة البيانات بالزر بالأسفل. افتح الملف، وانسخ كل محتواه إلى <strong>SQL Editor → New query</strong> في Supabase، ثم اضغط <strong>Run</strong>. اعمل الخطوة دي مرة واحدة للمشروع.</li>' +
           '<li>الصق الرابط والمفتاح العام في الخانتين واضغط <strong>حفظ الاتصال</strong>.</li>' +
+          '<li>اختيار «أنا صاحب المشروع» يدير المشاريع التي تنشئها فقط. لتعيين مدير الموقع العام، أنشئ حسابه أولاً ثم نفّذ استعلام ترقية الحساب في SQL Editor. صلاحية مدير الموقع تتيح عرض بيانات وحسابات الموقع كلها.</li>' +
           '<li>اضغط <strong>تجهيز نسخة الشركاء</strong>، ثم ارفع ملف <code>index.html</code> الذي نزل إلى GitHub مكان الملف القديم. بعد نشره، الشريك يفتح رابط الموقع ويختار <strong>أنا شريك مدعو</strong>؛ مش هيحتاج إعداد Supabase.</li></ol>' +
+          '<div class="hint"><strong>استعلام تعيين مدير الموقع</strong><p>بعد إنشاء الحساب ببريده، غيّر النص بين علامتي الاقتباس إلى البريد نفسه، ثم شغّل الاستعلام مرة واحدة في SQL Editor:</p><pre dir="ltr" style="white-space:pre-wrap">UPDATE public.bd_profiles SET site_role = \'site_admin\' WHERE user_id = (SELECT id FROM auth.users WHERE lower(email) = lower(\'اكتب بريد المدير هنا\'));</pre></div>' +
           '<div class="hint" style="margin:10px 0"><strong>ملاحظات مهمة:</strong> رابط Supabase شكله <code>https://اسم-المشروع.supabase.co</code>، وهو مختلف عن رابط GitHub. استخدم المفتاح العام الذي يبدأ بـ <code>sb_publishable_</code> أو مفتاح <code>anon</code> القديم فقط. لا تستخدم أبدًا <code>service_role</code> أو <code>secret key</code>. الملف المجهز يضم الرابط والمفتاح العام فقط، وليس كلمة مرور قاعدة البيانات.</div></div>' +
           '<label for="sbUrl">رابط المشروع</label><input id="sbUrl" type="url" placeholder="https://xxxx.supabase.co">' +
           '<label for="sbKey">المفتاح العام</label><input id="sbKey" type="text" autocomplete="off" placeholder="sb_publishable_… أو anon key">' +
@@ -1750,7 +1826,7 @@ grant select on public.bd_workspaces to authenticated;
             '<div class="msg warn" style="margin-top:10px">' + (hasPendingInvite ? 'رابط الدعوة محفوظ. لفتح المشروع، اطلب من صاحبه إكمال الربط ونشر النسخة المجهزة، ثم افتح رابط الدعوة من جديد.' : 'صاحب المشروع يربط Supabase مرة واحدة وينشر نسخة الموقع المجهزة. بعدها افتح رابط دعوته وسجّل ببريدك الشخصي.') + '</div>' +
             '<p class="tiny muted">الشريك لا يحتاج إلى إدخال رابط المشروع أو المفتاح. اطلب من المالك تنفيذ الإعداد من حسابه، وتشغيل SQL في لوحة Supabase، ثم نشر نسخة الموقع المجهزة على GitHub Pages.</p>' +
             '<button class="btn" id="copyOwnerSetupRequest" type="button">نسخ طلب الإعداد لصاحب المشروع</button></details>' :
-            (AUTH_ROLE === 'owner' ? '<button class="btn primary" id="publishCloudConfig" style="margin-top:12px">تجهيز نسخة الموقع للشركاء</button><button class="btn link" id="changeCloudConfig" style="margin-top:8px">تغيير إعداد الاتصال</button>' : ''))) + '</div></main>';
+            (AUTH_ROLE === 'owner' ? '<div class="hint" style="margin-top:12px">الاتصال محفوظ في هذا المتصفح. لمنع طلب الإعداد على باقي الأجهزة، جهّز نسخة الموقع المربوطة وارفعها على GitHub.</div><button class="btn primary" id="publishCloudConfig" style="margin-top:12px">تجهيز نسخة الموقع للشركاء</button><button class="btn link" id="changeCloudConfig" style="margin-top:8px">تغيير إعداد الاتصال</button>' : ''))) + '</div></main>';
       on(host, '#authMode', 'click', () => authScreen('', signup ? 'login' : 'signup'));
       on(host, '#changeRole', 'click', () => { AUTH_ROLE = null; authScreen('', 'login'); });
       on(host, '#saveCloudConfig', 'click', () => {
@@ -1822,6 +1898,9 @@ grant select on public.bd_workspaces to authenticated;
     }
     async function loadCloudState() {
       let migratedLegacy = false;
+      const { data: siteRole, error: siteRoleError } = await SUPA.rpc('bd_get_my_site_role');
+      if (siteRoleError) throw siteRoleError;
+      AUTH_SITE_ROLE = siteRole || 'member';
       const { data: roleRows, error: roleError } = await SUPA.rpc('bd_my_workspace_roles');
       if (roleError) throw roleError;
       WORKSPACE_ROLES = Object.create(null);
@@ -2538,7 +2617,8 @@ grant select on public.bd_workspaces to authenticated;
       { id: 'insights', name: 'الرؤى والأفكار', icon: '💡' },
       { id: 'decision', name: 'قرار الشراكة', icon: '🎯', grp: 'القرار' },
       { id: 'actions', name: 'المهام والخطوات', icon: '✅' },
-      { id: 'data', name: 'البيانات', icon: '💾', grp: 'النظام' }
+      { id: 'data', name: 'البيانات', icon: '💾', grp: 'النظام' },
+      { id: 'site-admin', name: 'إدارة الموقع', icon: '🛡️', grp: 'الإدارة' }
     ];
     let VIEW = 'projects';
     let CAT_VIEW = 'goals';
@@ -2566,6 +2646,7 @@ grant select on public.bd_workspaces to authenticated;
         if (!nav) return;
         let html = '';
         VIEWS.forEach(v => {
+          if (v.id === 'site-admin' && AUTH_SITE_ROLE !== 'site_admin') return;
           if (v.grp) html += '<div class="grp">' + esc(v.grp) + '</div>';
           let badge = '';
           const pr = currentProject();
@@ -2614,12 +2695,13 @@ grant select on public.bd_workspaces to authenticated;
       const pr = currentProject();
       let html = '';
       try {
-        if (!pr && VIEW !== 'projects' && VIEW !== 'data') {
+        if (!pr && VIEW !== 'projects' && VIEW !== 'data' && VIEW !== 'site-admin') {
           html = emptyState('لا يوجد مشروع بعد', 'ابدأ مشروعاً جديداً لتتمكن من استخدام هذه الشاشة.', '📁', 'مشروع جديد', 'new-project');
         } else {
           switch (VIEW) {
             case 'projects': html = viewProjects(); break;
             case 'partners': html = viewPartners(); break;
+            case 'site-admin': html = AUTH_SITE_ROLE === 'site_admin' ? viewSiteAdmin() : '<div class="msg warn">لوحة إدارة الموقع متاحة لمدير الموقع فقط.</div>'; break;
             case 'participants': html = viewParticipants(); break;
             case 'questionnaire': html = viewQuestionnaire(); break;
             case 'compare': html = viewCompare(); break;
@@ -2650,6 +2732,7 @@ grant select on public.bd_workspaces to authenticated;
       }
       bindView();
       if (VIEW === 'partners' && pr && canManageProject(pr) && pr._bdWorkspaceId) refreshWorkspaceRoster(pr._bdWorkspaceId);
+      if (VIEW === 'site-admin' && AUTH_SITE_ROLE === 'site_admin') refreshSiteAdminDashboard();
     }
 
     function emptyState(big, msg, icon, btnLabel, act) {
@@ -3109,6 +3192,50 @@ grant select on public.bd_workspaces to authenticated;
           ? '<ul style="margin-bottom:0">' + entries.map(m => '<li>' + esc(m.invite_email) + ' — ' + (m.role === 'security' ? 'الأمن، مشاهدة فقط' : 'المساعد، مشاهدة وتعديل') + ' — ' + (m.accepted ? 'قبل الدعوة' : 'بانتظار القبول') + '</li>').join('') + '</ul>'
           : '<div style="margin-top:6px">لا يوجد أعضاء مدعوون بعد.</div>');
       } catch (e) { host.textContent = 'تعذر تحميل أعضاء الفريق: ' + (e.message || ''); }
+    }
+
+    function viewSiteAdmin() {
+      return pageHead('لوحة مدير الموقع', 'عرض حسابات الموقع وبياناتها ومشاريعها، والتحكم في صلاحيات الإدارة العامة. صلاحية مدير الموقع منفصلة عن دور صاحب المشروع.') +
+        card('حالة الموقع', '<div id="siteAdminStats" class="hint">جارٍ تحميل ملخص الموقع…</div>') +
+        card('حسابات الموقع وبياناتها', '<div id="siteAdminAccounts" class="tiny muted">جارٍ تحميل الحسابات والبيانات…</div>');
+    }
+    async function refreshSiteAdminDashboard() {
+      const stats = $('#siteAdminStats'), host = $('#siteAdminAccounts');
+      if (!host || AUTH_SITE_ROLE !== 'site_admin') return;
+      try {
+        const { data, error } = await SUPA.rpc('bd_admin_list_accounts');
+        if (error) throw error;
+        const accounts = Array.isArray(data) ? data : [];
+        const projectsCount = accounts.reduce((total, account) => total + arr(account.private_data && account.private_data.projects).length + arr(account.shared_projects).length, 0);
+        if (stats) stats.innerHTML = '<strong>' + accounts.length + '</strong> حساب · <strong>' + projectsCount + '</strong> مشروع خاص أو مشترك';
+        if (!accounts.length) { host.textContent = 'لا توجد حسابات مسجلة بعد.'; return; }
+        host.innerHTML = accounts.map(account => {
+          const isSelf = account.user_id === AUTH_USER.id;
+          const privateProjects = arr(account.private_data && account.private_data.projects);
+          const sharedProjects = arr(account.shared_projects);
+          const roleLabel = account.site_role === 'site_admin' ? 'مدير الموقع' : 'مستخدم';
+          return '<details class="card" style="margin-bottom:10px"><summary style="cursor:pointer"><strong>' + esc(account.full_name || account.email || 'حساب بدون اسم') + '</strong> · ' + esc(account.email || '') + ' · ' + roleLabel + '</summary>' +
+            '<div class="tiny muted" style="margin-top:10px">اسم المستخدم: ' + esc(account.username || '—') + ' · الهاتف: ' + esc(account.phone || '—') + ' · تاريخ التسجيل: ' + esc(account.created_at ? new Date(account.created_at).toLocaleDateString('ar-EG') : '—') + '</div>' +
+            '<div class="row" style="margin-top:10px"><select class="sel" data-site-admin-role="' + esc(account.user_id) + '"' + (isSelf ? ' disabled' : '') + '><option value="member"' + (account.site_role !== 'site_admin' ? ' selected' : '') + '>مستخدم</option><option value="site_admin"' + (account.site_role === 'site_admin' ? ' selected' : '') + '>مدير الموقع</option></select>' +
+            '<button class="btn xs" data-site-admin-save="' + esc(account.user_id) + '"' + (isSelf ? ' disabled' : '') + '>حفظ الصلاحية</button></div>' +
+            '<details style="margin-top:12px"><summary>البيانات والمشاريع الخاصة (' + privateProjects.length + ')</summary><pre style="white-space:pre-wrap;overflow:auto;max-height:360px;direction:ltr;text-align:left">' + esc(JSON.stringify(account.private_data || {}, null, 2)) + '</pre></details>' +
+            '<details style="margin-top:8px"><summary>المشاريع المشتركة (' + sharedProjects.length + ')</summary><pre style="white-space:pre-wrap;overflow:auto;max-height:360px;direction:ltr;text-align:left">' + esc(JSON.stringify(sharedProjects, null, 2)) + '</pre></details></details>';
+        }).join('');
+        $$('[data-site-admin-save]', host).forEach(button => button.addEventListener('click', async () => {
+          const userId = button.getAttribute('data-site-admin-save');
+          const select = $('[data-site-admin-role="' + userId + '"]', host);
+          if (!select) return;
+          button.disabled = true;
+          const { error } = await SUPA.rpc('bd_admin_set_site_role', { p_user_id: userId, p_role: select.value });
+          button.disabled = false;
+          if (error) { toast('تعذر تحديث الصلاحية: ' + error.message, 'bad'); return; }
+          toast('تم تحديث صلاحية الحساب', 'ok');
+          refreshSiteAdminDashboard();
+        }));
+      } catch (e) {
+        if (stats) stats.textContent = 'تعذر تحميل لوحة الإدارة: ' + (e.message || '');
+        if (host) host.textContent = 'تأكد من تشغيل إعداد قاعدة البيانات المحدّث في Supabase.';
+      }
     }
 
     /* =====================================================================
@@ -3751,7 +3878,7 @@ grant select on public.bd_workspaces to authenticated;
         saveState(true);
         const { error } = await SUPA.auth.signOut();
         if (error) { toast('تعذر تسجيل الخروج: ' + error.message, 'bad'); return; }
-        AUTH_USER = null; AUTH_ROLE = null; $('#accountEmail').textContent = ''; $('#signOutBtn').style.display = 'none';
+        AUTH_USER = null; AUTH_ROLE = null; AUTH_SITE_ROLE = 'member'; WORKSPACE_ROLES = Object.create(null); $('#accountEmail').textContent = ''; $('#signOutBtn').style.display = 'none';
         $('.app').style.display = 'none'; S = defaultState(); authScreen('تم تسجيل الخروج.', 'login');
       });
       on(document, '#menuBtn', 'click', () => {
