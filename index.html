@@ -1373,6 +1373,9 @@ begin
     nullif(lower(new.raw_user_meta_data ->> 'username'), ''),
     coalesce(new.raw_user_meta_data ->> 'phone', '')
   );
+  insert into public.bd_account_data(user_id)
+  values (new.id)
+  on conflict (user_id) do nothing;
   return new;
 end;
 $$;
@@ -1381,6 +1384,11 @@ drop trigger if exists bd_on_auth_user_created on auth.users;
 create trigger bd_on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.bd_handle_new_user();
+
+-- Ensure accounts that already exist also have a cloud data row.
+insert into public.bd_account_data(user_id)
+select id from auth.users
+on conflict (user_id) do nothing;
 
 create table if not exists public.bd_workspaces (
   id uuid primary key default gen_random_uuid(),
@@ -1807,7 +1815,7 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
         (!signup ? '<button class="btn link" id="forgotPassword" style="margin-top:8px">نسيت كلمة المرور؟</button>' : '') +
         '<div class="hint" style="margin-top:12px">' + esc(message || 'البريد واسم المستخدم ورقم الهاتف مميزة لكل حساب. كلمة المرور تبقى سرية ولا نعرضها.') + '</div>' +
         (AUTH_ROLE === 'owner' ? '<details style="margin-top:14px"><summary style="cursor:pointer">إعداد قاعدة البيانات لأول مرة</summary>' +
-          '<p class="tiny muted">نزّل الملف وشغّله مرة واحدة فقط في Supabase → SQL Editor → New query → Run، قبل إنشاء أول حساب. بعد ذلك لا ترفع SQL عند تسجيل الدخول؛ الحساب والبيانات يُحفظان تلقائياً.</p>' +
+          '<p class="tiny muted">نزّل الملف وشغّله مرة واحدة فقط في Supabase → SQL Editor → New query → Run. هذا الملف ينشئ الجداول ولا يحتوي على إيميلات أو كلمات مرور. حسابات الدخول تظهر في Authentication → Users، وبيانات كل حساب تُحفظ تلقائياً في قاعدة البيانات.</p>' +
           sqlSetupTools() +
           '<details style="margin-top:10px"><summary>تفعيل لوحة مدير الموقع لحساب المالك</summary><p class="tiny muted">بعد إنشاء الحساب وتأكيد البريد، شغّل هذا الاستعلام مرة واحدة في SQL Editor لتفعيل المدير الأعلى لهذا البريد فقط:</p><pre dir="ltr" style="white-space:pre-wrap">UPDATE public.bd_profiles SET site_role = \'site_admin\' WHERE user_id = (SELECT id FROM auth.users WHERE lower(email) = lower(\'youssef1mahmouf24@gmail.com\'));</pre></details>' +
           '</details>' : '') + '</div></main>';
@@ -1859,6 +1867,7 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
           else if (/bd_profiles_phone_unique/i.test(raw)) friendly = 'رقم الهاتف مسجل بالفعل. استخدم رقماً آخر أو سجّل الدخول إلى حسابك.';
           else if (/already registered|user already exists/i.test(raw)) friendly = 'هذا البريد مسجل بالفعل. استخدم تسجيل الدخول أو استعادة كلمة المرور.';
           else if (/invalid login credentials/i.test(raw)) friendly = 'البريد أو كلمة المرور غير صحيحة. إذا لم تنشئ الحساب من قبل، اختر «إنشاء حساب جديد». ';
+          else if (/bd_profiles|bd_account_data|relation .* does not exist|schema cache|could not find the table/i.test(raw)) friendly = 'قاعدة بيانات الموقع لم تُجهّز بعد. نزّل ملف SQL من قسم الإعداد وشغّل محتواه كاملاً في Supabase → SQL Editor → Run، ثم أعد المحاولة.';
           authScreen('تعذر إكمال الطلب: ' + friendly, mode);
         }
       });
@@ -1910,7 +1919,10 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
       S.projects = arr(S.projects).map(normProject).filter(Boolean);
       if (!byId(S.projects, S.activeProjectId)) S.activeProjectId = S.projects[0] && S.projects[0].id || null;
       saveState(false);
-      if (migratedLegacy) { await syncCloudState(); lsDel(APP.dataKey); }
+      if (!account || migratedLegacy) {
+        await syncCloudState();
+        if (migratedLegacy) lsDel(APP.dataKey);
+      }
       const code = new URLSearchParams(location.search).get('invite') || lsGet(PENDING_INVITE_KEY);
       if (code) await acceptWorkspaceInvite(code);
     }
