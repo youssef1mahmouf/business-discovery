@@ -1761,6 +1761,14 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
       SUPA = window.supabase.createClient(cfg.url.replace(/\/$/, ''), cfg.key);
       return true;
     }
+    function sqlSetupTools() {
+      return '<div style="margin-top:10px"><button class="btn" id="downloadSchema">تنزيل إعداد قاعدة البيانات (SQL)</button>' +
+        '<details style="margin-top:10px"><summary style="cursor:pointer">تحميل ملف SQL موجود أو تعديله</summary>' +
+        '<p class="tiny muted">تقدر تحمل ملف SQL من جهازك وتعدله هنا، أو تعدل الإعداد المرفق. التنزيل لا يشغّل الأوامر؛ شغّل الملف النهائي في Supabase → SQL Editor.</p>' +
+        '<label for="sqlFileInput">تحميل ملف SQL من جهازك</label><input id="sqlFileInput" type="file" accept=".sql,text/plain">' +
+        '<label for="sqlDraft">محتوى SQL قابل للتعديل</label><textarea id="sqlDraft" rows="10" spellcheck="false" style="direction:ltr;text-align:left;font-family:monospace"></textarea>' +
+        '<div class="row"><button class="btn primary" id="downloadEditedSql">تنزيل ملف SQL المعدّل</button><button class="btn" id="resetSqlDraft">استعادة إعداد الموقع</button></div></details></div>';
+    }
     function authScreen(message, mode) {
       const host = $('#authHost'), app = $('.app');
       if (app) app.style.display = 'none';
@@ -1821,12 +1829,12 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
           '<label for="sbUrl">رابط المشروع</label><input id="sbUrl" type="url" placeholder="https://xxxx.supabase.co">' +
           '<label for="sbKey">المفتاح العام</label><input id="sbKey" type="text" autocomplete="off" placeholder="sb_publishable_… أو anon key">' +
           '<button class="btn primary" id="saveCloudConfig" style="margin-top:10px">حفظ الاتصال</button>' +
-          '<button class="btn" id="downloadSchema" style="margin-top:10px">تنزيل إعداد قاعدة البيانات (SQL)</button></details>' :
+          sqlSetupTools() + '</details>' :
           (!cloudReady ? '<details style="margin-top:14px" open><summary style="cursor:pointer">إعداد صاحب المشروع: ربط Supabase</summary>' +
             '<div class="msg warn" style="margin-top:10px">' + (hasPendingInvite ? 'رابط الدعوة محفوظ. لفتح المشروع، اطلب من صاحبه إكمال الربط ونشر النسخة المجهزة، ثم افتح رابط الدعوة من جديد.' : 'صاحب المشروع يربط Supabase مرة واحدة وينشر نسخة الموقع المجهزة. بعدها افتح رابط دعوته وسجّل ببريدك الشخصي.') + '</div>' +
             '<p class="tiny muted">الشريك لا يحتاج إلى إدخال رابط المشروع أو المفتاح. اطلب من المالك تنفيذ الإعداد من حسابه، وتشغيل SQL في لوحة Supabase، ثم نشر نسخة الموقع المجهزة على GitHub Pages.</p>' +
             '<button class="btn" id="copyOwnerSetupRequest" type="button">نسخ طلب الإعداد لصاحب المشروع</button></details>' :
-            (AUTH_ROLE === 'owner' ? '<div class="hint" style="margin-top:12px">الاتصال محفوظ في هذا المتصفح. لمنع طلب الإعداد على باقي الأجهزة، جهّز نسخة الموقع المربوطة وارفعها على GitHub.</div><button class="btn primary" id="publishCloudConfig" style="margin-top:12px">تجهيز نسخة الموقع للشركاء</button><button class="btn link" id="changeCloudConfig" style="margin-top:8px">تغيير إعداد الاتصال</button>' : ''))) + '</div></main>';
+            (AUTH_ROLE === 'owner' ? '<div class="hint" style="margin-top:12px">الاتصال محفوظ في هذا المتصفح. لمنع طلب الإعداد على باقي الأجهزة، جهّز نسخة الموقع المربوطة وارفعها على GitHub.</div><button class="btn primary" id="publishCloudConfig" style="margin-top:12px">تجهيز نسخة الموقع للشركاء</button><button class="btn link" id="changeCloudConfig" style="margin-top:8px">تغيير إعداد الاتصال</button>' + sqlSetupTools() : ''))) + '</div></main>';
       on(host, '#authMode', 'click', () => authScreen('', signup ? 'login' : 'signup'));
       on(host, '#changeRole', 'click', () => { AUTH_ROLE = null; authScreen('', 'login'); });
       on(host, '#saveCloudConfig', 'click', () => {
@@ -1837,6 +1845,26 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
         authScreen('', mode);
       });
       on(host, '#downloadSchema', 'click', () => download('supabase-setup.sql', CLOUD_SCHEMA_SQL, 'text/plain;charset=utf-8'));
+      const sqlDraft = $('#sqlDraft', host);
+      if (sqlDraft) sqlDraft.value = CLOUD_SCHEMA_SQL;
+      on(host, '#sqlFileInput', 'change', async (event) => {
+        const file = event.target.files && event.target.files[0];
+        if (!file) return;
+        if (!file.name.toLowerCase().endsWith('.sql')) { toast('اختَر ملفاً بامتداد .sql', 'warn'); event.target.value = ''; return; }
+        if (file.size > 1024 * 1024) { toast('حجم ملف SQL أكبر من 1 ميجابايت', 'warn'); event.target.value = ''; return; }
+        try { $('#sqlDraft', host).value = await file.text(); toast('تم تحميل ملف SQL للتعديل', 'ok'); }
+        catch (_) { toast('تعذر قراءة الملف المختار', 'bad'); }
+      });
+      on(host, '#downloadEditedSql', 'click', () => {
+        const value = $('#sqlDraft', host);
+        if (!value || !value.value.trim()) { toast('محتوى ملف SQL فارغ', 'warn'); return; }
+        download('supabase-setup-custom.sql', value.value, 'text/plain;charset=utf-8');
+      });
+      on(host, '#resetSqlDraft', 'click', () => {
+        if ($('#sqlDraft', host)) $('#sqlDraft', host).value = CLOUD_SCHEMA_SQL;
+        const input = $('#sqlFileInput', host); if (input) input.value = '';
+        toast('تم استعادة إعداد SQL المرفق بالموقع', 'ok');
+      });
       on(host, '#copyOwnerSetupRequest', 'click', async () => {
         const text = 'من فضلك أكمل إعداد Supabase للمشروع: شغّل ملف SQL في SQL Editor، واحفظ رابط المشروع والمفتاح العام في إعداد الموقع، ثم جهّز نسخة الشركاء وانشرها على GitHub Pages. بعد النشر سأفتح رابط الدعوة وأسجل ببريدي.';
         try { await navigator.clipboard.writeText(text); toast('تم نسخ طلب الإعداد', 'ok'); }
