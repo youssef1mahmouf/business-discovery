@@ -908,6 +908,15 @@
       color: var(--muted)
     }
 
+    .readonly-banner {
+      margin-bottom: 12px;
+      padding: 10px 14px;
+      border-radius: 9px;
+      color: var(--muted);
+      background: var(--surface2);
+      border: 1px solid var(--line)
+    }
+
     .kbd-list {
       display: grid;
       gap: 6px
@@ -1359,8 +1368,25 @@ create table if not exists public.bd_workspaces (
   constraint bd_one_partner_per_project unique (id, partner_id)
 );
 
+-- Project-level staff invitations. Roles are enforced by database functions.
+create table if not exists public.bd_workspace_members (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.bd_workspaces(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
+  invite_email text not null,
+  role text not null check (role in ('assistant', 'security')),
+  invite_code uuid unique,
+  created_at timestamptz not null default now(),
+  accepted_at timestamptz
+);
+create unique index if not exists bd_workspace_invites_pending_unique
+  on public.bd_workspace_members(workspace_id, lower(invite_email)) where invite_code is not null;
+create unique index if not exists bd_workspace_members_user_unique
+  on public.bd_workspace_members(workspace_id, user_id) where user_id is not null;
+
 alter table public.bd_account_data enable row level security;
 alter table public.bd_workspaces enable row level security;
+alter table public.bd_workspace_members enable row level security;
 
 drop policy if exists "Users manage their account data" on public.bd_account_data;
 create policy "Users manage their account data" on public.bd_account_data
@@ -1370,16 +1396,24 @@ create policy "Users manage their account data" on public.bd_account_data
 
 drop policy if exists "Workspace members read shared projects" on public.bd_workspaces;
 create policy "Workspace members read shared projects" on public.bd_workspaces
-  for select to authenticated
-  using (owner_id = (select auth.uid()) or partner_id = (select auth.uid()));
+  for select to authenticated using (
+    owner_id = (select auth.uid()) or partner_id = (select auth.uid()) or
+    exists (select 1 from public.bd_workspace_members m where m.workspace_id = public.bd_workspaces.id and m.user_id = (select auth.uid()))
+  );
 
 drop policy if exists "Workspace members update shared projects" on public.bd_workspaces;
-create policy "Workspace members update shared projects" on public.bd_workspaces
-  for update to authenticated
-  using (owner_id = (select auth.uid()) or partner_id = (select auth.uid()))
-  with check (owner_id = (select auth.uid()) or partner_id = (select auth.uid()));
+drop policy if exists "Workspace owner updates shared project" on public.bd_workspaces;
+create policy "Workspace owner updates shared project" on public.bd_workspaces
+  for update to authenticated using (owner_id = (select auth.uid())) with check (owner_id = (select auth.uid()));
 
-create or replace function public.bd_create_workspace_invite(p_project jsonb, p_email text)
+drop policy if exists "Users read their workspace membership" on public.bd_workspace_members;
+create policy "Users read their workspace membership" on public.bd_workspace_members
+  for select to authenticated using (user_id = (select auth.uid()));
+revoke all on public.bd_workspace_members from anon, authenticated;
+grant select on public.bd_workspace_members to authenticated;
+
+drop function if exists public.bd_create_workspace_invite(jsonb, text);
+create or replace function public.bd_create_workspace_invite(p_project jsonb, p_email text, p_role text, p_workspace_id uuid default null)
 returns jsonb
 language plpgsql
 security definer
@@ -1394,10 +1428,43 @@ begin
   if v_email = '' or position('@' in v_email) < 2 then raise exception 'البريد الإلكتروني غير صحيح'; end if;
   if v_email = lower(coalesce(auth.jwt() ->> 'email', '')) then raise exception 'لا يمكنك دعوة حسابك نفسه'; end if;
   if jsonb_typeof(p_project) <> 'object' then raise exception 'بيانات المشروع غير صالحة'; end if;
+  if p_role not in ('assistant', 'security') then raise exception 'نوع الدور غير صالح'; end if;
 
-  insert into public.bd_workspaces(id, owner_id, invite_email, invite_code, project)
-  values (v_workspace_id, auth.uid(), v_email, v_invite_code, p_project);
+  if p_workspace_id is null then
+    insert into public.bd_workspaces(id, owner_id, invite_email, invite_code, project)
+    values (v_workspace_id, auth.uid(), v_email, v_invite_code, p_project);
+  else
+    v_workspace_id := p_workspace_id;
+    update public.bd_workspaces set project = p_project, updated_at = now()
+      where id = v_workspace_id and owner_id = auth.uid();
+    if not found then raise exception 'فقط المالك يستطيع دعوة أعضاء لهذا المشروع'; end if;
+  end if;
+  insert into public.bd_workspace_members(workspace_id, invite_email, role, invite_code)
+  values (v_workspace_id, v_email, p_role, v_invite_code);
   return jsonb_build_object('workspace_id', v_workspace_id, 'invite_code', v_invite_code);
+end;
+$$;
+
+create or replace function public.bd_my_workspace_roles()
+returns table(workspace_id uuid, role text)
+language sql security definer set search_path = ''
+as $$
+  select m.workspace_id, m.role from public.bd_workspace_members m where m.user_id = auth.uid()
+  union all
+  select w.id, 'assistant'::text from public.bd_workspaces w
+   where w.partner_id = auth.uid() and not exists (select 1 from public.bd_workspace_members m where m.workspace_id = w.id and m.user_id = auth.uid());
+$$;
+
+create or replace function public.bd_list_workspace_members(p_workspace_id uuid)
+returns table(invite_email text, role text, accepted boolean)
+language plpgsql security definer set search_path = ''
+as $$
+begin
+  if not exists (select 1 from public.bd_workspaces w where w.id = p_workspace_id and w.owner_id = auth.uid()) then
+    raise exception 'فقط المالك يستطيع عرض أعضاء المشروع';
+  end if;
+  return query select m.invite_email, m.role, m.user_id is not null
+    from public.bd_workspace_members m where m.workspace_id = p_workspace_id order by m.created_at;
 end;
 $$;
 
@@ -1409,8 +1476,19 @@ set search_path = ''
 as $$
 declare
   v_count integer;
+  v_workspace_id uuid;
 begin
   if auth.uid() is null then raise exception 'يجب تسجيل الدخول أولاً'; end if;
+  update public.bd_workspace_members set user_id = auth.uid(), invite_code = null, accepted_at = now()
+   where invite_code = p_code and user_id is null
+     and invite_email = lower(coalesce(auth.jwt() ->> 'email', ''))
+   returning workspace_id into v_workspace_id;
+  get diagnostics v_count = row_count;
+  if v_count = 1 then
+    update public.bd_workspaces w set partner_id = auth.uid(), invite_code = null, updated_at = now()
+     where w.id = v_workspace_id and w.partner_id is null;
+    return;
+  end if;
   update public.bd_workspaces
      set partner_id = auth.uid(), invite_code = null, updated_at = now()
    where invite_code = p_code
@@ -1447,26 +1525,36 @@ declare
 begin
   update public.bd_workspaces
      set project = p_project, updated_at = now()
-   where id = p_id and (owner_id = auth.uid() or partner_id = auth.uid());
+   where id = p_id and (
+     owner_id = auth.uid() or
+     (partner_id = auth.uid() and not exists (select 1 from public.bd_workspace_members m where m.workspace_id = p_id and m.user_id = auth.uid() and m.role = 'security')) or
+     exists (select 1 from public.bd_workspace_members m where m.workspace_id = p_id and m.user_id = auth.uid() and m.role = 'assistant')
+   );
   get diagnostics v_count = row_count;
   if v_count <> 1 then raise exception 'لا تملك صلاحية تعديل هذا المشروع'; end if;
 end;
 $$;
 
-revoke all on function public.bd_create_workspace_invite(jsonb, text) from public;
+revoke all on function public.bd_create_workspace_invite(jsonb, text, text, uuid) from public;
 revoke all on function public.bd_accept_workspace_invite(uuid) from public;
 revoke all on function public.bd_delete_workspace(uuid) from public;
 revoke all on function public.bd_save_workspace_project(uuid, jsonb) from public;
-grant execute on function public.bd_create_workspace_invite(jsonb, text) to authenticated;
+revoke all on function public.bd_my_workspace_roles() from public;
+revoke all on function public.bd_list_workspace_members(uuid) from public;
+grant execute on function public.bd_create_workspace_invite(jsonb, text, text, uuid) to authenticated;
 grant execute on function public.bd_accept_workspace_invite(uuid) to authenticated;
 grant execute on function public.bd_delete_workspace(uuid) to authenticated;
 grant execute on function public.bd_save_workspace_project(uuid, jsonb) to authenticated;
+grant execute on function public.bd_my_workspace_roles() to authenticated;
+grant execute on function public.bd_list_workspace_members(uuid) to authenticated;
 
 grant select, insert, update, delete on public.bd_account_data to authenticated;
 grant select on public.bd_profiles to authenticated;
 grant select on public.bd_workspaces to authenticated;
 `;
     let SUPA = null, AUTH_USER = null, AUTH_ROLE = null, CLOUD_BUSY = false, SYNC_QUEUED = false;
+    let WORKSPACE_ROLES = Object.create(null);
+    const READ_ONLY_ACTIONS = new Set(['export-json', 'export-csv', 'print-report', 'open-project']);
 
     /* ---------- tiny helpers ---------- */
     const $ = (s, r) => (r || document).querySelector(s);
@@ -1517,6 +1605,12 @@ grant select on public.bd_workspaces to authenticated;
 
     function accountDataKey() { return APP.dataKey + (AUTH_USER ? '_' + AUTH_USER.id : ''); }
     function cloudReady() { return !!(SUPA && AUTH_USER); }
+    function projectRole(project) {
+      if (!project) return 'none';
+      return project._bdWorkspaceId ? (WORKSPACE_ROLES[project._bdWorkspaceId] || 'assistant') : 'owner';
+    }
+    function canEditProject(project) { return projectRole(project) !== 'security'; }
+    function isReadOnlyProject(project) { return !!project && projectRole(project) === 'security'; }
 
     function saveState(immediate) {
       clearTimeout(SAVE_TIMER);
@@ -1705,6 +1799,7 @@ grant select on public.bd_workspaces to authenticated;
     }
     async function enterApp(user) {
       AUTH_USER = user;
+      WORKSPACE_ROLES = Object.create(null);
       $('#authHost').style.display = 'none'; $('.app').style.display = '';
       $('#accountEmail').textContent = user.email || '';
       $('#signOutBtn').style.display = '';
@@ -1714,6 +1809,10 @@ grant select on public.bd_workspaces to authenticated;
     }
     async function loadCloudState() {
       let migratedLegacy = false;
+      const { data: roleRows, error: roleError } = await SUPA.rpc('bd_my_workspace_roles');
+      if (roleError) throw roleError;
+      WORKSPACE_ROLES = Object.create(null);
+      (roleRows || []).forEach(row => { WORKSPACE_ROLES[row.workspace_id] = row.role; });
       const { data: account, error: accountErr } = await SUPA.from('bd_account_data').select('data').eq('user_id', AUTH_USER.id).maybeSingle();
       if (accountErr) throw accountErr;
       if (account && account.data) S = Object.assign(defaultState(), account.data);
@@ -1721,9 +1820,11 @@ grant select on public.bd_workspaces to authenticated;
         const old = lsGet(APP.dataKey);
         if (old) { try { S = Object.assign(defaultState(), JSON.parse(old)); migratedLegacy = true; } catch (_) { } }
       }
-      const { data: shared, error } = await SUPA.from('bd_workspaces').select('id,project').not('partner_id', 'is', null);
+      const { data: shared, error } = await SUPA.from('bd_workspaces').select('id,project,owner_id,partner_id');
       if (error) throw error;
       (shared || []).forEach(row => {
+        if (row.owner_id === AUTH_USER.id) WORKSPACE_ROLES[row.id] = 'owner';
+        else if (!WORKSPACE_ROLES[row.id]) WORKSPACE_ROLES[row.id] = 'assistant';
         const p = Object.assign({}, row.project, { _bdWorkspaceId: row.id });
         const i = S.projects.findIndex(x => x._bdWorkspaceId === row.id);
         if (i >= 0) S.projects[i] = p; else S.projects.push(p);
@@ -1743,7 +1844,7 @@ grant select on public.bd_workspaces to authenticated;
         const privateState = Object.assign({}, S, { projects: S.projects.filter(p => !p._bdWorkspaceId) });
         const { error } = await SUPA.from('bd_account_data').upsert({ user_id: AUTH_USER.id, data: privateState, updated_at: nowISO() }, { onConflict: 'user_id' });
         if (error) throw error;
-        for (const project of S.projects.filter(p => p._bdWorkspaceId)) {
+        for (const project of S.projects.filter(p => p._bdWorkspaceId && canEditProject(p))) {
           const data = JSON.parse(JSON.stringify(project)); delete data._bdWorkspaceId;
           const result = await SUPA.rpc('bd_save_workspace_project', { p_id: project._bdWorkspaceId, p_project: data });
           if (result.error) throw result.error;
@@ -1762,18 +1863,24 @@ grant select on public.bd_workspaces to authenticated;
         await loadCloudState(); render(); toast('تم قبول الدعوة ومشاركة المشروع معك', 'ok');
       } catch (e) { toast('تعذر قبول الدعوة: ' + e.message, 'bad'); }
     }
-    async function createWorkspaceInvite(email) {
+    async function createWorkspaceInvite(email, role) {
       const project = currentProject();
       if (!project) { toast('اختر مشروعاً أولاً', 'warn'); return; }
-      if (project._bdWorkspaceId) { toast('هذا المشروع تمت مشاركته بالفعل', 'warn'); return; }
+      if (!canManageProject(project)) { toast('إرسال الدعوات متاح للمالك فقط', 'warn'); return; }
       if (email.toLowerCase() === String(AUTH_USER.email || '').toLowerCase()) { toast('أدخل بريد شريك آخر', 'warn'); return; }
       const snapshot = JSON.parse(JSON.stringify(project));
-      const { data, error } = await SUPA.rpc('bd_create_workspace_invite', { p_project: snapshot, p_email: email.toLowerCase() });
+      delete snapshot._bdWorkspaceId;
+      const { data, error } = await SUPA.rpc('bd_create_workspace_invite', {
+        p_project: snapshot, p_email: email.toLowerCase(), p_role: role,
+        p_workspace_id: project._bdWorkspaceId || null
+      });
       if (error) throw error;
       project._bdWorkspaceId = data.workspace_id;
+      WORKSPACE_ROLES[data.workspace_id] = 'owner';
       saveState(true);
       const link = location.origin + location.pathname + '?invite=' + encodeURIComponent(data.invite_code);
-      openModal('رابط دعوة الشريك', '<p>أرسل الرابط إلى <strong>' + esc(email) + '</strong>. يجب على الشريك إنشاء حساب بهذا البريد ثم فتح الرابط لقبول الدعوة.</p><input id="inviteLink" type="text" readonly value="' + esc(link) + '">', () => {
+      const roleLabel = role === 'security' ? 'الأمن (مشاهدة فقط)' : 'المساعد (مشاهدة وتعديل)';
+      openModal('رابط دعوة عضو الفريق', '<p>أرسل الدعوة إلى <strong>' + esc(email) + '</strong> بدور <strong>' + roleLabel + '</strong>. يجب أن ينشئ الشخص حساباً ببريده نفسه ثم يفتح الرابط لقبول الدعوة.</p><input id="inviteLink" type="text" readonly value="' + esc(link) + '">', () => {
         const input = $('#inviteLink'); input.select();
         if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(() => toast('تم نسخ رابط الدعوة', 'ok')).catch(() => document.execCommand('copy'));
         else document.execCommand('copy');
@@ -1781,6 +1888,7 @@ grant select on public.bd_workspaces to authenticated;
       }, 'نسخ الرابط');
       render();
     }
+    function canManageProject(project) { return !!project && projectRole(project) === 'owner'; }
     function normProject(p) {
       if (!p || typeof p !== 'object') return null;
       p.id = p.id || uid('prj');
@@ -2509,8 +2617,18 @@ grant select on public.bd_workspaces to authenticated;
           '<div style="margin-top:12px"><button class="btn primary" onclick="location.reload()">إعادة تحميل الصفحة</button></div>' +
           '</div>';
       }
-      host.innerHTML = html;
+      const readonly = isReadOnlyProject(pr);
+      host.classList.toggle('read-only', readonly);
+      host.innerHTML = (readonly ? '<div class="readonly-banner">دور الأمن: يمكنك مشاهدة هذا المشروع فقط، ولا يمكنك تعديل بياناته.</div>' : '') + html;
+      if (readonly) {
+        $$('#view input, #view textarea, #view select').forEach(el => { el.disabled = true; });
+        $$('#view button').forEach(btn => {
+          const act = btn.getAttribute('data-act');
+          if (!act || !READ_ONLY_ACTIONS.has(act)) btn.disabled = true;
+        });
+      }
       bindView();
+      if (VIEW === 'partners' && pr && canManageProject(pr) && pr._bdWorkspaceId) refreshWorkspaceRoster(pr._bdWorkspaceId);
     }
 
     function emptyState(big, msg, icon, btnLabel, act) {
@@ -2941,18 +3059,35 @@ grant select on public.bd_workspaces to authenticated;
 
     function viewPartners() {
       const shared = S.projects.filter(p => p._bdWorkspaceId);
-      let html = pageHead('الشركاء والدعوات', 'شارك مشروعاً واحداً مع شريك. بيانات مشاريعك الأخرى تظل خاصة بحسابك.');
+      let html = pageHead('فريق العمل والدعوات', 'أضف أشخاصاً إلى المشروع المحدد، ولكل شخص حسابه ودوره الخاص.');
       const pr = currentProject();
-      html += card('دعوة شريك إلى المشروع الحالي',
+      const owner = canManageProject(pr);
+      const role = projectRole(pr);
+      html += card('أعضاء المشروع الحالي',
         '<p>المشروع المحدد: <strong>' + esc(pr ? pr.name : 'لا يوجد مشروع محدد') + '</strong></p>' +
-        '<button class="btn primary" data-act="invite-partner"' + (!pr || pr._bdWorkspaceId ? ' disabled' : '') + '>إنشاء دعوة ومشاركة المشروع</button>' +
-        (pr && pr._bdWorkspaceId ? '<div class="hint" style="margin-top:10px">هذا المشروع مرتبط بمساحة مشتركة. كل تعديل يُزامَن مع الشريك.</div>' : '') +
-        '<div class="hint" style="margin-top:10px">اكتب البريد الإلكتروني للشريك ثم أرسل له الرابط. يحتاج إلى حساب بالبريد نفسه لقبول الدعوة. يمكن نسخ الرابط وإرساله من تطبيقك المعتاد.</div>');
+        (owner
+          ? '<div class="row" style="align-items:end"><label style="flex:1;min-width:180px">دور العضو الجديد<select id="inviteRole" style="display:block;margin-top:6px;width:100%"><option value="assistant">مساعد — مشاهدة وتعديل</option><option value="security">أمن — مشاهدة فقط</option></select></label>' +
+            '<button class="btn primary" data-act="invite-partner"' + (!pr ? ' disabled' : '') + '>دعوة عضو</button></div>' +
+            '<div class="hint" style="margin-top:10px">أدخل بريد الشخص بعد الضغط على الدعوة. ينشئ الشخص حسابه بنفس البريد، ثم يفتح رابط الدعوة لقبولها.</div>' +
+            (pr && pr._bdWorkspaceId ? '<div id="teamRoster" class="hint" style="margin-top:12px">جارٍ تحميل أعضاء الفريق…</div>' : '<div class="hint" style="margin-top:10px">بعد أول دعوة سيصبح المشروع مشتركاً، ويمكنك إضافة مساعدين وأفراد أمن آخرين.</div>')
+          : '<div class="hint">صلاحيتك في هذا المشروع: <strong>' + (role === 'security' ? 'الأمن — مشاهدة فقط' : 'المساعد — مشاهدة وتعديل') + '</strong>. المالك وحده يرسل الدعوات.</div>'));
       html += card('المشاريع المشتركة (' + shared.length + ')', shared.length
         ? '<ul>' + shared.map(p => '<li>' + esc(p.name) + '</li>').join('') + '</ul>'
         : '<div class="tiny muted">لم تقبل أو ترسل دعوة لمشروع بعد.</div>');
       html += card('قبول دعوة', '<p>افتح رابط الدعوة الذي وصلك بعد تسجيل الدخول بالحساب المسجل بالبريد الذي أرسل إليه صاحب المشروع الدعوة.</p>');
       return html;
+    }
+    async function refreshWorkspaceRoster(workspaceId) {
+      const host = $('#teamRoster');
+      if (!host) return;
+      try {
+        const { data, error } = await SUPA.rpc('bd_list_workspace_members', { p_workspace_id: workspaceId });
+        if (error) throw error;
+        const entries = data || [];
+        host.innerHTML = '<strong>أعضاء ودعوات المشروع</strong>' + (entries.length
+          ? '<ul style="margin-bottom:0">' + entries.map(m => '<li>' + esc(m.invite_email) + ' — ' + (m.role === 'security' ? 'الأمن، مشاهدة فقط' : 'المساعد، مشاهدة وتعديل') + ' — ' + (m.accepted ? 'قبل الدعوة' : 'بانتظار القبول') + '</li>').join('') + '</ul>'
+          : '<div style="margin-top:6px">لا يوجد أعضاء مدعوون بعد.</div>');
+      } catch (e) { host.textContent = 'تعذر تحميل أعضاء الفريق: ' + (e.message || ''); }
     }
 
     /* =====================================================================
@@ -3337,7 +3472,7 @@ grant select on public.bd_workspaces to authenticated;
           if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
           promptText('دعوة شريك', 'البريد الإلكتروني للشريك', '', (email) => {
             if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast('اكتب بريداً إلكترونياً صحيحاً', 'warn'); return; }
-            createWorkspaceInvite(email).catch(e => toast('تعذر إنشاء الدعوة: ' + e.message, 'bad'));
+            createWorkspaceInvite(email, $('#inviteRole') ? $('#inviteRole').value : 'assistant').catch(e => toast('تعذر إنشاء الدعوة: ' + e.message, 'bad'));
           });
           break;
         case 'new-project': newProject(); break;
