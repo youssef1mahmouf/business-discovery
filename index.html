@@ -1657,7 +1657,7 @@ grant execute on function public.bd_get_my_site_role() to authenticated;
 grant execute on function public.bd_admin_list_accounts() to authenticated;
 grant execute on function public.bd_admin_set_site_role(uuid, text) to authenticated;
 `;
-    let SUPA = null, AUTH_USER = null, AUTH_ROLE = null, ROLE_PICKER_OPEN = false, AUTH_SITE_ROLE = 'member', CLOUD_BUSY = false, SYNC_QUEUED = false;
+    let SUPA = null, AUTH_USER = null, AUTH_ROLE = null, ROLE_PICKER_OPEN = false, AUTH_SITE_ROLE = 'member', CLOUD_BUSY = false, SYNC_QUEUED = false, CLOUD_LOAD_WARNING = '';
     let WORKSPACE_ROLES = Object.create(null);
     const READ_ONLY_ACTIONS = new Set(['export-json', 'export-csv', 'print-report', 'open-project']);
 
@@ -1814,7 +1814,7 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
         '<button class="btn" id="authMode">' + (signup ? 'لدي حساب بالفعل' : 'إنشاء حساب جديد') + '</button></div>' +
         (!signup ? '<button class="btn link" id="forgotPassword" style="margin-top:8px">نسيت كلمة المرور؟</button>' : '') +
         '<div class="hint" style="margin-top:12px">' + esc(message || 'البريد واسم المستخدم ورقم الهاتف مميزة لكل حساب. كلمة المرور تبقى سرية ولا نعرضها.') + '</div>' +
-        (AUTH_ROLE === 'owner' ? '<details style="margin-top:14px"><summary style="cursor:pointer">إعداد قاعدة البيانات لأول مرة</summary>' +
+        (AUTH_ROLE === 'owner' ? '<details style="margin-top:14px" open><summary style="cursor:pointer">إعداد قاعدة البيانات لأول مرة</summary>' +
           '<p class="tiny muted">نزّل الملف وشغّله مرة واحدة فقط في Supabase → SQL Editor → New query → Run. هذا الملف ينشئ الجداول ولا يحتوي على إيميلات أو كلمات مرور. حسابات الدخول تظهر في Authentication → Users، وبيانات كل حساب تُحفظ تلقائياً في قاعدة البيانات.</p>' +
           sqlSetupTools() +
           '<details style="margin-top:10px"><summary>تفعيل لوحة مدير الموقع لحساب المالك</summary><p class="tiny muted">بعد إنشاء الحساب وتأكيد البريد، شغّل هذا الاستعلام مرة واحدة في SQL Editor لتفعيل المدير الأعلى لهذا البريد فقط:</p><pre dir="ltr" style="white-space:pre-wrap">UPDATE public.bd_profiles SET site_role = \'site_admin\' WHERE user_id = (SELECT id FROM auth.users WHERE lower(email) = lower(\'youssef1mahmouf24@gmail.com\'));</pre></details>' +
@@ -1858,7 +1858,7 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
             ? await SUPA.auth.signUp({ email, password, options: { data: metadata } })
             : await SUPA.auth.signInWithPassword(isEmail ? { email: identifier.toLowerCase(), password } : { phone: loginPhone, password });
           if (result.error) throw result.error;
-          if (!result.data.session) { authScreen('تم إنشاء الحساب. راجع بريدك لتأكيده ثم سجّل الدخول.', 'login'); return; }
+          if (!result.data.session) { authScreen('تم إنشاء الحساب، لكن الدخول لم يبدأ بعد. افتح رسالة التأكيد في بريدك واضغط رابط التأكيد، ثم ارجع وسجّل الدخول.', 'login'); return; }
           await enterApp(result.data.user);
         } catch (e) {
           const raw = e.message || '';
@@ -1881,13 +1881,18 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
     }
     async function enterApp(user) {
       AUTH_USER = user;
+      CLOUD_LOAD_WARNING = '';
       WORKSPACE_ROLES = Object.create(null);
       STATE_REVISION = 0; CLOUD_SYNCED_REVISION = 0;
       $('#authHost').style.display = 'none'; $('.app').style.display = '';
       $('#accountEmail').textContent = user.email || '';
       $('#signOutBtn').style.display = '';
       loadState();
-      try { await loadCloudState(); } catch (e) { console.error(e); toast('تعذر تحميل المشاريع المشتركة: ' + e.message, 'bad'); }
+      try { await loadCloudState(); } catch (e) {
+        console.error(e);
+        CLOUD_LOAD_WARNING = 'تم تسجيل الدخول، لكن قاعدة بيانات الموقع لم تكتمل. شغّل ملف SQL كاملاً في Supabase → SQL Editor → Run، ثم سجّل الخروج وادخل مرة أخرى. التفاصيل: ' + (e.message || 'تعذر تحميل الجداول');
+        toast('تم الدخول، لكن المزامنة تحتاج إعداد قاعدة البيانات.', 'bad');
+      }
       render();
     }
     async function loadCloudState() {
@@ -2719,7 +2724,8 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
       }
       const readonly = isReadOnlyProject(pr);
       host.classList.toggle('read-only', readonly);
-      host.innerHTML = (readonly ? '<div class="readonly-banner">دور الأمن: يمكنك مشاهدة هذا المشروع فقط، ولا يمكنك تعديل بياناته.</div>' : '') + html;
+      host.innerHTML = (CLOUD_LOAD_WARNING ? '<div class="msg warn" role="status" style="margin-bottom:12px">' + esc(CLOUD_LOAD_WARNING) + '</div>' : '') +
+        (readonly ? '<div class="readonly-banner">دور الأمن: يمكنك مشاهدة هذا المشروع فقط، ولا يمكنك تعديل بياناته.</div>' : '') + html;
       if (readonly) {
         $$('#view input, #view textarea, #view select').forEach(el => { el.disabled = true; });
         $$('#view button').forEach(btn => {
