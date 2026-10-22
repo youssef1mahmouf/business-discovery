@@ -1627,7 +1627,7 @@ grant execute on function public.bd_get_my_site_role() to authenticated;
 grant execute on function public.bd_admin_list_accounts() to authenticated;
 grant execute on function public.bd_admin_set_site_role(uuid, text) to authenticated;
 `;
-    let SUPA = null, AUTH_USER = null, AUTH_ROLE = null, AUTH_SITE_ROLE = 'member', CLOUD_BUSY = false, SYNC_QUEUED = false;
+    let SUPA = null, AUTH_USER = null, AUTH_ROLE = null, ROLE_PICKER_OPEN = false, AUTH_SITE_ROLE = 'member', CLOUD_BUSY = false, SYNC_QUEUED = false;
     let WORKSPACE_ROLES = Object.create(null);
     const READ_ONLY_ACTIONS = new Set(['export-json', 'export-csv', 'print-report', 'open-project']);
 
@@ -1777,6 +1777,7 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
       mode = mode || 'login';
       const cloudReady = !!(cfg && SUPA);
       const hasPendingInvite = !!(new URLSearchParams(location.search).get('invite') || lsGet(PENDING_INVITE_KEY));
+      if (!AUTH_ROLE && !ROLE_PICKER_OPEN) AUTH_ROLE = hasPendingInvite ? 'partner' : 'owner';
       if (mode === 'recovery' && !cloudReady) mode = 'login';
       if (mode === 'recovery') {
         host.innerHTML = '<main class="auth-screen"><div class="card"><h2>تعيين كلمة مرور جديدة</h2>' +
@@ -1800,13 +1801,13 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
           '<div class="hint" style="margin-top:12px">صاحب المشروع يجهز الاتصال مرة واحدة. الشريك يدخل بحسابه ويقبل الدعوة التي وصلته.</div>' +
           (!cloudReady && hasPendingInvite ? '<div class="msg warn" style="margin-top:12px">وصلتك دعوة مشروع، لكن نسخة الموقع التي فتحتها غير مربوطة بـ Supabase. اطلب من صاحب المشروع إعداد الاتصال وتجهيز نسخة الموقع ونشرها، ثم افتح رابط الدعوة مرة أخرى.</div>' : '') +
           (message ? '<div class="msg warn" style="margin-top:12px">' + esc(message) + '</div>' : '') + '</div></main>';
-        on(host, '#chooseOwner', 'click', () => { AUTH_ROLE = 'owner'; authScreen('', mode); });
-        on(host, '#choosePartner', 'click', () => { AUTH_ROLE = 'partner'; authScreen('', mode); });
+        on(host, '#chooseOwner', 'click', () => { AUTH_ROLE = 'owner'; ROLE_PICKER_OPEN = false; authScreen('', mode); });
+        on(host, '#choosePartner', 'click', () => { AUTH_ROLE = 'partner'; ROLE_PICKER_OPEN = false; authScreen('', mode); });
         return;
       }
       const signup = mode === 'signup';
       host.innerHTML = '<main class="auth-screen"><div class="brand"><div class="logo">م</div><div><h1>مستكشف المشاريع</h1><small>بياناتك ومشاريعك مرتبطة بحسابك</small></div></div>' +
-        '<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><h2>' + (signup ? 'إنشاء حساب' : 'تسجيل الدخول') + '</h2><button class="btn link" id="changeRole">تغيير الاختيار</button></div>' +
+          '<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><h2>' + (signup ? 'إنشاء حساب' : 'تسجيل الدخول') + '</h2><button class="btn link" id="changeRole">تغيير الاختيار</button></div>' +
         (signup ? '<label for="authName">الاسم الكامل</label><input id="authName" type="text" autocomplete="name" minlength="2" required>' +
           '<label for="authUsername">اسم المستخدم</label><input id="authUsername" type="text" autocomplete="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" placeholder="حروف إنجليزية وأرقام و _ فقط" required>' +
           '<label for="authPhone">رقم الهاتف</label><input id="authPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="+2010… أو 010…" required>' : '') +
@@ -1816,7 +1817,7 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
         '<button class="btn" id="authMode">' + (signup ? 'لدي حساب بالفعل' : 'إنشاء حساب جديد') + '</button></div>' +
         (!signup ? '<button class="btn link" id="forgotPassword" style="margin-top:8px">نسيت كلمة المرور؟</button>' : '') +
         '<div class="hint" style="margin-top:12px">' + esc(message || 'بيانات كل حساب خاصة به. عند مشاركة مشروع، يستطيع الشريك الوصول إلى هذا المشروع فقط.') + '</div>' +
-        (!cloudReady && AUTH_ROLE === 'owner' ? '<details id="cloudSetupDetails" style="margin-top:14px" open><summary style="cursor:pointer">إعداد صاحب المشروع: ربط Supabase</summary>' +
+        (!cloudReady && AUTH_ROLE === 'owner' ? '<details id="cloudSetupDetails" style="margin-top:14px"><summary style="cursor:pointer">إعداد صاحب المشروع: ربط Supabase (مرة واحدة)</summary>' +
           '<div style="margin-top:12px;line-height:1.8"><div class="hint">تدخل رابط المشروع والمفتاح مرة واحدة في هذا المتصفح، وبعدها تقدر تنشئ حسابات وتدخل من غير إعادة إدخاله. عشان ما يظهرش الإعداد على أجهزة الشركاء، احفظ الاتصال ثم اضغط «تجهيز نسخة الموقع للشركاء» وارفع النسخة الناتجة إلى GitHub.</div><p><strong>ليه الإعداد ده مطلوب؟</strong><br>GitHub يعرض صفحة الموقع، وSupabase يحفظ حسابات المستخدمين وبياناتهم. من غير مشروع Supabase، نموذج الدخول مش هيقدر ينشئ حسابات حقيقية.</p>' +
           '<ol style="padding-inline-start:24px"><li>افتح <a href="https://supabase.com/dashboard" target="_blank" rel="noopener">لوحة Supabase</a> وأنشئ مشروعًا جديدًا وانتظر لحد ما يجهز.</li>' +
           '<li>في المشروع اضغط <strong>Connect</strong>، وانسخ <strong>Project URL</strong> و<strong>Publishable key</strong>. تقدر تلاقي المفاتيح كمان في <strong>Settings → API Keys</strong>.</li>' +
@@ -1836,7 +1837,7 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
             '<button class="btn" id="copyOwnerSetupRequest" type="button">نسخ طلب الإعداد لصاحب المشروع</button></details>' :
             (AUTH_ROLE === 'owner' ? '<div class="hint" style="margin-top:12px">الاتصال محفوظ في هذا المتصفح. لمنع طلب الإعداد على باقي الأجهزة، جهّز نسخة الموقع المربوطة وارفعها على GitHub.</div><button class="btn primary" id="publishCloudConfig" style="margin-top:12px">تجهيز نسخة الموقع للشركاء</button><button class="btn link" id="changeCloudConfig" style="margin-top:8px">تغيير إعداد الاتصال</button>' + sqlSetupTools() : ''))) + '</div></main>';
       on(host, '#authMode', 'click', () => authScreen('', signup ? 'login' : 'signup'));
-      on(host, '#changeRole', 'click', () => { AUTH_ROLE = null; authScreen('', 'login'); });
+      on(host, '#changeRole', 'click', () => { AUTH_ROLE = null; ROLE_PICKER_OPEN = true; authScreen('', 'login'); });
       on(host, '#saveCloudConfig', 'click', () => {
         const url = $('#sbUrl').value.trim(), key = $('#sbKey').value.trim();
         if (!/^https:\/\/[\w.-]+\.supabase\.co$/.test(url) || !isSafeBrowserKey(key)) { toast('أدخل رابط Supabase ومفتاحًا عامًا من نوع Publishable أو anon. لا تستخدم مفتاح secret أو service_role.', 'warn'); return; }
