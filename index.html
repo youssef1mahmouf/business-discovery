@@ -1306,7 +1306,10 @@
       prefKey: 'bd_prefs_v1'
     };
     const CLOUD_CONFIG_KEY = 'bd_supabase_config_v1';
-    const CLOUD_DEFAULT_CONFIG = null;
+    const CLOUD_DEFAULT_CONFIG = {
+      url: 'https://jrixboeunlsxcpssujgn.supabase.co',
+      key: 'sb_publishable_s5ezD58wMx14fQsLvd0YAw_PCU-6s6C'
+    };
     const PENDING_INVITE_KEY = 'bd_pending_invite_v1';
     const CLOUD_SCHEMA_SQL = String.raw`-- Run this file once in Supabase Dashboard > SQL Editor.
 -- The browser app uses only the project's public/publishable key. Never place a service_role key in the HTML.
@@ -1748,8 +1751,8 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
         const response = await fetch(location.href, { cache: 'no-store' });
         if (!response.ok) throw new Error('تعذر تحميل نسخة الموقع الحالية');
         const source = await response.text();
-        const marker = 'const CLOUD_DEFAULT_CONFIG = null;';
-        if (!source.includes(marker)) throw new Error('لم أجد موضع إعداد المشروع داخل الصفحة');
+        const marker = /const CLOUD_DEFAULT_CONFIG = (?:null|\{[\s\S]*?\});/;
+        if (!marker.test(source)) throw new Error('لم أجد موضع إعداد المشروع داخل الصفحة');
         const publicConfig = JSON.stringify({ url: cfg.url, key: cfg.key });
         download('index.html', source.replace(marker, 'const CLOUD_DEFAULT_CONFIG = ' + publicConfig + ';'), 'text/html;charset=utf-8');
         toast('جهزت نسخة الشركاء. ارفع ملف index.html الناتج إلى GitHub مكان الملف الحالي.', 'ok');
