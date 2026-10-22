@@ -1351,6 +1351,8 @@ alter table public.bd_profiles add constraint bd_profiles_site_role_check check 
 
 create unique index if not exists bd_profiles_username_unique
   on public.bd_profiles (lower(username)) where username is not null;
+create unique index if not exists bd_profiles_phone_unique
+  on public.bd_profiles (phone) where phone <> '';
 
 alter table public.bd_profiles enable row level security;
 drop policy if exists "Users read their own profile" on public.bd_profiles;
@@ -1745,11 +1747,8 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
 
     /* ---------- Supabase accounts and shared projects ---------- */
     function readCloudConfig() {
-      try {
-        const saved = JSON.parse(lsGet(CLOUD_CONFIG_KEY) || 'null');
-        if (saved && saved.disabled) return null;
-        if (saved && saved.url && saved.key) return saved;
-      } catch (_) {}
+      // The project connection is part of this published app. Never gate sign-in
+      // on a browser-local setup value that disappears on another device.
       return CLOUD_DEFAULT_CONFIG;
     }
     function isSafeBrowserKey(key) {
@@ -1760,21 +1759,6 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
         return JSON.parse(atob(payload)).role === 'anon';
       } catch (_) { return false; }
     }
-    async function downloadConfiguredApp() {
-      const cfg = readCloudConfig();
-      if (!cfg || !cfg.url || !cfg.key) { toast('احفظ إعداد Supabase أولاً', 'warn'); return; }
-      if (location.protocol !== 'https:') { toast('افتح رابط الموقع المنشور الذي يبدأ بـ https:// ثم اضغط الزر من هناك', 'warn'); return; }
-      try {
-        const response = await fetch(location.href, { cache: 'no-store' });
-        if (!response.ok) throw new Error('تعذر تحميل نسخة الموقع الحالية');
-        const source = await response.text();
-        const marker = /const CLOUD_DEFAULT_CONFIG = (?:null|\{[\s\S]*?\});/;
-        if (!marker.test(source)) throw new Error('لم أجد موضع إعداد المشروع داخل الصفحة');
-        const publicConfig = JSON.stringify({ url: cfg.url, key: cfg.key });
-        download('index.html', source.replace(marker, 'const CLOUD_DEFAULT_CONFIG = ' + publicConfig + ';'), 'text/html;charset=utf-8');
-        toast('جهزت نسخة الشركاء. ارفع ملف index.html الناتج إلى GitHub مكان الملف الحالي.', 'ok');
-      } catch (e) { toast(e.message || 'تعذر تجهيز نسخة الشركاء', 'bad'); }
-    }
     function makeCloudClient() {
       const cfg = readCloudConfig();
       if (!cfg || !cfg.url || !cfg.key || !window.supabase) return false;
@@ -1783,11 +1767,7 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
     }
     function sqlSetupTools() {
       return '<div style="margin-top:10px"><button class="btn" id="downloadSchema">تنزيل إعداد قاعدة البيانات (SQL)</button>' +
-        '<details style="margin-top:10px"><summary style="cursor:pointer">تحميل ملف SQL موجود أو تعديله</summary>' +
-        '<p class="tiny muted">تقدر تحمل ملف SQL من جهازك وتعدله هنا، أو تعدل الإعداد المرفق. التنزيل لا يشغّل الأوامر؛ شغّل الملف النهائي في Supabase → SQL Editor.</p>' +
-        '<label for="sqlFileInput">تحميل ملف SQL من جهازك</label><input id="sqlFileInput" type="file" accept=".sql,text/plain">' +
-        '<label for="sqlDraft">محتوى SQL قابل للتعديل</label><textarea id="sqlDraft" rows="10" spellcheck="false" style="direction:ltr;text-align:left;font-family:monospace"></textarea>' +
-        '<div class="row"><button class="btn primary" id="downloadEditedSql">تنزيل ملف SQL المعدّل</button><button class="btn" id="resetSqlDraft">استعادة إعداد الموقع</button></div></details></div>';
+        '<p class="tiny muted">يُشغّل هذا الملف مرة واحدة في SQL Editor داخل مشروع Supabase، قبل إنشاء أول حساب. بعد ذلك تُحفظ الحسابات والبيانات تلقائياً.</p></div>';
     }
     function authScreen(message, mode) {
       const host = $('#authHost'), app = $('.app');
@@ -1797,7 +1777,7 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
       mode = mode || 'login';
       const cloudReady = !!(cfg && SUPA);
       const hasPendingInvite = !!(new URLSearchParams(location.search).get('invite') || lsGet(PENDING_INVITE_KEY));
-      if (!AUTH_ROLE && !ROLE_PICKER_OPEN) AUTH_ROLE = hasPendingInvite ? 'partner' : 'owner';
+      if (!AUTH_ROLE) AUTH_ROLE = hasPendingInvite ? 'partner' : 'owner';
       if (mode === 'recovery' && !cloudReady) mode = 'login';
       if (mode === 'recovery') {
         host.innerHTML = '<main class="auth-screen"><div class="card"><h2>تعيين كلمة مرور جديدة</h2>' +
@@ -1814,20 +1794,9 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
         });
         return;
       }
-      if (!AUTH_ROLE) {
-        host.innerHTML = '<main class="auth-screen"><div class="brand"><div class="logo">م</div><div><h1>مستكشف المشاريع</h1><small>اختار دورك عشان نظهر لك الخطوات المناسبة</small></div></div>' +
-          '<div class="card"><h2>هتستخدم الموقع بصفتك إيه؟</h2><div class="row">' +
-          '<button class="btn primary" id="chooseOwner">أنا صاحب المشروع</button><button class="btn" id="choosePartner">أنا شريك مدعو</button></div>' +
-          '<div class="hint" style="margin-top:12px">صاحب المشروع يجهز الاتصال مرة واحدة. الشريك يدخل بحسابه ويقبل الدعوة التي وصلته.</div>' +
-          (!cloudReady && hasPendingInvite ? '<div class="msg warn" style="margin-top:12px">وصلتك دعوة مشروع، لكن نسخة الموقع التي فتحتها غير مربوطة بـ Supabase. اطلب من صاحب المشروع إعداد الاتصال وتجهيز نسخة الموقع ونشرها، ثم افتح رابط الدعوة مرة أخرى.</div>' : '') +
-          (message ? '<div class="msg warn" style="margin-top:12px">' + esc(message) + '</div>' : '') + '</div></main>';
-        on(host, '#chooseOwner', 'click', () => { AUTH_ROLE = 'owner'; ROLE_PICKER_OPEN = false; authScreen('', mode); });
-        on(host, '#choosePartner', 'click', () => { AUTH_ROLE = 'partner'; ROLE_PICKER_OPEN = false; authScreen('', mode); });
-        return;
-      }
       const signup = mode === 'signup';
-      host.innerHTML = '<main class="auth-screen"><div class="brand"><div class="logo">م</div><div><h1>مستكشف المشاريع</h1><small>بياناتك ومشاريعك مرتبطة بحسابك</small></div></div>' +
-          '<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><h2>' + (signup ? 'إنشاء حساب' : 'تسجيل الدخول') + '</h2><button class="btn link" id="changeRole">تغيير الاختيار</button></div>' +
+      host.innerHTML = '<main class="auth-screen"><div class="brand"><div class="logo">م</div><div><h1>مستكشف المشاريع</h1><small>بياناتك ومشاريعك محفوظة في حسابك</small></div></div>' +
+          '<div class="card"><h2>' + (signup ? 'إنشاء حساب' : 'تسجيل الدخول') + '</h2>' +
         (signup ? '<label for="authName">الاسم الكامل</label><input id="authName" type="text" autocomplete="name" minlength="2" required>' +
           '<label for="authUsername">اسم المستخدم</label><input id="authUsername" type="text" autocomplete="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" placeholder="حروف إنجليزية وأرقام و _ فقط" required>' +
           '<label for="authPhone">رقم الهاتف</label><input id="authPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="+2010… أو 010…" required>' : '') +
@@ -1836,28 +1805,13 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
         '<div class="row"><button class="btn primary" id="authSubmit">' + (signup ? 'إنشاء الحساب' : 'دخول') + '</button>' +
         '<button class="btn" id="authMode">' + (signup ? 'لدي حساب بالفعل' : 'إنشاء حساب جديد') + '</button></div>' +
         (!signup ? '<button class="btn link" id="forgotPassword" style="margin-top:8px">نسيت كلمة المرور؟</button>' : '') +
-        '<div class="hint" style="margin-top:12px">' + esc(message || 'بيانات كل حساب خاصة به. عند مشاركة مشروع، يستطيع الشريك الوصول إلى هذا المشروع فقط.') + '</div>' +
-        (!cloudReady && AUTH_ROLE === 'owner' ? '<details id="cloudSetupDetails" style="margin-top:14px"><summary style="cursor:pointer">إعداد صاحب المشروع: ربط Supabase (مرة واحدة)</summary>' +
-          '<div style="margin-top:12px;line-height:1.8"><div class="hint">تدخل رابط المشروع والمفتاح مرة واحدة في هذا المتصفح، وبعدها تقدر تنشئ حسابات وتدخل من غير إعادة إدخاله. عشان ما يظهرش الإعداد على أجهزة الشركاء، احفظ الاتصال ثم اضغط «تجهيز نسخة الموقع للشركاء» وارفع النسخة الناتجة إلى GitHub.</div><p><strong>ليه الإعداد ده مطلوب؟</strong><br>GitHub يعرض صفحة الموقع، وSupabase يحفظ حسابات المستخدمين وبياناتهم. من غير مشروع Supabase، نموذج الدخول مش هيقدر ينشئ حسابات حقيقية.</p>' +
-          '<ol style="padding-inline-start:24px"><li>افتح <a href="https://supabase.com/dashboard" target="_blank" rel="noopener">لوحة Supabase</a> وأنشئ مشروعًا جديدًا وانتظر لحد ما يجهز.</li>' +
-          '<li>في المشروع اضغط <strong>Connect</strong>، وانسخ <strong>Project URL</strong> و<strong>Publishable key</strong>. تقدر تلاقي المفاتيح كمان في <strong>Settings → API Keys</strong>.</li>' +
-          '<li>ارجع هنا ونزّل إعداد قاعدة البيانات بالزر بالأسفل. افتح الملف، وانسخ كل محتواه إلى <strong>SQL Editor → New query</strong> في Supabase، ثم اضغط <strong>Run</strong>. اعمل الخطوة دي مرة واحدة للمشروع.</li>' +
-          '<li>الصق الرابط والمفتاح العام في الخانتين واضغط <strong>حفظ الاتصال</strong>.</li>' +
-          '<li>اختيار «أنا صاحب المشروع» يدير المشاريع التي تنشئها فقط. لتعيين مدير الموقع العام، أنشئ حسابه أولاً ثم نفّذ استعلام ترقية الحساب في SQL Editor. صلاحية مدير الموقع تتيح عرض بيانات وحسابات الموقع كلها.</li>' +
-          '<li>اضغط <strong>تجهيز نسخة الشركاء</strong>، ثم ارفع ملف <code>index.html</code> الذي نزل إلى GitHub مكان الملف القديم. بعد نشره، الشريك يفتح رابط الموقع ويختار <strong>أنا شريك مدعو</strong>؛ مش هيحتاج إعداد Supabase.</li></ol>' +
-          '<div class="hint"><strong>تعيين حسابك وحده كمدير الموقع</strong><p>بعد إنشاء حسابك وظهوره في Supabase → Authentication → Users، شغّل الاستعلام التالي مرة واحدة في SQL Editor. الحسابات الأخرى تظل عادية، وبعدها يتحقق Supabase من بريدك وكلمة مرورك عند كل دخول:</p><pre dir="ltr" style="white-space:pre-wrap">UPDATE public.bd_profiles SET site_role = \'site_admin\' WHERE user_id = (SELECT id FROM auth.users WHERE lower(email) = lower(\'youssef1mahmouf24@gmail.com\'));</pre></div>' +
-          '<div class="hint" style="margin:10px 0"><strong>ملاحظات مهمة:</strong> رابط Supabase شكله <code>https://اسم-المشروع.supabase.co</code>، وهو مختلف عن رابط GitHub. استخدم المفتاح العام الذي يبدأ بـ <code>sb_publishable_</code> أو مفتاح <code>anon</code> القديم فقط. لا تستخدم أبدًا <code>service_role</code> أو <code>secret key</code>. الملف المجهز يضم الرابط والمفتاح العام فقط، وليس كلمة مرور قاعدة البيانات.</div></div>' +
-          '<label for="sbUrl">رابط المشروع</label><input id="sbUrl" type="url" placeholder="https://xxxx.supabase.co">' +
-          '<label for="sbKey">المفتاح العام</label><input id="sbKey" type="text" autocomplete="off" placeholder="sb_publishable_… أو anon key">' +
-          '<button class="btn primary" id="saveCloudConfig" style="margin-top:10px">حفظ الاتصال</button>' +
-          sqlSetupTools() + '</details>' :
-          (!cloudReady ? '<details style="margin-top:14px" open><summary style="cursor:pointer">إعداد صاحب المشروع: ربط Supabase</summary>' +
-            '<div class="msg warn" style="margin-top:10px">' + (hasPendingInvite ? 'رابط الدعوة محفوظ. لفتح المشروع، اطلب من صاحبه إكمال الربط ونشر النسخة المجهزة، ثم افتح رابط الدعوة من جديد.' : 'صاحب المشروع يربط Supabase مرة واحدة وينشر نسخة الموقع المجهزة. بعدها افتح رابط دعوته وسجّل ببريدك الشخصي.') + '</div>' +
-            '<p class="tiny muted">الشريك لا يحتاج إلى إدخال رابط المشروع أو المفتاح. اطلب من المالك تنفيذ الإعداد من حسابه، وتشغيل SQL في لوحة Supabase، ثم نشر نسخة الموقع المجهزة على GitHub Pages.</p>' +
-            '<button class="btn" id="copyOwnerSetupRequest" type="button">نسخ طلب الإعداد لصاحب المشروع</button></details>' :
-            (AUTH_ROLE === 'owner' ? '<div class="hint" style="margin-top:12px">الاتصال محفوظ في هذا المتصفح. لمنع طلب الإعداد على باقي الأجهزة، جهّز نسخة الموقع المربوطة وارفعها على GitHub.</div><button class="btn primary" id="publishCloudConfig" style="margin-top:12px">تجهيز نسخة الموقع للشركاء</button><button class="btn link" id="changeCloudConfig" style="margin-top:8px">تغيير إعداد الاتصال</button>' + sqlSetupTools() : ''))) + '</div></main>';
+        '<div class="hint" style="margin-top:12px">' + esc(message || 'البريد واسم المستخدم ورقم الهاتف مميزة لكل حساب. كلمة المرور تبقى سرية ولا نعرضها.') + '</div>' +
+        (AUTH_ROLE === 'owner' ? '<details style="margin-top:14px"><summary style="cursor:pointer">إعداد قاعدة البيانات لأول مرة</summary>' +
+          '<p class="tiny muted">نزّل الملف وشغّله مرة واحدة فقط في Supabase → SQL Editor → New query → Run، قبل إنشاء أول حساب. بعد ذلك لا ترفع SQL عند تسجيل الدخول؛ الحساب والبيانات يُحفظان تلقائياً.</p>' +
+          sqlSetupTools() +
+          '<details style="margin-top:10px"><summary>تفعيل لوحة مدير الموقع لحساب المالك</summary><p class="tiny muted">بعد إنشاء الحساب وتأكيد البريد، شغّل هذا الاستعلام مرة واحدة في SQL Editor لتفعيل المدير الأعلى لهذا البريد فقط:</p><pre dir="ltr" style="white-space:pre-wrap">UPDATE public.bd_profiles SET site_role = \'site_admin\' WHERE user_id = (SELECT id FROM auth.users WHERE lower(email) = lower(\'youssef1mahmouf24@gmail.com\'));</pre></details>' +
+          '</details>' : '') + '</div></main>';
       on(host, '#authMode', 'click', () => authScreen('', signup ? 'login' : 'signup'));
-      on(host, '#changeRole', 'click', () => { AUTH_ROLE = null; ROLE_PICKER_OPEN = true; authScreen('', 'login'); });
       on(host, '#togglePassword', 'click', (event) => {
         const input = $('#authPassword', host), button = event.currentTarget;
         if (!input) return;
@@ -1866,43 +1820,9 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
         button.textContent = visible ? 'إخفاء' : 'إظهار';
         button.setAttribute('aria-pressed', String(visible));
       });
-      on(host, '#saveCloudConfig', 'click', () => {
-        const url = $('#sbUrl').value.trim(), key = $('#sbKey').value.trim();
-        if (!/^https:\/\/[\w.-]+\.supabase\.co$/.test(url) || !isSafeBrowserKey(key)) { toast('أدخل رابط Supabase ومفتاحًا عامًا من نوع Publishable أو anon. لا تستخدم مفتاح secret أو service_role.', 'warn'); return; }
-        lsSet(CLOUD_CONFIG_KEY, JSON.stringify({ url, key }));
-        if (!makeCloudClient()) { toast('تعذر الاتصال بمكتبة Supabase. حدّث الصفحة وحاول مرة أخرى.', 'bad'); return; }
-        authScreen('', mode);
-      });
       on(host, '#downloadSchema', 'click', () => download('supabase-setup.sql', CLOUD_SCHEMA_SQL, 'text/plain;charset=utf-8'));
-      const sqlDraft = $('#sqlDraft', host);
-      if (sqlDraft) sqlDraft.value = CLOUD_SCHEMA_SQL;
-      on(host, '#sqlFileInput', 'change', async (event) => {
-        const file = event.target.files && event.target.files[0];
-        if (!file) return;
-        if (!file.name.toLowerCase().endsWith('.sql')) { toast('اختَر ملفاً بامتداد .sql', 'warn'); event.target.value = ''; return; }
-        if (file.size > 1024 * 1024) { toast('حجم ملف SQL أكبر من 1 ميجابايت', 'warn'); event.target.value = ''; return; }
-        try { $('#sqlDraft', host).value = await file.text(); toast('تم تحميل ملف SQL للتعديل', 'ok'); }
-        catch (_) { toast('تعذر قراءة الملف المختار', 'bad'); }
-      });
-      on(host, '#downloadEditedSql', 'click', () => {
-        const value = $('#sqlDraft', host);
-        if (!value || !value.value.trim()) { toast('محتوى ملف SQL فارغ', 'warn'); return; }
-        download('supabase-setup-custom.sql', value.value, 'text/plain;charset=utf-8');
-      });
-      on(host, '#resetSqlDraft', 'click', () => {
-        if ($('#sqlDraft', host)) $('#sqlDraft', host).value = CLOUD_SCHEMA_SQL;
-        const input = $('#sqlFileInput', host); if (input) input.value = '';
-        toast('تم استعادة إعداد SQL المرفق بالموقع', 'ok');
-      });
-      on(host, '#copyOwnerSetupRequest', 'click', async () => {
-        const text = 'من فضلك أكمل إعداد Supabase للمشروع: شغّل ملف SQL في SQL Editor، واحفظ رابط المشروع والمفتاح العام في إعداد الموقع، ثم جهّز نسخة الشركاء وانشرها على GitHub Pages. بعد النشر سأفتح رابط الدعوة وأسجل ببريدي.';
-        try { await navigator.clipboard.writeText(text); toast('تم نسخ طلب الإعداد', 'ok'); }
-        catch (_) { window.prompt('انسخ الرسالة وأرسلها لصاحب المشروع:', text); }
-      });
-      on(host, '#publishCloudConfig', 'click', downloadConfiguredApp);
-      on(host, '#changeCloudConfig', 'click', () => { SUPA = null; lsSet(CLOUD_CONFIG_KEY, JSON.stringify({ disabled: true })); authScreen('', 'login'); });
       on(host, '#authSubmit', 'click', async () => {
-        if (!SUPA) { toast(AUTH_ROLE === 'partner' ? 'صاحب المشروع لم يجهز نسخة الموقع للشركاء بعد. اطلب منه إكمال الإعداد ونشر الملف الجديد.' : 'أدخل رابط المشروع والمفتاح العام في إعداد الاتصال أولاً', 'warn'); return; }
+        if (!SUPA) { authScreen('تعذر الاتصال بخدمة الحسابات. حدّث الصفحة وتأكد من اتصال الإنترنت.', mode); return; }
         const email = signup ? $('#authEmail').value.trim().toLowerCase() : '';
         const identifier = signup ? email : $('#authIdentifier').value.trim();
         const password = $('#authPassword').value;
@@ -1932,7 +1852,15 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
           if (result.error) throw result.error;
           if (!result.data.session) { authScreen('تم إنشاء الحساب. راجع بريدك لتأكيده ثم سجّل الدخول.', 'login'); return; }
           await enterApp(result.data.user);
-        } catch (e) { authScreen('تعذر إكمال الطلب: ' + (e.message || 'راجع بيانات الدخول وإعدادات Supabase.'), mode); }
+        } catch (e) {
+          const raw = e.message || '';
+          let friendly = raw || 'راجع بيانات الدخول وإعداد قاعدة البيانات.';
+          if (/bd_profiles_username_unique/i.test(raw)) friendly = 'اسم المستخدم مستخدم بالفعل. اختَر اسماً آخر.';
+          else if (/bd_profiles_phone_unique/i.test(raw)) friendly = 'رقم الهاتف مسجل بالفعل. استخدم رقماً آخر أو سجّل الدخول إلى حسابك.';
+          else if (/already registered|user already exists/i.test(raw)) friendly = 'هذا البريد مسجل بالفعل. استخدم تسجيل الدخول أو استعادة كلمة المرور.';
+          else if (/invalid login credentials/i.test(raw)) friendly = 'البريد أو كلمة المرور غير صحيحة. إذا لم تنشئ الحساب من قبل، اختر «إنشاء حساب جديد». ';
+          authScreen('تعذر إكمال الطلب: ' + friendly, mode);
+        }
       });
       on(host, '#forgotPassword', 'click', async () => {
         const emailField = $('#authEmail') || $('#authIdentifier');
