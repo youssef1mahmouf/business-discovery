@@ -1812,7 +1812,7 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
           '<label for="authUsername">اسم المستخدم</label><input id="authUsername" type="text" autocomplete="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" placeholder="حروف إنجليزية وأرقام و _ فقط" required>' +
           '<label for="authPhone">رقم الهاتف</label><input id="authPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="+2010… أو 010…" required>' : '') +
         (signup ? '<label for="authEmail">البريد الإلكتروني</label><input id="authEmail" type="email" autocomplete="email" required>' : '<label for="authIdentifier">البريد الإلكتروني أو رقم الهاتف</label><input id="authIdentifier" type="text" autocomplete="username" placeholder="name@example.com أو +2010…" required>') +
-        '<label for="authPassword">كلمة المرور</label><input id="authPassword" type="password" autocomplete="' + (signup ? 'new-password' : 'current-password') + '" minlength="8" required>' +
+        '<div class="row" style="align-items:end;gap:8px"><div style="flex:1;min-width:200px"><label for="authPassword">كلمة المرور</label><input id="authPassword" type="password" autocomplete="' + (signup ? 'new-password' : 'current-password') + '" minlength="8" required></div><button class="btn" type="button" id="togglePassword" aria-pressed="false" style="margin-bottom:2px">إظهار</button></div>' +
         '<div class="row"><button class="btn primary" id="authSubmit">' + (signup ? 'إنشاء الحساب' : 'دخول') + '</button>' +
         '<button class="btn" id="authMode">' + (signup ? 'لدي حساب بالفعل' : 'إنشاء حساب جديد') + '</button></div>' +
         (!signup ? '<button class="btn link" id="forgotPassword" style="margin-top:8px">نسيت كلمة المرور؟</button>' : '') +
@@ -1838,6 +1838,14 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
             (AUTH_ROLE === 'owner' ? '<div class="hint" style="margin-top:12px">الاتصال محفوظ في هذا المتصفح. لمنع طلب الإعداد على باقي الأجهزة، جهّز نسخة الموقع المربوطة وارفعها على GitHub.</div><button class="btn primary" id="publishCloudConfig" style="margin-top:12px">تجهيز نسخة الموقع للشركاء</button><button class="btn link" id="changeCloudConfig" style="margin-top:8px">تغيير إعداد الاتصال</button>' + sqlSetupTools() : ''))) + '</div></main>';
       on(host, '#authMode', 'click', () => authScreen('', signup ? 'login' : 'signup'));
       on(host, '#changeRole', 'click', () => { AUTH_ROLE = null; ROLE_PICKER_OPEN = true; authScreen('', 'login'); });
+      on(host, '#togglePassword', 'click', (event) => {
+        const input = $('#authPassword', host), button = event.currentTarget;
+        if (!input) return;
+        const visible = input.type === 'password';
+        input.type = visible ? 'text' : 'password';
+        button.textContent = visible ? 'إخفاء' : 'إظهار';
+        button.setAttribute('aria-pressed', String(visible));
+      });
       on(host, '#saveCloudConfig', 'click', () => {
         const url = $('#sbUrl').value.trim(), key = $('#sbKey').value.trim();
         if (!/^https:\/\/[\w.-]+\.supabase\.co$/.test(url) || !isSafeBrowserKey(key)) { toast('أدخل رابط Supabase ومفتاحًا عامًا من نوع Publishable أو anon. لا تستخدم مفتاح secret أو service_role.', 'warn'); return; }
