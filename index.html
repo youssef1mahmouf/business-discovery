@@ -1565,25 +1565,9 @@ grant select on public.bd_workspaces to authenticated;
       if (app) app.style.display = 'none';
       host.style.display = 'block';
       const cfg = readCloudConfig();
-      if (!cfg || !SUPA) {
-        host.innerHTML = '<main class="auth-screen"><div class="brand"><div class="logo">م</div><div><h1>تفعيل تسجيل الدخول</h1><small>إعداد لمرة واحدة · Supabase</small></div></div>' +
-          '<div class="card"><p>دي شاشة الإعداد الأولى. بعد ربط مشروع Supabase وحفظ بياناته، هتظهر شاشة إنشاء الحساب وتسجيل الدخول بالبريد والهاتف.</p>' +
-          '<div class="hint" style="margin-bottom:12px">من لوحة Supabase انسخ رابط المشروع والمفتاح العام (Publishable أو anon)، ثم أدخلهم هنا. لا تضع مفتاح service_role.</div>' +
-          '<label for="sbUrl">رابط المشروع</label><input id="sbUrl" type="url" placeholder="https://xxxx.supabase.co">' +
-          '<label for="sbKey">المفتاح العام</label><input id="sbKey" type="text" autocomplete="off" placeholder="sb_publishable_… أو anon key">' +
-          '<button class="btn primary" id="saveCloudConfig">متابعة</button>' +
-          '<div class="hint" style="margin-top:12px">نزّل ملف إعداد قاعدة البيانات وشغّله في SQL Editor بمشروع Supabase قبل الربط. لا تستخدم مفتاح service_role هنا.</div>' +
-          '<button class="btn" id="downloadSchema" style="margin-top:10px">تنزيل إعداد قاعدة البيانات (SQL)</button>' +
-          (message ? '<div class="msg warn">' + esc(message) + '</div>' : '') + '</div></main>';
-        on(host, '#saveCloudConfig', 'click', () => {
-          const url = $('#sbUrl').value.trim(), key = $('#sbKey').value.trim();
-          if (!/^https:\/\/[\w.-]+\.supabase\.co$/.test(url) || !key) { toast('تحقق من رابط المشروع والمفتاح العام', 'warn'); return; }
-          lsSet(CLOUD_CONFIG_KEY, JSON.stringify({ url, key })); makeCloudClient(); authScreen('', 'login');
-        });
-        on(host, '#downloadSchema', 'click', () => download('supabase-setup.sql', CLOUD_SCHEMA_SQL, 'text/plain;charset=utf-8'));
-        return;
-      }
       mode = mode || 'login';
+      const cloudReady = !!(cfg && SUPA);
+      if (mode === 'recovery' && !cloudReady) mode = 'login';
       if (mode === 'recovery') {
         host.innerHTML = '<main class="auth-screen"><div class="card"><h2>تعيين كلمة مرور جديدة</h2>' +
           '<label for="newPassword">كلمة المرور الجديدة</label><input id="newPassword" type="password" minlength="8" autocomplete="new-password">' +
@@ -1611,10 +1595,25 @@ grant select on public.bd_workspaces to authenticated;
         '<button class="btn" id="authMode">' + (signup ? 'لدي حساب بالفعل' : 'إنشاء حساب جديد') + '</button></div>' +
         (!signup ? '<button class="btn link" id="forgotPassword" style="margin-top:8px">نسيت كلمة المرور؟</button>' : '') +
         '<div class="hint" style="margin-top:12px">' + esc(message || 'بيانات كل حساب خاصة به. عند مشاركة مشروع، يستطيع الشريك الوصول إلى هذا المشروع فقط.') + '</div>' +
-        '<button class="btn link" id="changeCloudConfig" style="margin-top:8px">تغيير إعدادات Supabase</button></div></main>';
+        (!cloudReady ? '<details id="cloudSetupDetails" style="margin-top:14px"><summary style="cursor:pointer">إعداد اتصال الحسابات (مرة واحدة)</summary>' +
+          '<div class="hint" style="margin:10px 0">أدخل رابط مشروع Supabase والمفتاح العام لتفعيل الحسابات الحقيقية بين الأجهزة. لا تستخدم مفتاح service_role.</div>' +
+          '<label for="sbUrl">رابط المشروع</label><input id="sbUrl" type="url" placeholder="https://xxxx.supabase.co">' +
+          '<label for="sbKey">المفتاح العام</label><input id="sbKey" type="text" autocomplete="off" placeholder="sb_publishable_… أو anon key">' +
+          '<button class="btn primary" id="saveCloudConfig" style="margin-top:10px">حفظ الاتصال</button>' +
+          '<button class="btn" id="downloadSchema" style="margin-top:10px">تنزيل إعداد قاعدة البيانات (SQL)</button></div></details>' :
+          '<button class="btn link" id="changeCloudConfig" style="margin-top:8px">تغيير إعداد الاتصال</button>') + '</div></main>';
       on(host, '#authMode', 'click', () => authScreen('', signup ? 'login' : 'signup'));
+      on(host, '#saveCloudConfig', 'click', () => {
+        const url = $('#sbUrl').value.trim(), key = $('#sbKey').value.trim();
+        if (!/^https:\/\/[\w.-]+\.supabase\.co$/.test(url) || !key) { toast('تحقق من رابط المشروع والمفتاح العام', 'warn'); return; }
+        lsSet(CLOUD_CONFIG_KEY, JSON.stringify({ url, key }));
+        if (!makeCloudClient()) { toast('تعذر الاتصال بمكتبة Supabase. حدّث الصفحة وحاول مرة أخرى.', 'bad'); return; }
+        authScreen('', mode);
+      });
+      on(host, '#downloadSchema', 'click', () => download('supabase-setup.sql', CLOUD_SCHEMA_SQL, 'text/plain;charset=utf-8'));
       on(host, '#changeCloudConfig', 'click', () => { SUPA = null; lsDel(CLOUD_CONFIG_KEY); authScreen(); });
       on(host, '#authSubmit', 'click', async () => {
+        if (!SUPA) { const setup = $('#cloudSetupDetails'); if (setup) setup.open = true; toast('أدخل رابط المشروع والمفتاح العام في إعداد الاتصال أولاً', 'warn'); return; }
         const email = signup ? $('#authEmail').value.trim().toLowerCase() : '';
         const identifier = signup ? email : $('#authIdentifier').value.trim();
         const password = $('#authPassword').value;
