@@ -1292,7 +1292,24 @@
   <input type="file" id="fileInput" accept="application/json,.json" style="display:none">
   <input type="file" id="csvInput" accept="text/csv,.csv" style="display:none">
   <div id="authHost" style="display:none"></div>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    window.supabaseReady = new Promise((resolve) => {
+      const sources = [
+        'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
+        'https://unpkg.com/@supabase/supabase-js@2'
+      ];
+      let index = 0;
+      const loadNext = () => {
+        if (index >= sources.length) { resolve(false); return; }
+        const script = document.createElement('script');
+        script.src = sources[index++];
+        script.onload = () => resolve(!!window.supabase);
+        script.onerror = loadNext;
+        document.head.appendChild(script);
+      };
+      loadNext();
+    });
+  </script>
   <script>
     /* =====================================================================
        مستكشف المشاريع — Business Discovery & Co-Founder Decision System
@@ -3970,6 +3987,7 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
       if (!storeAvailable()) {
         toast('التخزين المحلي غير متاح — لن تُحفظ بياناتك. استخدم التصدير.', 'warn');
       }
+      if (window.supabaseReady) await window.supabaseReady;
       if (!makeCloudClient()) {
         authScreen(window.supabase ? '' : 'تعذر تحميل مكتبة Supabase. تحقق من اتصال الإنترنت ثم أعد تحميل الصفحة.');
         return;
