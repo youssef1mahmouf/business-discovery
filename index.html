@@ -1307,6 +1307,45 @@ create table if not exists public.bd_account_data (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.bd_profiles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  full_name text not null default '',
+  username text,
+  phone text not null default '',
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists bd_profiles_username_unique
+  on public.bd_profiles (lower(username)) where username is not null;
+
+alter table public.bd_profiles enable row level security;
+drop policy if exists "Users read their own profile" on public.bd_profiles;
+create policy "Users read their own profile" on public.bd_profiles
+  for select to authenticated using (user_id = (select auth.uid()));
+
+create or replace function public.bd_handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  insert into public.bd_profiles(user_id, full_name, username, phone)
+  values (
+    new.id,
+    coalesce(new.raw_user_meta_data ->> 'full_name', ''),
+    nullif(lower(new.raw_user_meta_data ->> 'username'), ''),
+    coalesce(new.raw_user_meta_data ->> 'phone', '')
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists bd_on_auth_user_created on auth.users;
+create trigger bd_on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.bd_handle_new_user();
+
 create table if not exists public.bd_workspaces (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references auth.users(id) on delete cascade,
@@ -1423,6 +1462,7 @@ grant execute on function public.bd_delete_workspace(uuid) to authenticated;
 grant execute on function public.bd_save_workspace_project(uuid, jsonb) to authenticated;
 
 grant select, insert, update, delete on public.bd_account_data to authenticated;
+grant select on public.bd_profiles to authenticated;
 grant select on public.bd_workspaces to authenticated;
 `;
     let SUPA = null, AUTH_USER = null, CLOUD_BUSY = false, SYNC_QUEUED = false;
@@ -1561,8 +1601,10 @@ grant select on public.bd_workspaces to authenticated;
       const signup = mode === 'signup';
       host.innerHTML = '<main class="auth-screen"><div class="brand"><div class="logo">م</div><div><h1>مستكشف المشاريع</h1><small>بياناتك ومشاريعك مرتبطة بحسابك</small></div></div>' +
         '<div class="card"><h2>' + (signup ? 'إنشاء حساب' : 'تسجيل الدخول') + '</h2>' +
-        (signup ? '<label for="authName">الاسم</label><input id="authName" type="text" autocomplete="name" required>' : '') +
-        '<label for="authEmail">البريد الإلكتروني</label><input id="authEmail" type="email" autocomplete="email" required>' +
+        (signup ? '<label for="authName">الاسم الكامل</label><input id="authName" type="text" autocomplete="name" minlength="2" required>' +
+          '<label for="authUsername">اسم المستخدم</label><input id="authUsername" type="text" autocomplete="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" placeholder="حروف إنجليزية وأرقام و _ فقط" required>' +
+          '<label for="authPhone">رقم الهاتف</label><input id="authPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="+2010… أو 010…" required>' : '') +
+        (signup ? '<label for="authEmail">البريد الإلكتروني</label><input id="authEmail" type="email" autocomplete="email" required>' : '<label for="authIdentifier">البريد الإلكتروني أو رقم الهاتف</label><input id="authIdentifier" type="text" autocomplete="username" placeholder="name@example.com أو +2010…" required>') +
         '<label for="authPassword">كلمة المرور</label><input id="authPassword" type="password" autocomplete="' + (signup ? 'new-password' : 'current-password') + '" minlength="8" required>' +
         '<div class="row"><button class="btn primary" id="authSubmit">' + (signup ? 'إنشاء الحساب' : 'دخول') + '</button>' +
         '<button class="btn" id="authMode">' + (signup ? 'لدي حساب بالفعل' : 'إنشاء حساب جديد') + '</button></div>' +
@@ -1572,21 +1614,41 @@ grant select on public.bd_workspaces to authenticated;
       on(host, '#authMode', 'click', () => authScreen('', signup ? 'login' : 'signup'));
       on(host, '#changeCloudConfig', 'click', () => { SUPA = null; lsDel(CLOUD_CONFIG_KEY); authScreen(); });
       on(host, '#authSubmit', 'click', async () => {
-        const email = $('#authEmail').value.trim().toLowerCase(), password = $('#authPassword').value;
-        if (!email || password.length < 8) { toast('أدخل بريدك وكلمة مرور من 8 أحرف على الأقل', 'warn'); return; }
+        const email = signup ? $('#authEmail').value.trim().toLowerCase() : '';
+        const identifier = signup ? email : $('#authIdentifier').value.trim();
+        const password = $('#authPassword').value;
+        const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
+        let loginPhone = identifier.replace(/[\s()-]/g, '');
+        if (loginPhone.startsWith('01')) loginPhone = '+20' + loginPhone.slice(1);
+        else if (/^20\d{8,13}$/.test(loginPhone)) loginPhone = '+' + loginPhone;
+        const isPhone = /^\+[1-9]\d{7,14}$/.test(loginPhone);
+        if ((signup ? !isEmail : !(isEmail || isPhone)) || password.length < 8) { toast(signup ? 'اكتب بريداً إلكترونياً صحيحاً وكلمة مرور من 8 أحرف على الأقل' : 'اكتب بريداً إلكترونياً صحيحاً أو رقم هاتف بصيغة دولية، مع كلمة مرور من 8 أحرف على الأقل', 'warn'); return; }
+        let metadata = {};
+        if (signup) {
+          const fullName = $('#authName').value.trim();
+          const username = $('#authUsername').value.trim().toLowerCase();
+          let phone = $('#authPhone').value.trim().replace(/[\s()-]/g, '');
+          if (phone.startsWith('01')) phone = '+20' + phone.slice(1);
+          else if (/^20\d{8,13}$/.test(phone)) phone = '+' + phone;
+          if (fullName.length < 2) { toast('اكتب اسمك بالكامل', 'warn'); return; }
+          if (!/^[a-zA-Z0-9_]{3,24}$/.test(username)) { toast('اسم المستخدم من 3 إلى 24 حرفاً إنجليزياً أو رقماً أو _', 'warn'); return; }
+          if (!/^\+[1-9]\d{7,14}$/.test(phone)) { toast('اكتب رقم الهاتف مع مفتاح الدولة أو رقماً مصرياً صحيحاً', 'warn'); return; }
+          metadata = { full_name: fullName, username, phone };
+        }
         const b = $('#authSubmit'); b.disabled = true;
         try {
           const result = signup
-            ? await SUPA.auth.signUp({ email, password, options: { data: { full_name: ($('#authName') && $('#authName').value.trim()) || '' } } })
-            : await SUPA.auth.signInWithPassword({ email, password });
+            ? await SUPA.auth.signUp({ email, password, options: { data: metadata } })
+            : await SUPA.auth.signInWithPassword(isEmail ? { email: identifier.toLowerCase(), password } : { phone: loginPhone, password });
           if (result.error) throw result.error;
           if (!result.data.session) { authScreen('تم إنشاء الحساب. راجع بريدك لتأكيده ثم سجّل الدخول.', 'login'); return; }
           await enterApp(result.data.user);
         } catch (e) { authScreen('تعذر إكمال الطلب: ' + (e.message || 'راجع بيانات الدخول وإعدادات Supabase.'), mode); }
       });
       on(host, '#forgotPassword', 'click', async () => {
-        const email = $('#authEmail').value.trim();
-        if (!email) { toast('اكتب بريدك الإلكتروني أولاً', 'warn'); return; }
+        const emailField = $('#authEmail') || $('#authIdentifier');
+        const email = emailField ? emailField.value.trim().toLowerCase() : '';
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast('اكتب بريدك الإلكتروني الصحيح لإرسال رابط الاستعادة', 'warn'); return; }
         const { error } = await SUPA.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
         toast(error ? 'تعذر إرسال رابط الاستعادة: ' + error.message : 'تم إرسال رابط استعادة كلمة المرور', error ? 'bad' : 'ok');
       });
