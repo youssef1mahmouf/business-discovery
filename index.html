@@ -1566,8 +1566,9 @@ grant select on public.bd_workspaces to authenticated;
       host.style.display = 'block';
       const cfg = readCloudConfig();
       if (!cfg || !SUPA) {
-        host.innerHTML = '<main class="auth-screen"><div class="brand"><div class="logo">م</div><div><h1>ربط الحسابات السحابية</h1><small>Supabase · مزامنة المشاريع ودعوة الشركاء</small></div></div>' +
-          '<div class="card"><p>أدخل رابط مشروع Supabase ومفتاحه العام (Publishable/Anon) لتفعيل الحسابات والمشاركة.</p>' +
+        host.innerHTML = '<main class="auth-screen"><div class="brand"><div class="logo">م</div><div><h1>تفعيل تسجيل الدخول</h1><small>إعداد لمرة واحدة · Supabase</small></div></div>' +
+          '<div class="card"><p>دي شاشة الإعداد الأولى. بعد ربط مشروع Supabase وحفظ بياناته، هتظهر شاشة إنشاء الحساب وتسجيل الدخول بالبريد والهاتف.</p>' +
+          '<div class="hint" style="margin-bottom:12px">من لوحة Supabase انسخ رابط المشروع والمفتاح العام (Publishable أو anon)، ثم أدخلهم هنا. لا تضع مفتاح service_role.</div>' +
           '<label for="sbUrl">رابط المشروع</label><input id="sbUrl" type="url" placeholder="https://xxxx.supabase.co">' +
           '<label for="sbKey">المفتاح العام</label><input id="sbKey" type="text" autocomplete="off" placeholder="sb_publishable_… أو anon key">' +
           '<button class="btn primary" id="saveCloudConfig">متابعة</button>' +
