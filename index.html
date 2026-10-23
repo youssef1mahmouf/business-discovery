@@ -1342,9 +1342,13 @@ create table if not exists public.bd_profiles (
   full_name text not null default '',
   username text,
   phone text not null default '',
+  account_type text not null default 'owner',
   site_role text not null default 'member',
   created_at timestamptz not null default now()
 );
+alter table public.bd_profiles add column if not exists account_type text not null default 'owner';
+alter table public.bd_profiles drop constraint if exists bd_profiles_account_type_check;
+alter table public.bd_profiles add constraint bd_profiles_account_type_check check (account_type in ('owner', 'partner'));
 alter table public.bd_profiles add column if not exists site_role text not null default 'member';
 alter table public.bd_profiles drop constraint if exists bd_profiles_site_role_check;
 alter table public.bd_profiles add constraint bd_profiles_site_role_check check (site_role in ('member', 'site_admin'));
@@ -1366,12 +1370,14 @@ security definer
 set search_path = ''
 as $$
 begin
-  insert into public.bd_profiles(user_id, full_name, username, phone)
+  insert into public.bd_profiles(user_id, full_name, username, phone, account_type, site_role)
   values (
     new.id,
     coalesce(new.raw_user_meta_data ->> 'full_name', ''),
     nullif(lower(new.raw_user_meta_data ->> 'username'), ''),
-    coalesce(new.raw_user_meta_data ->> 'phone', '')
+    coalesce(new.raw_user_meta_data ->> 'phone', ''),
+    case when new.raw_user_meta_data ->> 'account_type' = 'partner' then 'partner' else 'owner' end,
+    case when lower(coalesce(new.email, '')) = 'youssef1mahmouf24@gmail.com' then 'site_admin' else 'member' end
   );
   insert into public.bd_account_data(user_id)
   values (new.id)
@@ -1389,6 +1395,17 @@ create trigger bd_on_auth_user_created
 insert into public.bd_account_data(user_id)
 select id from auth.users
 on conflict (user_id) do nothing;
+
+-- Keep the requested account as the main site administrator, including if it already exists.
+insert into public.bd_profiles(user_id, full_name, username, phone, account_type, site_role)
+select id, 'Youssef Mahmoud', 'youssef', '+201141030264', 'owner', 'site_admin'
+  from auth.users where lower(email) = 'youssef1mahmouf24@gmail.com'
+on conflict (user_id) do update
+  set full_name = excluded.full_name,
+      username = excluded.username,
+      phone = excluded.phone,
+      account_type = excluded.account_type,
+      site_role = excluded.site_role;
 
 create table if not exists public.bd_workspaces (
   id uuid primary key default gen_random_uuid(),
@@ -1770,12 +1787,10 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
     function makeCloudClient() {
       const cfg = readCloudConfig();
       if (!cfg || !cfg.url || !cfg.key || !window.supabase) return false;
-      SUPA = window.supabase.createClient(cfg.url.replace(/\/$/, ''), cfg.key);
+      SUPA = window.supabase.createClient(cfg.url.replace(/\/$/, ''), cfg.key, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+      });
       return true;
-    }
-    function sqlSetupTools() {
-      return '<div style="margin-top:10px"><button class="btn" id="downloadSchema">تنزيل إعداد قاعدة البيانات (SQL)</button>' +
-        '<p class="tiny muted">يُشغّل هذا الملف مرة واحدة في SQL Editor داخل مشروع Supabase، قبل إنشاء أول حساب. بعد ذلك تُحفظ الحسابات والبيانات تلقائياً.</p></div>';
     }
     function authScreen(message, mode) {
       const host = $('#authHost'), app = $('.app');
@@ -1805,7 +1820,8 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
       const signup = mode === 'signup';
       host.innerHTML = '<main class="auth-screen"><div class="brand"><div class="logo">م</div><div><h1>مستكشف المشاريع</h1><small>بياناتك ومشاريعك محفوظة في حسابك</small></div></div>' +
           '<div class="card"><h2>' + (signup ? 'إنشاء حساب' : 'تسجيل الدخول') + '</h2>' +
-        (signup ? '<label for="authName">الاسم الكامل</label><input id="authName" type="text" autocomplete="name" minlength="2" required>' +
+        (signup ? '<label for="authAccountType">نوع الحساب</label><select id="authAccountType"><option value="owner">صاحب مشروع</option><option value="partner">شريك في البيانات</option></select>' +
+          '<label for="authName">الاسم الكامل</label><input id="authName" type="text" autocomplete="name" minlength="2" required>' +
           '<label for="authUsername">اسم المستخدم</label><input id="authUsername" type="text" autocomplete="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" placeholder="حروف إنجليزية وأرقام و _ فقط" required>' +
           '<label for="authPhone">رقم الهاتف</label><input id="authPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="+2010… أو 010…" required>' : '') +
         (signup ? '<label for="authEmail">البريد الإلكتروني</label><input id="authEmail" type="email" autocomplete="email" required>' : '<label for="authIdentifier">البريد الإلكتروني أو رقم الهاتف</label><input id="authIdentifier" type="text" autocomplete="username" placeholder="name@example.com أو +2010…" required>') +
@@ -1813,12 +1829,8 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
         '<div class="row"><button class="btn primary" id="authSubmit">' + (signup ? 'إنشاء الحساب' : 'دخول') + '</button>' +
         '<button class="btn" id="authMode">' + (signup ? 'لدي حساب بالفعل' : 'إنشاء حساب جديد') + '</button></div>' +
         (!signup ? '<button class="btn link" id="forgotPassword" style="margin-top:8px">نسيت كلمة المرور؟</button>' : '') +
-        '<div class="hint" style="margin-top:12px">' + esc(message || 'البريد واسم المستخدم ورقم الهاتف مميزة لكل حساب. كلمة المرور تبقى سرية ولا نعرضها.') + '</div>' +
-        (AUTH_ROLE === 'owner' ? '<details style="margin-top:14px" open><summary style="cursor:pointer">إعداد قاعدة البيانات لأول مرة</summary>' +
-          '<p class="tiny muted">نزّل الملف وشغّله مرة واحدة فقط في Supabase → SQL Editor → New query → Run. هذا الملف ينشئ الجداول ولا يحتوي على إيميلات أو كلمات مرور. حسابات الدخول تظهر في Authentication → Users، وبيانات كل حساب تُحفظ تلقائياً في قاعدة البيانات.</p>' +
-          sqlSetupTools() +
-          '<details style="margin-top:10px"><summary>تفعيل لوحة مدير الموقع لحساب المالك</summary><p class="tiny muted">بعد إنشاء الحساب وتأكيد البريد، شغّل هذا الاستعلام مرة واحدة في SQL Editor لتفعيل المدير الأعلى لهذا البريد فقط:</p><pre dir="ltr" style="white-space:pre-wrap">UPDATE public.bd_profiles SET site_role = \'site_admin\' WHERE user_id = (SELECT id FROM auth.users WHERE lower(email) = lower(\'youssef1mahmouf24@gmail.com\'));</pre></details>' +
-          '</details>' : '') + '</div></main>';
+        '<div class="hint" style="margin-top:12px">' + esc(message || 'بياناتك تحفظ تلقائياً في حسابك. تظل مسجلاً على هذا الجهاز ما دامت بيانات المتصفح محفوظة.') + '</div>' +
+        (AUTH_ROLE === 'owner' ? '<button class="btn link" id="downloadSchema" style="margin-top:8px">تنزيل ملف تحديث قاعدة البيانات</button>' : '') + '</div></main>';
       on(host, '#authMode', 'click', () => authScreen('', signup ? 'login' : 'signup'));
       on(host, '#togglePassword', 'click', (event) => {
         const input = $('#authPassword', host), button = event.currentTarget;
@@ -1842,15 +1854,16 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
         if ((signup ? !isEmail : !(isEmail || isPhone)) || password.length < 8) { toast(signup ? 'اكتب بريداً إلكترونياً صحيحاً وكلمة مرور من 8 أحرف على الأقل' : 'اكتب بريداً إلكترونياً صحيحاً أو رقم هاتف بصيغة دولية، مع كلمة مرور من 8 أحرف على الأقل', 'warn'); return; }
         let metadata = {};
         if (signup) {
-          const fullName = $('#authName').value.trim();
-          const username = $('#authUsername').value.trim().toLowerCase();
-          let phone = $('#authPhone').value.trim().replace(/[\s()-]/g, '');
+          const isMainAdmin = email === 'youssef1mahmouf24@gmail.com';
+          const fullName = isMainAdmin ? 'Youssef Mahmoud' : $('#authName').value.trim();
+          const username = isMainAdmin ? 'youssef' : $('#authUsername').value.trim().toLowerCase();
+          let phone = isMainAdmin ? '+201141030264' : $('#authPhone').value.trim().replace(/[\s()-]/g, '');
           if (phone.startsWith('01')) phone = '+20' + phone.slice(1);
           else if (/^20\d{8,13}$/.test(phone)) phone = '+' + phone;
           if (fullName.length < 2) { toast('اكتب اسمك بالكامل', 'warn'); return; }
           if (!/^[a-zA-Z0-9_]{3,24}$/.test(username)) { toast('اسم المستخدم من 3 إلى 24 حرفاً إنجليزياً أو رقماً أو _', 'warn'); return; }
           if (!/^\+[1-9]\d{7,14}$/.test(phone)) { toast('اكتب رقم الهاتف مع مفتاح الدولة أو رقماً مصرياً صحيحاً', 'warn'); return; }
-          metadata = { full_name: fullName, username, phone };
+          metadata = { full_name: fullName, username, phone, account_type: $('#authAccountType').value === 'partner' ? 'partner' : 'owner' };
         }
         const b = $('#authSubmit'); b.disabled = true;
         try {
@@ -3884,7 +3897,12 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
     function initShell() {
       on(document, '#themeBtn', 'click', toggleTheme);
       on(document, '#wipeBtn', 'click', () => wipeAll());
-      on(document, '#saveNowBtn', 'click', () => { saveState(true); toast('تم الحفظ', 'ok'); });
+      on(document, '#saveNowBtn', 'click', async () => {
+        saveState(true);
+        if (!cloudReady()) { toast('تم الحفظ على هذا الجهاز فقط', 'ok'); return; }
+        try { await syncCloudState(); toast('تم حفظ البيانات في حسابك والسحابة', 'ok'); }
+        catch (e) { toast('حُفظت البيانات على هذا الجهاز، لكن تعذّر حفظها في السحابة: ' + (e.message || ''), 'bad'); }
+      });
       on(document, '#signOutBtn', 'click', async () => {
         // Finish the current cloud write before clearing the auth token. Starting
         // a write and immediately signing out can leave the last edit only local.
