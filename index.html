@@ -1396,6 +1396,27 @@ insert into public.bd_account_data(user_id)
 select id from auth.users
 on conflict (user_id) do nothing;
 
+-- Backfill profiles for accounts created before the profile trigger existed.
+with candidates as (
+  select u.id,
+         coalesce(u.raw_user_meta_data ->> 'full_name', '') as full_name,
+         nullif(lower(u.raw_user_meta_data ->> 'username'), '') as username,
+         coalesce(u.raw_user_meta_data ->> 'phone', '') as phone,
+         case when u.raw_user_meta_data ->> 'account_type' = 'partner' then 'partner' else 'owner' end as account_type,
+         case when lower(coalesce(u.email, '')) = 'youssef1mahmouf24@gmail.com' then 'site_admin' else 'member' end as site_role,
+         row_number() over (partition by lower(coalesce(nullif(u.raw_user_meta_data ->> 'username', ''), '#' || u.id::text)) order by u.created_at, u.id) as username_rank,
+         row_number() over (partition by coalesce(nullif(u.raw_user_meta_data ->> 'phone', ''), '#' || u.id::text) order by u.created_at, u.id) as phone_rank
+    from auth.users u
+)
+insert into public.bd_profiles(user_id, full_name, username, phone, account_type, site_role)
+select c.id, c.full_name,
+       case when c.username_rank = 1 and not exists (select 1 from public.bd_profiles p where lower(p.username) = lower(c.username)) then c.username else null end,
+       case when c.phone_rank = 1 and not exists (select 1 from public.bd_profiles p where p.phone = c.phone and p.phone <> '') then c.phone else '' end,
+       c.account_type, c.site_role
+  from candidates c
+ where not exists (select 1 from public.bd_profiles p where p.user_id = c.id)
+on conflict (user_id) do nothing;
+
 -- Keep the requested account as the main site administrator, including if it already exists.
 insert into public.bd_profiles(user_id, full_name, username, phone, account_type, site_role)
 select id, 'Youssef Mahmoud', 'youssef', '+201141030264', 'owner', 'site_admin'
@@ -1435,6 +1456,119 @@ create unique index if not exists bd_workspace_invite_email_unique
   on public.bd_workspace_members(workspace_id, lower(invite_email));
 create unique index if not exists bd_workspace_members_user_unique
   on public.bd_workspace_members(workspace_id, user_id) where user_id is not null;
+
+-- Account-level partnership requests require consent from both accounts.
+create table if not exists public.bd_partnership_requests (
+  id uuid primary key default gen_random_uuid(),
+  requester_id uuid not null references auth.users(id) on delete cascade,
+  target_id uuid not null references auth.users(id) on delete cascade,
+  status text not null default 'pending' check (status in ('pending', 'accepted', 'rejected')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (requester_id <> target_id)
+);
+create unique index if not exists bd_partnership_pair_unique
+  on public.bd_partnership_requests (least(requester_id, target_id), greatest(requester_id, target_id));
+alter table public.bd_partnership_requests enable row level security;
+drop policy if exists "Users read their partnership requests" on public.bd_partnership_requests;
+create policy "Users read their partnership requests" on public.bd_partnership_requests
+  for select to authenticated using (requester_id = (select auth.uid()) or target_id = (select auth.uid()));
+revoke all on public.bd_partnership_requests from anon, authenticated;
+grant select on public.bd_partnership_requests to authenticated;
+
+drop policy if exists "Partners can read linked account data" on public.bd_account_data;
+create policy "Partners can read linked account data" on public.bd_account_data
+  for select to authenticated using (
+    exists (
+      select 1 from public.bd_partnership_requests r
+       where r.status = 'accepted'
+         and ((r.requester_id = (select auth.uid()) and r.target_id = bd_account_data.user_id)
+           or (r.target_id = (select auth.uid()) and r.requester_id = bd_account_data.user_id))
+    )
+  );
+
+create or replace function public.bd_get_my_account_type()
+returns text language sql security definer set search_path = ''
+as $$
+  select coalesce((select p.account_type from public.bd_profiles p where p.user_id = auth.uid()), 'owner'::text);
+$$;
+
+create or replace function public.bd_search_partner_profiles(p_query text)
+returns table(user_id uuid, full_name text, username text, email text, account_type text)
+language plpgsql security definer set search_path = ''
+as $$
+declare v_query text := lower(trim(coalesce(p_query, '')));
+begin
+  if auth.uid() is null then raise exception 'يجب تسجيل الدخول أولاً'; end if;
+  if length(v_query) < 2 then raise exception 'اكتب الاسم أو البريد أو اسم المستخدم كاملاً'; end if;
+  return query
+    select p.user_id, p.full_name, coalesce(p.username, ''), u.email::text, p.account_type
+      from public.bd_profiles p join auth.users u on u.id = p.user_id
+     where p.user_id <> auth.uid()
+       and (lower(trim(coalesce(p.full_name, ''))) = v_query
+         or lower(trim(coalesce(p.username, ''))) = v_query
+         or lower(trim(coalesce(u.email, ''))) = v_query)
+     order by lower(p.full_name) limit 10;
+end;
+$$;
+
+create or replace function public.bd_create_partnership_request(p_target_id uuid)
+returns jsonb language plpgsql security definer set search_path = ''
+as $$
+declare v_existing public.bd_partnership_requests%rowtype;
+begin
+  if auth.uid() is null then raise exception 'يجب تسجيل الدخول أولاً'; end if;
+  if p_target_id is null or p_target_id = auth.uid() then raise exception 'اختر حساباً آخر'; end if;
+  if not exists (select 1 from public.bd_profiles p where p.user_id = p_target_id) then raise exception 'الحساب غير موجود'; end if;
+  select * into v_existing from public.bd_partnership_requests r
+   where least(r.requester_id, r.target_id) = least(auth.uid(), p_target_id)
+     and greatest(r.requester_id, r.target_id) = greatest(auth.uid(), p_target_id)
+   for update;
+  if found then
+    if v_existing.status = 'accepted' then raise exception 'أنتم مرتبطان بالفعل'; end if;
+    if v_existing.status = 'pending' and v_existing.target_id = auth.uid() then
+      update public.bd_partnership_requests set status = 'accepted', updated_at = now() where id = v_existing.id;
+      return jsonb_build_object('status', 'accepted');
+    elsif v_existing.status = 'pending' then
+      raise exception 'تم إرسال طلب لهذا الحساب بالفعل؛ انتظر موافقته';
+    end if;
+    update public.bd_partnership_requests set requester_id = auth.uid(), target_id = p_target_id,
+      status = 'pending', created_at = now(), updated_at = now() where id = v_existing.id;
+  else
+    insert into public.bd_partnership_requests(requester_id, target_id) values (auth.uid(), p_target_id);
+  end if;
+  return jsonb_build_object('status', 'pending');
+end;
+$$;
+
+create or replace function public.bd_respond_partnership_request(p_request_id uuid, p_accept boolean)
+returns void language plpgsql security definer set search_path = ''
+as $$
+declare v_count integer;
+begin
+  if auth.uid() is null then raise exception 'يجب تسجيل الدخول أولاً'; end if;
+  update public.bd_partnership_requests set status = case when p_accept then 'accepted' else 'rejected' end,
+      updated_at = now()
+    where id = p_request_id and target_id = auth.uid() and status = 'pending';
+  get diagnostics v_count = row_count;
+  if v_count <> 1 then raise exception 'الطلب غير موجود أو تمت معالجته من قبل'; end if;
+end;
+$$;
+
+create or replace function public.bd_list_partnerships()
+returns table(status text, request_id uuid, partner_user_id uuid, full_name text, username text, email text, account_type text)
+language sql security definer set search_path = ''
+as $$
+  select case when r.status = 'accepted' then 'accepted'
+              when r.target_id = auth.uid() then 'incoming' else 'outgoing' end,
+         r.id, other.user_id, coalesce(other.full_name, ''), coalesce(other.username, ''), u.email::text,
+         coalesce(other.account_type, 'owner')
+    from public.bd_partnership_requests r
+    join public.bd_profiles other on other.user_id = case when r.requester_id = auth.uid() then r.target_id else r.requester_id end
+    join auth.users u on u.id = other.user_id
+   where r.requester_id = auth.uid() or r.target_id = auth.uid()
+   order by r.updated_at desc;
+$$;
 
 alter table public.bd_account_data enable row level security;
 alter table public.bd_workspaces enable row level security;
@@ -1593,12 +1727,22 @@ revoke all on function public.bd_delete_workspace(uuid) from public;
 revoke all on function public.bd_save_workspace_project(uuid, jsonb) from public;
 revoke all on function public.bd_my_workspace_roles() from public;
 revoke all on function public.bd_list_workspace_members(uuid) from public;
+revoke all on function public.bd_get_my_account_type() from public;
+revoke all on function public.bd_search_partner_profiles(text) from public;
+revoke all on function public.bd_create_partnership_request(uuid) from public;
+revoke all on function public.bd_respond_partnership_request(uuid, boolean) from public;
+revoke all on function public.bd_list_partnerships() from public;
 grant execute on function public.bd_create_workspace_invite(jsonb, text, text, uuid) to authenticated;
 grant execute on function public.bd_accept_workspace_invite(uuid) to authenticated;
 grant execute on function public.bd_delete_workspace(uuid) to authenticated;
 grant execute on function public.bd_save_workspace_project(uuid, jsonb) to authenticated;
 grant execute on function public.bd_my_workspace_roles() to authenticated;
 grant execute on function public.bd_list_workspace_members(uuid) to authenticated;
+grant execute on function public.bd_get_my_account_type() to authenticated;
+grant execute on function public.bd_search_partner_profiles(text) to authenticated;
+grant execute on function public.bd_create_partnership_request(uuid) to authenticated;
+grant execute on function public.bd_respond_partnership_request(uuid, boolean) to authenticated;
+grant execute on function public.bd_list_partnerships() to authenticated;
 
 grant select, insert, update, delete on public.bd_account_data to authenticated;
 grant select on public.bd_profiles to authenticated;
@@ -1677,10 +1821,11 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
 -- Refresh the PostgREST function cache after installing or updating RPCs.
 notify pgrst, 'reload schema';
 `;
-    const CLOUD_SCHEMA_DOWNLOAD_VERSION = '2026-10-23-v2';
-    let SUPA = null, AUTH_USER = null, AUTH_ROLE = null, ROLE_PICKER_OPEN = false, AUTH_SITE_ROLE = 'member', CLOUD_BUSY = false, CLOUD_SYNC_PROMISE = null, SYNC_QUEUED = false, CLOUD_LOAD_WARNING = '', CLOUD_SCHEMA_MISSING = false;
+    const CLOUD_SCHEMA_DOWNLOAD_VERSION = '2026-10-23-v3';
+    let SUPA = null, AUTH_USER = null, AUTH_ROLE = null, AUTH_ACCOUNT_TYPE = 'owner', ROLE_PICKER_OPEN = false, AUTH_SITE_ROLE = 'member', CLOUD_BUSY = false, CLOUD_SYNC_PROMISE = null, SYNC_QUEUED = false, CLOUD_LOAD_WARNING = '', CLOUD_SCHEMA_MISSING = false;
     let WORKSPACE_ROLES = Object.create(null);
-    const READ_ONLY_ACTIONS = new Set(['export-json', 'export-csv', 'print-report', 'open-project']);
+    let PARTNERSHIP_STATE = { accepted: [], incoming: [], outgoing: [], results: [] };
+    const READ_ONLY_ACTIONS = new Set(['export-json', 'export-csv', 'print-report', 'open-project', 'search-partners', 'request-partnership', 'respond-partnership', 'refresh-partnerships']);
 
     /* ---------- tiny helpers ---------- */
     const $ = (s, r) => (r || document).querySelector(s);
@@ -1738,8 +1883,12 @@ notify pgrst, 'reload schema';
 
     function accountDataKey() { return APP.dataKey + (AUTH_USER ? '_' + AUTH_USER.id : ''); }
     function cloudReady() { return !!(SUPA && AUTH_USER); }
+    function stateForOwnAccount() {
+      return Object.assign({}, S, { projects: arr(S.projects).filter(project => !project._bdPartnerUserId) });
+    }
     function projectRole(project) {
       if (!project) return 'none';
+      if (project._bdPartnerUserId) return 'security';
       return project._bdWorkspaceId ? (WORKSPACE_ROLES[project._bdWorkspaceId] || 'assistant') : 'owner';
     }
     function canEditProject(project) { return projectRole(project) !== 'security'; }
@@ -1749,7 +1898,7 @@ notify pgrst, 'reload schema';
       STATE_REVISION++;
       clearTimeout(SAVE_TIMER);
       const doIt = () => {
-        const ok = lsSet(accountDataKey(), JSON.stringify(S));
+        const ok = lsSet(accountDataKey(), JSON.stringify(stateForOwnAccount()));
         const el = $('#saveState');
         if (!ok) {
           if (el) { el.textContent = 'تعذّر الحفظ المحلي — استخدم التصدير'; el.style.color = 'var(--danger)'; }
@@ -1912,6 +2061,7 @@ notify pgrst, 'reload schema';
     }
     async function enterApp(user) {
       AUTH_USER = user;
+      AUTH_ACCOUNT_TYPE = user && user.user_metadata && user.user_metadata.account_type === 'partner' ? 'partner' : 'owner';
       CLOUD_LOAD_WARNING = '';
       CLOUD_SCHEMA_MISSING = false;
       WORKSPACE_ROLES = Object.create(null);
@@ -1939,6 +2089,11 @@ notify pgrst, 'reload schema';
     }
     async function loadCloudState() {
       let migratedLegacy = false;
+      const { data: accountType, error: accountTypeError } = await SUPA.rpc('bd_get_my_account_type');
+      if (accountTypeError) throw accountTypeError;
+      AUTH_ACCOUNT_TYPE = accountType === 'partner' ? 'partner' : 'owner';
+      const accountLabel = $('#accountEmail');
+      if (accountLabel) accountLabel.textContent = (AUTH_USER.email || '') + (AUTH_ACCOUNT_TYPE === 'partner' ? ' · شريك في البيانات' : ' · صاحب مشروع');
       const { data: siteRole, error: siteRoleError } = await SUPA.rpc('bd_get_my_site_role');
       if (siteRoleError) throw siteRoleError;
       AUTH_SITE_ROLE = siteRole || 'member';
@@ -1946,6 +2101,15 @@ notify pgrst, 'reload schema';
       if (roleError) throw roleError;
       WORKSPACE_ROLES = Object.create(null);
       (roleRows || []).forEach(row => { WORKSPACE_ROLES[row.workspace_id] = row.role; });
+      const { data: partnerRows, error: partnerError } = await SUPA.rpc('bd_list_partnerships');
+      if (partnerError) throw partnerError;
+      PARTNERSHIP_STATE = { accepted: [], incoming: [], outgoing: [], results: [] };
+      (partnerRows || []).forEach(row => {
+        const entry = { requestId: row.request_id, userId: row.partner_user_id, fullName: row.full_name, username: row.username, email: row.email, accountType: row.account_type };
+        if (row.status === 'accepted') PARTNERSHIP_STATE.accepted.push(entry);
+        else if (row.status === 'incoming') PARTNERSHIP_STATE.incoming.push(entry);
+        else if (row.status === 'outgoing') PARTNERSHIP_STATE.outgoing.push(entry);
+      });
       const { data: account, error: accountErr } = await SUPA.from('bd_account_data').select('data').eq('user_id', AUTH_USER.id).maybeSingle();
       if (accountErr) throw accountErr;
       if (account && account.data) S = Object.assign(defaultState(), account.data);
@@ -1953,6 +2117,7 @@ notify pgrst, 'reload schema';
         const old = lsGet(APP.dataKey);
         if (old) { try { S = Object.assign(defaultState(), JSON.parse(old)); migratedLegacy = true; } catch (_) { } }
       }
+      S.projects = arr(S.projects).filter(project => !project._bdPartnerUserId);
       const { data: shared, error } = await SUPA.from('bd_workspaces').select('id,project,owner_id,partner_id');
       if (error) throw error;
       (shared || []).forEach(row => {
@@ -1962,6 +2127,23 @@ notify pgrst, 'reload schema';
         const i = S.projects.findIndex(x => x._bdWorkspaceId === row.id);
         if (i >= 0) S.projects[i] = p; else S.projects.push(p);
       });
+      if (PARTNERSHIP_STATE.accepted.length) {
+        const partnerIds = PARTNERSHIP_STATE.accepted.map(partner => partner.userId);
+        const { data: linkedAccounts, error: linkedError } = await SUPA.from('bd_account_data').select('user_id,data').in('user_id', partnerIds);
+        if (linkedError) throw linkedError;
+        (linkedAccounts || []).forEach(row => {
+          const partner = PARTNERSHIP_STATE.accepted.find(item => item.userId === row.user_id);
+          arr(row.data && row.data.projects).forEach(source => {
+            const project = Object.assign({}, source, {
+              id: 'linked_' + row.user_id + '_' + String(source.id || uid('project')),
+              _bdPartnerUserId: row.user_id,
+              _bdPartnerName: partner ? (partner.fullName || partner.username || partner.email) : ''
+            });
+            const normalized = normProject(project);
+            if (normalized) S.projects.push(normalized);
+          });
+        });
+      }
       S = Object.assign(defaultState(), S);
       S.projects = arr(S.projects).map(normProject).filter(Boolean);
       if (!byId(S.projects, S.activeProjectId)) S.activeProjectId = S.projects[0] && S.projects[0].id || null;
@@ -1979,7 +2161,7 @@ notify pgrst, 'reload schema';
       CLOUD_BUSY = true;
       const syncingRevision = STATE_REVISION;
       const sync = (async () => { try {
-        const privateState = Object.assign({}, S, { projects: S.projects.filter(p => !p._bdWorkspaceId) });
+        const privateState = Object.assign({}, S, { projects: S.projects.filter(p => !p._bdWorkspaceId && !p._bdPartnerUserId) });
         const { error } = await SUPA.from('bd_account_data').upsert({ user_id: AUTH_USER.id, data: privateState, updated_at: nowISO() }, { onConflict: 'user_id' });
         if (error) throw error;
         for (const project of S.projects.filter(p => p._bdWorkspaceId && canEditProject(p))) {
@@ -2014,6 +2196,29 @@ notify pgrst, 'reload schema';
         history.replaceState(null, '', location.pathname + location.hash);
         await loadCloudState(); render(); toast('تم قبول الدعوة ومشاركة المشروع معك', 'ok');
       } catch (e) { toast('تعذر قبول الدعوة: ' + e.message, 'bad'); }
+    }
+    async function searchPartnerProfiles() {
+      const query = ($('#partnerExactQuery') ? $('#partnerExactQuery').value : '').trim();
+      if (query.length < 2) { toast('اكتب الاسم الكامل أو البريد أو اسم المستخدم كاملاً.', 'warn'); return; }
+      const { data, error } = await SUPA.rpc('bd_search_partner_profiles', { p_query: query });
+      if (error) throw error;
+      PARTNERSHIP_STATE.results = data || [];
+      render();
+      if (!PARTNERSHIP_STATE.results.length) toast('لم يتم العثور على حساب مطابق تماماً.', 'info');
+    }
+    async function requestPartnership(userId) {
+      const { data, error } = await SUPA.rpc('bd_create_partnership_request', { p_target_id: userId });
+      if (error) throw error;
+      await loadCloudState();
+      render();
+      toast(data && data.status === 'accepted' ? 'وافق الطرفان؛ أصبحت المشاريع المشتركة ظاهرة للطرفين.' : 'أُرسل طلب الشراكة. تظهر المشاريع بعد موافقة الطرف الآخر.', 'ok');
+    }
+    async function respondPartnership(requestId, accept) {
+      const { error } = await SUPA.rpc('bd_respond_partnership_request', { p_request_id: requestId, p_accept: accept });
+      if (error) throw error;
+      await loadCloudState();
+      render();
+      toast(accept ? 'تمت الموافقة؛ أصبحت المشاريع ظاهرة للطرفين.' : 'تم رفض طلب الشراكة.', accept ? 'ok' : 'info');
     }
     async function createWorkspaceInvite(email, role) {
       const project = currentProject();
@@ -2747,8 +2952,10 @@ notify pgrst, 'reload schema';
       const pr = currentProject();
       let html = '';
       try {
-        if (!pr && VIEW !== 'projects' && VIEW !== 'data' && VIEW !== 'site-admin') {
-          html = emptyState('لا يوجد مشروع بعد', 'ابدأ مشروعاً جديداً لتتمكن من استخدام هذه الشاشة.', '📁', 'مشروع جديد', 'new-project');
+        if (!pr && VIEW !== 'projects' && VIEW !== 'data' && VIEW !== 'site-admin' && VIEW !== 'partners') {
+          html = AUTH_ACCOUNT_TYPE === 'partner'
+            ? emptyState('لا توجد مشاريع مشتركة بعد', 'ابحث عن صاحب المشروع من صفحة الشركاء لإرسال طلب شراكة.', '🤝')
+            : emptyState('لا يوجد مشروع بعد', 'ابدأ مشروعاً جديداً لتتمكن من استخدام هذه الشاشة.', '📁', 'مشروع جديد', 'new-project');
         } else {
           switch (VIEW) {
             case 'projects': html = viewProjects(); break;
@@ -2772,11 +2979,13 @@ notify pgrst, 'reload schema';
           '<div style="margin-top:12px"><button class="btn primary" onclick="location.reload()">إعادة تحميل الصفحة</button></div>' +
           '</div>';
       }
-      const readonly = isReadOnlyProject(pr);
+      const readonly = isReadOnlyProject(pr) && VIEW !== 'partners';
       host.classList.toggle('read-only', readonly);
       host.innerHTML = (CLOUD_LOAD_WARNING ? '<div class="msg warn" role="status" style="margin-bottom:12px">' + esc(CLOUD_LOAD_WARNING) +
         (CLOUD_SCHEMA_MISSING ? '<div class="row" style="margin-top:10px;gap:8px"><button class="btn" id="downloadCloudSchema">تنزيل أحدث ملف SQL</button><button class="btn primary" id="retryCloudSchema">تحقق الآن</button></div>' : '') + '</div>' : '') +
-        (readonly ? '<div class="readonly-banner">دور الأمن: يمكنك مشاهدة هذا المشروع فقط، ولا يمكنك تعديل بياناته.</div>' : '') + html;
+        (readonly ? '<div class="readonly-banner">' + (pr && pr._bdPartnerUserId
+          ? 'أنت شريك في البيانات لهذا المشروع: يمكنك مشاهدته، ويظل التعديل لصاحب المشروع.'
+          : 'دور الأمن: يمكنك مشاهدة هذا المشروع فقط، ولا يمكنك تعديل بياناته.') + '</div>' : '') + html;
       on(host, '#downloadCloudSchema', 'click', () => download('supabase-setup.sql', CLOUD_SCHEMA_SQL, 'text/plain;charset=utf-8'));
       on(host, '#retryCloudSchema', 'click', async (event) => {
         const button = event.currentTarget;
@@ -2843,14 +3052,16 @@ notify pgrst, 'reload schema';
        VIEW: PROJECTS
        ===================================================================== */
     function viewProjects() {
-      let html = pageHead('المشاريع', 'أنشئ مشروعاً، أضف المشاركين، ثم ابدأ الاستبيان.');
+      let html = pageHead('المشاريع', AUTH_ACCOUNT_TYPE === 'partner' ? 'المشاريع التي يشاركها معك أصحابها تظهر هنا للعرض.' : 'أنشئ مشروعاً، أضف المشاركين، ثم ابدأ الاستبيان.');
       html += '<div class="row no-print" style="margin-bottom:14px">' +
-        '<button class="btn primary" data-act="new-project">+ مشروع جديد</button>' +
+        (AUTH_ACCOUNT_TYPE !== 'partner' ? '<button class="btn primary" data-act="new-project">+ مشروع جديد</button>' : '') +
         '<button class="btn" data-act="import-json">استيراد ملف</button>' +
         '<button class="btn ghost" data-act="export-json">تصدير نسخة</button></div>';
       const list = arr(S.projects);
       if (!list.length) {
-        html += card('', emptyState('لا توجد مشاريع بعد', 'ابدأ بمشروع واحد وابدأ الإجابة.', '📁', 'مشروع جديد', 'new-project'));
+        html += card('', AUTH_ACCOUNT_TYPE === 'partner'
+          ? emptyState('لا توجد مشاريع مشتركة بعد', 'ابحث عن صاحب المشروع باسمه أو بريده أو اسم المستخدم من صفحة الشركاء.', '🤝')
+          : emptyState('لا توجد مشاريع بعد', 'ابدأ بمشروع واحد وابدأ الإجابة.', '📁', 'مشروع جديد', 'new-project'));
         return html;
       }
       html += '<div class="grid g2">';
@@ -2862,6 +3073,7 @@ notify pgrst, 'reload schema';
           '<div class="row"><h4 style="margin:0;flex:1">' + esc(p.name) + '</h4>' +
           '<span class="pill ' + toneClass(v.tone) + '">' + esc(v.label) + '</span></div>' +
           '<div class="tiny muted" style="margin:6px 0">أُنشئ ' + esc((p.createdAt || '').slice(0, 10)) + ' · ' + pts.length + ' مشارك</div>' +
+          (p._bdPartnerUserId ? '<div class="tiny muted">مشروع مشترك من ' + esc(p._bdPartnerName || 'شريكك') + ' · عرض فقط</div>' : '') +
           '<div class="score-pill">' + (v.score || 0) + ' / 100</div>' +
           '<div style="margin-top:6px">' + progressBar(v.score) + '</div>' +
           '<div class="row" style="margin-top:10px">' +
@@ -3241,22 +3453,43 @@ notify pgrst, 'reload schema';
 
     function viewPartners() {
       const shared = S.projects.filter(p => p._bdWorkspaceId);
-      let html = pageHead('فريق العمل والدعوات', 'أضف أشخاصاً إلى المشروع المحدد، ولكل شخص حسابه ودوره الخاص.');
+      const linkedProjects = S.projects.filter(p => p._bdPartnerUserId);
+      let html = pageHead('الشركاء وطلبات الموافقة', 'ابحث بالاسم الكامل أو البريد أو اسم المستخدم المطابق تماماً. لا تظهر المشاريع للطرفين إلا بعد موافقة الطرف الذي استقبل الطلب.');
       const pr = currentProject();
       const owner = canManageProject(pr);
-      const role = projectRole(pr);
-      html += card('أعضاء المشروع الحالي',
-        '<p>المشروع المحدد: <strong>' + esc(pr ? pr.name : 'لا يوجد مشروع محدد') + '</strong></p>' +
-        (owner
-          ? '<div class="row" style="align-items:end"><label style="flex:1;min-width:180px">دور العضو الجديد<select id="inviteRole" style="display:block;margin-top:6px;width:100%"><option value="assistant">مساعد — مشاهدة وتعديل</option><option value="security">أمن — مشاهدة فقط</option></select></label>' +
-            '<button class="btn primary" data-act="invite-partner"' + (!pr ? ' disabled' : '') + '>دعوة عضو</button></div>' +
-            '<div class="hint" style="margin-top:10px">أدخل بريد الشخص بعد الضغط على الدعوة. ينشئ الشخص حسابه بنفس البريد، ثم يفتح رابط الدعوة لقبولها.</div>' +
-            (pr && pr._bdWorkspaceId ? '<div id="teamRoster" class="hint" style="margin-top:12px">جارٍ تحميل أعضاء الفريق…</div>' : '<div class="hint" style="margin-top:10px">بعد أول دعوة سيصبح المشروع مشتركاً، ويمكنك إضافة مساعدين وأفراد أمن آخرين.</div>')
-          : '<div class="hint">صلاحيتك في هذا المشروع: <strong>' + (role === 'security' ? 'الأمن — مشاهدة فقط' : 'المساعد — مشاهدة وتعديل') + '</strong>. المالك وحده يرسل الدعوات.</div>'));
-      html += card('المشاريع المشتركة (' + shared.length + ')', shared.length
-        ? '<ul>' + shared.map(p => '<li>' + esc(p.name) + '</li>').join('') + '</ul>'
-        : '<div class="tiny muted">لم تقبل أو ترسل دعوة لمشروع بعد.</div>');
-      html += card('قبول دعوة', '<p>افتح رابط الدعوة الذي وصلك بعد تسجيل الدخول بالحساب المسجل بالبريد الذي أرسل إليه صاحب المشروع الدعوة.</p>');
+      html += card('ابحث عن صاحب مشروع أو شريك',
+        '<div class="row" style="align-items:end"><label style="flex:1;min-width:220px">الاسم الكامل أو البريد أو اسم المستخدم' +
+          '<input id="partnerExactQuery" type="search" autocomplete="off" placeholder="اكتب القيمة كاملة كما سُجلت" style="display:block;margin-top:6px;width:100%"></label>' +
+          '<button class="btn primary" data-act="search-partners">بحث مطابق</button><button class="btn" data-act="refresh-partnerships">تحديث</button></div>' +
+          '<div class="hint" style="margin-top:10px">البحث يطابق القيمة كاملة فقط. عندما يرسل أحدكما طلباً، يظل المشروع خاصاً حتى يوافق الطرف الآخر. بعد الموافقة يرى كل طرف مشاريع الآخر للعرض.</div>' +
+          (PARTNERSHIP_STATE.results.length ? '<div style="margin-top:12px"><strong>نتائج مطابقة</strong><ul>' + PARTNERSHIP_STATE.results.map(result => {
+            const connected = PARTNERSHIP_STATE.accepted.some(item => item.userId === result.user_id);
+            const sent = PARTNERSHIP_STATE.outgoing.some(item => item.userId === result.user_id);
+            const received = PARTNERSHIP_STATE.incoming.some(item => item.userId === result.user_id);
+            const status = connected ? 'شريك مرتبط' : sent ? 'بانتظار موافقته' : received ? 'لديك طلب وارد — وافق عليه أدناه' : '';
+            return '<li><strong>' + esc(result.full_name || 'حساب بدون اسم') + '</strong> · ' + esc(result.email || '') +
+              (result.username ? ' · @' + esc(result.username) : '') + ' · ' + esc(result.account_type === 'partner' ? 'شريك في البيانات' : 'صاحب مشروع') +
+              (status ? ' — ' + esc(status) : ' <button class="btn sm" data-act="request-partnership" data-id="' + esc(result.user_id) + '">إرسال طلب شراكة</button>') + '</li>';
+          }).join('') + '</ul></div>' : ''));
+      html += card('طلبات تنتظر موافقتك (' + PARTNERSHIP_STATE.incoming.length + ')', PARTNERSHIP_STATE.incoming.length
+        ? '<ul>' + PARTNERSHIP_STATE.incoming.map(item => '<li><strong>' + esc(item.fullName || item.email) + '</strong> · ' + esc(item.email) + ' · يريد مشاركة المشاريع معك. ' +
+          '<button class="btn sm primary" data-act="respond-partnership" data-id="' + esc(item.requestId) + '" data-accept="true">موافقة</button> ' +
+          '<button class="btn sm danger" data-act="respond-partnership" data-id="' + esc(item.requestId) + '" data-accept="false">رفض</button></li>').join('') + '</ul>'
+        : '<div class="tiny muted">لا توجد طلبات واردة.</div>');
+      html += card('طلباتك المرسلة (' + PARTNERSHIP_STATE.outgoing.length + ')', PARTNERSHIP_STATE.outgoing.length
+        ? '<ul>' + PARTNERSHIP_STATE.outgoing.map(item => '<li>' + esc(item.fullName || item.email) + ' · ' + esc(item.email) + ' — بانتظار موافقته.</li>').join('') + '</ul>'
+        : '<div class="tiny muted">لا توجد طلبات معلقة أرسلتها.</div>');
+      html += card('الشركاء المرتبطون (' + PARTNERSHIP_STATE.accepted.length + ')', PARTNERSHIP_STATE.accepted.length
+        ? '<ul>' + PARTNERSHIP_STATE.accepted.map(item => '<li><strong>' + esc(item.fullName || item.email) + '</strong> · ' + esc(item.email) + ' · ' + esc(item.accountType === 'partner' ? 'شريك في البيانات' : 'صاحب مشروع') + '</li>').join('') + '</ul>'
+        : '<div class="tiny muted">لا يوجد ارتباط بعد.</div>');
+      html += card('مشاريع يشاركها شركاؤك (' + linkedProjects.length + ')', linkedProjects.length
+        ? '<ul>' + linkedProjects.map(p => '<li>' + esc(p.name) + ' — من ' + esc(p._bdPartnerName || 'شريك') + '، للعرض فقط</li>').join('') + '</ul>'
+        : '<div class="tiny muted">بعد الموافقة، ستظهر هنا مشاريع شركائك. أنت وحدك تقرر مشاركة مشاريعك بالموافقة على طلب الشراكة.</div>');
+      if (pr && pr._bdWorkspaceId && owner) html += card('أعضاء المشروع والدعوات الإضافية', '<div id="teamRoster" class="hint">جارٍ تحميل أعضاء الفريق…</div>');
+      if (shared.length) html += card('مشاريع تشاركها أنت (' + shared.length + ')', '<ul>' + shared.map(p => '<li>' + esc(p.name) + ' — يشاركها حسابك</li>').join('') + '</ul>');
+      html += card('الدور الحالي', '<div class="hint">' + esc(AUTH_ACCOUNT_TYPE === 'partner'
+        ? 'شريك في البيانات — يمكنك رؤية المشاريع التي وافق أصحابها على مشاركتها. إنشاء مشروع جديد غير متاح لهذا النوع من الحسابات.'
+        : (pr && owner ? 'صاحب المشروع المحدد — أنت توافق على طلبات مشاركة مشاريع حسابك.' : 'صاحب مشروع — لا يوجد مشروع محدد حالياً.')) + '</div>');
       return html;
     }
     async function refreshWorkspaceRoster(workspaceId) {
@@ -3373,6 +3606,7 @@ notify pgrst, 'reload schema';
       };
     }
     function newProject() {
+      if (AUTH_ACCOUNT_TYPE === 'partner') { toast('إنشاء المشاريع متاح لحساب صاحب المشروع. يمكنك طلب الشراكة من صفحة الشركاء.', 'warn'); return; }
       promptText('مشروع جديد', 'اسم المشروع', '', (name) => {
         const p = makeProject(name);
         S.projects.push(p);
@@ -3735,6 +3969,24 @@ notify pgrst, 'reload schema';
       const pr = currentProject();
       const pt = currentParticipant();
       switch (act) {
+        case 'search-partners':
+          if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
+          searchPartnerProfiles().catch(e => toast('تعذر البحث عن الحساب: ' + (e.message || ''), 'bad'));
+          break;
+        case 'refresh-partnerships':
+          if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
+          loadCloudState().then(() => { render(); toast('تم تحديث طلبات الشراكة والمشاريع المشتركة.', 'ok'); })
+            .catch(e => toast('تعذر تحديث الطلبات: ' + (e.message || ''), 'bad'));
+          break;
+        case 'request-partnership':
+          if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
+          requestPartnership(id).catch(e => toast('تعذر إرسال طلب الشراكة: ' + (e.message || ''), 'bad'));
+          break;
+        case 'respond-partnership':
+          if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
+          respondPartnership(id, el && el.getAttribute('data-accept') === 'true')
+            .catch(e => toast('تعذر معالجة طلب الشراكة: ' + (e.message || ''), 'bad'));
+          break;
         case 'invite-partner':
           if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
           promptText('دعوة شريك', 'البريد الإلكتروني للشريك', '', (email) => {
@@ -4007,7 +4259,7 @@ notify pgrst, 'reload schema';
         }
         const { error } = await SUPA.auth.signOut();
         if (error) { toast('تعذر تسجيل الخروج: ' + error.message, 'bad'); return; }
-        AUTH_USER = null; AUTH_ROLE = null; AUTH_SITE_ROLE = 'member'; WORKSPACE_ROLES = Object.create(null); $('#accountEmail').textContent = ''; $('#signOutBtn').style.display = 'none';
+        AUTH_USER = null; AUTH_ROLE = null; AUTH_ACCOUNT_TYPE = 'owner'; AUTH_SITE_ROLE = 'member'; WORKSPACE_ROLES = Object.create(null); PARTNERSHIP_STATE = { accepted: [], incoming: [], outgoing: [], results: [] }; $('#accountEmail').textContent = ''; $('#signOutBtn').style.display = 'none';
         $('.app').style.display = 'none'; S = defaultState(); authScreen('تم تسجيل الخروج.', 'login');
       });
       on(document, '#menuBtn', 'click', () => {
@@ -4036,7 +4288,7 @@ notify pgrst, 'reload schema';
         if (!AUTH_USER) return;
         // localStorage is synchronous; persist here even if the browser closes
         // before a pending debounce fires, then begin the remote write.
-        const ok = lsSet(accountDataKey(), JSON.stringify(S));
+      const ok = lsSet(accountDataKey(), JSON.stringify(stateForOwnAccount()));
         if (!ok) {
           const el = $('#saveState');
           if (el) { el.textContent = 'تعذّر الحفظ المحلي — استخدم التصدير'; el.style.color = 'var(--danger)'; }
@@ -4052,7 +4304,7 @@ notify pgrst, 'reload schema';
       });
       window.setInterval(() => {
         if (!AUTH_USER) return;
-        const ok = lsSet(accountDataKey(), JSON.stringify(S));
+        const ok = lsSet(accountDataKey(), JSON.stringify(stateForOwnAccount()));
         if (!ok) {
           const el = $('#saveState');
           if (el) { el.textContent = 'تعذّر الحفظ المحلي — استخدم التصدير'; el.style.color = 'var(--danger)'; }
