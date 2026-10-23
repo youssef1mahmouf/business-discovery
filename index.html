@@ -1553,6 +1553,42 @@ begin
 end;
 $$;
 
+-- Return only the pending invitations addressed to the signed-in user's email.
+-- The invitee can see request metadata without gaining access to the project data.
+create or replace function public.bd_list_my_pending_invites()
+returns table(
+  invite_code uuid,
+  workspace_id uuid,
+  request_kind text,
+  sender_name text,
+  sender_email text,
+  project_name text,
+  role text,
+  created_at timestamptz
+)
+language sql
+security definer
+set search_path = ''
+as $$
+  select m.invite_code,
+         m.workspace_id,
+         case when w.project ->> '__bdFriendRequest' = 'true' then 'friend' else 'project' end,
+         coalesce(nullif(p.full_name, ''), nullif(p.username, ''), u.email, 'حساب')::text,
+         u.email::text,
+         coalesce(w.project ->> 'name', 'مشروع مشترك')::text,
+         m.role,
+         m.created_at
+    from public.bd_workspace_members m
+    join public.bd_workspaces w on w.id = m.workspace_id
+    left join public.bd_profiles p on p.user_id = w.owner_id
+    left join auth.users u on u.id = w.owner_id
+   where auth.uid() is not null
+     and m.user_id is null
+     and m.invite_code is not null
+     and lower(m.invite_email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+   order by m.created_at desc;
+$$;
+
 create or replace function public.bd_delete_workspace(p_id uuid)
 returns void
 language plpgsql
@@ -1591,12 +1627,14 @@ $$;
 
 revoke all on function public.bd_create_workspace_invite(jsonb, text, text, uuid) from public;
 revoke all on function public.bd_accept_workspace_invite(uuid) from public;
+revoke all on function public.bd_list_my_pending_invites() from public;
 revoke all on function public.bd_delete_workspace(uuid) from public;
 revoke all on function public.bd_save_workspace_project(uuid, jsonb) from public;
 revoke all on function public.bd_my_workspace_roles() from public;
 revoke all on function public.bd_list_workspace_members(uuid) from public;
 grant execute on function public.bd_create_workspace_invite(jsonb, text, text, uuid) to authenticated;
 grant execute on function public.bd_accept_workspace_invite(uuid) to authenticated;
+grant execute on function public.bd_list_my_pending_invites() to authenticated;
 grant execute on function public.bd_delete_workspace(uuid) to authenticated;
 grant execute on function public.bd_save_workspace_project(uuid, jsonb) to authenticated;
 grant execute on function public.bd_my_workspace_roles() to authenticated;
@@ -1679,7 +1717,7 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
 -- Refresh the PostgREST function cache after installing or updating RPCs.
 notify pgrst, 'reload schema';
 `;
-    const CLOUD_SCHEMA_DOWNLOAD_VERSION = '2026-10-23-v2';
+    const CLOUD_SCHEMA_DOWNLOAD_VERSION = '2026-10-23-v3';
     let SUPA = null, AUTH_USER = null, AUTH_ROLE = null, AUTH_ACCOUNT_TYPE = 'owner', ROLE_PICKER_OPEN = false, AUTH_SITE_ROLE = 'member', CLOUD_BUSY = false, CLOUD_SYNC_PROMISE = null, SYNC_QUEUED = false, CLOUD_LOAD_WARNING = '', CLOUD_SCHEMA_MISSING = false;
     let WORKSPACE_ROLES = Object.create(null);
     let PROJECT_SYNC_FINGERPRINTS = Object.create(null);
@@ -1688,7 +1726,9 @@ notify pgrst, 'reload schema';
     let PENDING_INVITE_CODE = '';
     let PENDING_INVITE_KIND = 'project';
     let PENDING_INVITE_FROM = '';
-    const READ_ONLY_ACTIONS = new Set(['export-json', 'export-csv', 'print-report', 'open-project', 'search-partners', 'request-partnership', 'refresh-partnerships', 'accept-workspace-invite', 'dismiss-workspace-invite']);
+    let INCOMING_INVITES = [];
+    let INVITE_INBOX_TIMER = null;
+    const READ_ONLY_ACTIONS = new Set(['export-json', 'export-csv', 'print-report', 'open-project', 'search-partners', 'request-partnership', 'refresh-partnerships', 'accept-workspace-invite', 'accept-inbox-invite', 'dismiss-workspace-invite']);
 
     /* ---------- tiny helpers ---------- */
     const $ = (s, r) => (r || document).querySelector(s);
@@ -1973,6 +2013,21 @@ notify pgrst, 'reload schema';
         toast('تم الدخول، لكن المزامنة تحتاج إعداد قاعدة البيانات.', 'bad');
       }
       render();
+      if (!INVITE_INBOX_TIMER) INVITE_INBOX_TIMER = setInterval(async () => {
+        if (!cloudReady() || VIEW !== 'partners' || document.hidden) return;
+        try {
+          const before = JSON.stringify(INCOMING_INVITES);
+          await refreshIncomingInvites();
+          if (before !== JSON.stringify(INCOMING_INVITES)) render();
+        } catch (e) { console.warn('Could not refresh incoming invitations:', e); }
+      }, 20000);
+    }
+    async function refreshIncomingInvites() {
+      if (!cloudReady()) { INCOMING_INVITES = []; return; }
+      const { data, error } = await SUPA.rpc('bd_list_my_pending_invites');
+      if (error) throw error;
+      INCOMING_INVITES = arr(data).filter(invite => invite && invite.invite_code);
+      return INCOMING_INVITES;
     }
     async function loadCloudState() {
       let migratedLegacy = false;
@@ -2030,6 +2085,7 @@ notify pgrst, 'reload schema';
         await syncCloudState();
         if (migratedLegacy) lsDel(APP.dataKey);
       }
+      await refreshIncomingInvites();
       const inviteParams = new URLSearchParams(location.search);
       const code = inviteParams.get('invite') || lsGet(PENDING_INVITE_KEY);
       if (code) {
@@ -2090,13 +2146,15 @@ notify pgrst, 'reload schema';
       try {
         const { error } = await SUPA.rpc('bd_accept_workspace_invite', { p_code: code });
         if (error) throw error;
-        lsDel(PENDING_INVITE_KEY);
-        lsDel(PENDING_INVITE_KIND_KEY);
-        lsDel(PENDING_INVITE_FROM_KEY);
-        PENDING_INVITE_CODE = '';
-        PENDING_INVITE_KIND = 'project';
-        PENDING_INVITE_FROM = '';
-        history.replaceState(null, '', location.pathname + location.hash);
+        if (String(PENDING_INVITE_CODE) === String(code)) {
+          lsDel(PENDING_INVITE_KEY);
+          lsDel(PENDING_INVITE_KIND_KEY);
+          lsDel(PENDING_INVITE_FROM_KEY);
+          PENDING_INVITE_CODE = '';
+          PENDING_INVITE_KIND = 'project';
+          PENDING_INVITE_FROM = '';
+          history.replaceState(null, '', location.pathname + location.hash);
+        }
         await loadCloudState(); render(); toast('تم قبول الطلب. أصبحتما أصدقاء ويمكنكما مشاركة المشاريع بموافقة كل صاحب مشروع.', 'ok');
       } catch (e) { toast('تعذر قبول الدعوة: ' + e.message, 'bad'); }
     }
@@ -2158,12 +2216,12 @@ notify pgrst, 'reload schema';
       const label = encodeURIComponent(String(metadata.full_name || metadata.name || AUTH_USER.email || 'مستخدم'));
       const link = location.origin + location.pathname + '?invite=' + encodeURIComponent(data.invite_code) + '&friend=1&from=' + label;
       const safeName = esc(metadata.full_name || metadata.name || AUTH_USER.email || 'مستخدم');
-      openModal('طلب صداقة', '<p>أرسل طلب صداقة إلى <strong>' + esc(normalizedEmail) + '</strong>. لا تُشارك أي مشاريع بمجرد قبول الصداقة؛ يختار صاحب كل مشروع ما يشاركه لاحقاً.</p><label>رابط الطلب</label><input id="inviteLink" type="text" readonly value="' + esc(link) + '"><div class="hint" style="margin-top:8px">الطلب من: ' + safeName + '. أرسل الرابط للشخص المطلوب، ويحتاج إلى تسجيل الدخول ببريده ثم الضغط على «قبول طلب الصداقة».</div>', () => {
+      openModal('طلب صداقة', '<p>أُرسل الطلب إلى <strong>' + esc(normalizedEmail) + '</strong> وسيظهر تلقائياً في صندوق الطلبات لديه عند تسجيل الدخول. قبول الصداقة لا يشارك أي مشروع؛ لكل صاحب مشروع موافقة مستقلة.</p><label>رابط احتياطي عند الحاجة</label><input id="inviteLink" type="text" readonly value="' + esc(link) + '"><div class="hint" style="margin-top:8px">الطلب من: ' + safeName + '. لا يلزم إرسال الرابط عادةً؛ استخدمه فقط إذا لم يظهر الطلب بعد التحديث.</div>', () => {
         const input = $('#inviteLink'); input.select();
-        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(() => toast('تم نسخ رابط طلب الصداقة', 'ok')).catch(() => document.execCommand('copy'));
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(() => toast('تم نسخ الرابط الاحتياطي', 'ok')).catch(() => document.execCommand('copy'));
         else document.execCommand('copy');
         return true;
-      }, 'نسخ الرابط');
+      }, 'نسخ الرابط الاحتياطي');
       PARTNERSHIP_STATE.results = [];
       await loadCloudState();
       render();
@@ -2187,12 +2245,12 @@ notify pgrst, 'reload schema';
       saveState(true);
       const link = location.origin + location.pathname + '?invite=' + encodeURIComponent(data.invite_code);
       const roleLabel = role === 'security' ? 'شريك عادي — مشاهدة فقط' : 'مساعد — مشاهدة وتعديل';
-      openModal('طلب مشاركة مشروع', '<p>أرسل الدعوة إلى <strong>' + esc(email) + '</strong>. عند قبولها سيرى الشخص المشروع والحقول التي سمحت بمشاركتها، بصلاحية <strong>' + roleLabel + '</strong>.</p><input id="inviteLink" type="text" readonly value="' + esc(link) + '">', () => {
+      openModal('طلب مشاركة مشروع', '<p>أُرسلت الدعوة إلى <strong>' + esc(email) + '</strong> وستظهر تلقائياً في صندوق الطلبات لديه. بعد القبول، يرى المشروع وفق الصلاحية <strong>' + roleLabel + '</strong>.</p><label>رابط احتياطي عند الحاجة</label><input id="inviteLink" type="text" readonly value="' + esc(link) + '"><div class="hint" style="margin-top:8px">لا يلزم إرسال الرابط عادةً؛ استخدمه فقط إذا لم تظهر الدعوة بعد التحديث.</div>', () => {
         const input = $('#inviteLink'); input.select();
-        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(() => toast('تم نسخ رابط الدعوة', 'ok')).catch(() => document.execCommand('copy'));
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(() => toast('تم نسخ الرابط الاحتياطي', 'ok')).catch(() => document.execCommand('copy'));
         else document.execCommand('copy');
         return true;
-      }, 'نسخ الرابط');
+      }, 'نسخ الرابط الاحتياطي');
       render();
     }
     function canManageProject(project) { return !!project && projectRole(project) === 'owner'; }
@@ -3426,6 +3484,17 @@ notify pgrst, 'reload schema';
       const pr = currentProject();
       const owner = canManageProject(pr);
       const shareAccess = pr && pr._bdSharing || { participants: true, answers: true };
+      html += card('طلبات واردة (' + INCOMING_INVITES.length + ')', INCOMING_INVITES.length
+        ? '<ul>' + INCOMING_INVITES.map(invite => {
+          const isFriend = invite.request_kind === 'friend';
+          const roleLabel = invite.role === 'assistant' ? 'مساعد — مشاهدة وتعديل' : 'شريك عادي — مشاهدة فقط';
+          return '<li style="margin:10px 0"><strong>' + esc(isFriend ? 'طلب صداقة' : 'دعوة مشروع: ' + (invite.project_name || 'مشروع مشترك')) + '</strong>' +
+            ' · من ' + esc(invite.sender_name || invite.sender_email || 'حساب') +
+            (invite.sender_email ? ' · ' + esc(invite.sender_email) : '') +
+            (isFriend ? '' : ' · ' + esc(roleLabel)) +
+            ' <button class="btn sm primary" data-act="accept-inbox-invite" data-id="' + esc(invite.invite_code) + '">' + (isFriend ? 'قبول الصداقة' : 'قبول دعوة المشروع') + '</button></li>';
+        }).join('') + '</ul><div class="tiny muted">تُحدّث هذه القائمة تلقائياً كل 20 ثانية أثناء فتح صفحة الشركاء.</div>'
+        : '<div class="tiny muted">لا توجد طلبات واردة الآن. تُحدّث القائمة تلقائياً كل 20 ثانية أثناء فتح هذه الصفحة.</div>');
       if (PENDING_INVITE_CODE) html += card(PENDING_INVITE_KIND === 'friend' ? 'طلب صداقة وارد' : 'طلب مشاركة مشروع وارد',
         '<div class="hint">' + (PENDING_INVITE_KIND === 'friend'
           ? 'قبول هذا الطلب يضيف الحساب إلى قائمة أصدقائك فقط. لا يفتح أي مشروع تلقائياً؛ مشاركة كل مشروع تحتاج موافقة صاحبه.'
@@ -3437,7 +3506,7 @@ notify pgrst, 'reload schema';
           '<button class="btn primary" data-act="search-partners">' + (AUTH_SITE_ROLE === 'site_admin' ? 'بحث مطابق' : 'إرسال طلب صداقة') + '</button><button class="btn" data-act="refresh-partnerships">تحديث</button></div>' +
           '<div class="hint" style="margin-top:10px">' + (AUTH_SITE_ROLE === 'site_admin'
             ? 'ابحث بمطابقة كاملة، ثم أرسل طلب صداقة. قبول الطلب لا يشارك أي مشروع تلقائياً.'
-            : 'اكتب البريد الإلكتروني كاملاً. أرسل رابط الطلب للشخص؛ وبعد قبوله تظهر الصداقة هنا. بعدها يختار كل صاحب مشروع ما يشاركه.') + '</div>' +
+            : 'اكتب البريد الإلكتروني كاملاً. يظهر الطلب تلقائياً في صندوق الطلبات لدى الطرف الآخر؛ الرابط متاح كحل احتياطي. وبعد القبول يختار كل صاحب مشروع ما يشاركه.') + '</div>' +
           (PARTNERSHIP_STATE.results.length ? '<div style="margin-top:12px"><strong>نتائج مطابقة</strong><ul>' + PARTNERSHIP_STATE.results.map(result => {
             return '<li><strong>' + esc(result.full_name || 'حساب بدون اسم') + '</strong> · ' + esc(result.email || '') +
               (result.username ? ' · @' + esc(result.username) : '') +
@@ -4013,6 +4082,10 @@ notify pgrst, 'reload schema';
         }
         case 'accept-workspace-invite':
           if (cloudReady() && PENDING_INVITE_CODE) acceptWorkspaceInvite(PENDING_INVITE_CODE);
+          break;
+        case 'accept-inbox-invite':
+          if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
+          if (id) acceptWorkspaceInvite(id);
           break;
         case 'dismiss-workspace-invite':
           dismissPendingInvite();
