@@ -1657,7 +1657,7 @@ grant execute on function public.bd_get_my_site_role() to authenticated;
 grant execute on function public.bd_admin_list_accounts() to authenticated;
 grant execute on function public.bd_admin_set_site_role(uuid, text) to authenticated;
 `;
-    let SUPA = null, AUTH_USER = null, AUTH_ROLE = null, ROLE_PICKER_OPEN = false, AUTH_SITE_ROLE = 'member', CLOUD_BUSY = false, SYNC_QUEUED = false, CLOUD_LOAD_WARNING = '';
+    let SUPA = null, AUTH_USER = null, AUTH_ROLE = null, ROLE_PICKER_OPEN = false, AUTH_SITE_ROLE = 'member', CLOUD_BUSY = false, CLOUD_SYNC_PROMISE = null, SYNC_QUEUED = false, CLOUD_LOAD_WARNING = '';
     let WORKSPACE_ROLES = Object.create(null);
     const READ_ONLY_ACTIONS = new Set(['export-json', 'export-csv', 'print-report', 'open-project']);
 
@@ -1933,10 +1933,10 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
     }
     async function syncCloudState() {
       if (!cloudReady()) return;
-      if (CLOUD_BUSY) { SYNC_QUEUED = true; return; }
+      if (CLOUD_BUSY) { SYNC_QUEUED = true; return CLOUD_SYNC_PROMISE; }
       CLOUD_BUSY = true;
       const syncingRevision = STATE_REVISION;
-      try {
+      const sync = (async () => { try {
         const privateState = Object.assign({}, S, { projects: S.projects.filter(p => !p._bdWorkspaceId) });
         const { error } = await SUPA.from('bd_account_data').upsert({ user_id: AUTH_USER.id, data: privateState, updated_at: nowISO() }, { onConflict: 'user_id' });
         if (error) throw error;
@@ -1953,8 +1953,16 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
         }
       } finally {
         CLOUD_BUSY = false;
-        if (SYNC_QUEUED) { SYNC_QUEUED = false; syncCloudState().catch(e => { console.error('cloud sync failed', e); toast('تعذرت المزامنة مع السحابة: ' + (e.message || ''), 'bad'); }); }
+        if (SYNC_QUEUED) {
+          SYNC_QUEUED = false;
+          try { await syncCloudState(); }
+          catch (e) { console.error('queued cloud sync failed', e); throw e; }
+        }
       }
+      })();
+      CLOUD_SYNC_PROMISE = sync;
+      try { return await sync; }
+      finally { if (CLOUD_SYNC_PROMISE === sync) CLOUD_SYNC_PROMISE = null; }
     }
     async function acceptWorkspaceInvite(code) {
       try {
@@ -3878,7 +3886,16 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
       on(document, '#wipeBtn', 'click', () => wipeAll());
       on(document, '#saveNowBtn', 'click', () => { saveState(true); toast('تم الحفظ', 'ok'); });
       on(document, '#signOutBtn', 'click', async () => {
+        // Finish the current cloud write before clearing the auth token. Starting
+        // a write and immediately signing out can leave the last edit only local.
         saveState(true);
+        if (cloudReady()) {
+          try { await syncCloudState(); }
+          catch (e) {
+            toast('لم يتم تسجيل الخروج لأن آخر التغييرات لم تصل إلى السحابة. تحقق من الاتصال ثم حاول مجدداً. ' + (e.message || ''), 'bad');
+            return;
+          }
+        }
         const { error } = await SUPA.auth.signOut();
         if (error) { toast('تعذر تسجيل الخروج: ' + error.message, 'bad'); return; }
         AUTH_USER = null; AUTH_ROLE = null; AUTH_SITE_ROLE = 'member'; WORKSPACE_ROLES = Object.create(null); $('#accountEmail').textContent = ''; $('#signOutBtn').style.display = 'none';
@@ -3906,7 +3923,24 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
           if (host) host.innerHTML = '';
         }
       });
-      window.addEventListener('beforeunload', () => { if (AUTH_USER) saveState(true); });
+      const saveBeforePageExit = () => {
+        if (!AUTH_USER) return;
+        // localStorage is synchronous; persist here even if the browser closes
+        // before a pending debounce fires, then begin the remote write.
+        const ok = lsSet(accountDataKey(), JSON.stringify(S));
+        if (!ok) {
+          const el = $('#saveState');
+          if (el) { el.textContent = 'تعذّر الحفظ المحلي — استخدم التصدير'; el.style.color = 'var(--danger)'; }
+        }
+        if (cloudReady() && STATE_REVISION > CLOUD_SYNCED_REVISION) {
+          syncCloudState().catch(e => console.error('exit cloud sync failed', e));
+        }
+      };
+      window.addEventListener('beforeunload', saveBeforePageExit);
+      window.addEventListener('pagehide', saveBeforePageExit);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') saveBeforePageExit();
+      });
       window.setInterval(() => {
         if (!AUTH_USER) return;
         const ok = lsSet(accountDataKey(), JSON.stringify(S));
