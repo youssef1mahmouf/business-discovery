@@ -1682,12 +1682,13 @@ notify pgrst, 'reload schema';
     const CLOUD_SCHEMA_DOWNLOAD_VERSION = '2026-10-23-v2';
     let SUPA = null, AUTH_USER = null, AUTH_ROLE = null, AUTH_ACCOUNT_TYPE = 'owner', ROLE_PICKER_OPEN = false, AUTH_SITE_ROLE = 'member', CLOUD_BUSY = false, CLOUD_SYNC_PROMISE = null, SYNC_QUEUED = false, CLOUD_LOAD_WARNING = '', CLOUD_SCHEMA_MISSING = false;
     let WORKSPACE_ROLES = Object.create(null);
+    let PROJECT_SYNC_FINGERPRINTS = Object.create(null);
     let PARTNERSHIP_STATE = { accepted: [], incoming: [], outgoing: [], results: [] };
     let FRIENDS_STATE = { accepted: [], outgoing: [] };
     let PENDING_INVITE_CODE = '';
     let PENDING_INVITE_KIND = 'project';
     let PENDING_INVITE_FROM = '';
-    const READ_ONLY_ACTIONS = new Set(['export-json', 'export-csv', 'print-report', 'open-project', 'search-partners', 'request-partnership', 'refresh-partnerships']);
+    const READ_ONLY_ACTIONS = new Set(['export-json', 'export-csv', 'print-report', 'open-project', 'search-partners', 'request-partnership', 'refresh-partnerships', 'accept-workspace-invite', 'dismiss-workspace-invite']);
 
     /* ---------- tiny helpers ---------- */
     const $ = (s, r) => (r || document).querySelector(s);
@@ -1754,6 +1755,31 @@ notify pgrst, 'reload schema';
     }
     function canEditProject(project) { return projectRole(project) !== 'security'; }
     function isReadOnlyProject(project) { return !!project && projectRole(project) === 'security'; }
+    function projectFingerprint(project) {
+      const snapshot = JSON.parse(JSON.stringify(project || {}));
+      delete snapshot._bdWorkspaceId;
+      delete snapshot._bdSharing;
+      delete snapshot.activityLog;
+      if (!snapshot._bdShareRestricted) delete snapshot._bdShareRestricted;
+      return JSON.stringify(snapshot);
+    }
+    function recordProjectActivity(project, action) {
+      const user = AUTH_USER || {};
+      const metadata = user.user_metadata || {};
+      const log = arr(project.activityLog);
+      const now = Date.now();
+      const last = log[log.length - 1];
+      const entryAction = action || 'تحديث بيانات المشروع';
+      if (last && last.user_id === user.id && last.action === entryAction && now - new Date(last.at).getTime() < 30000) return;
+      log.push({
+        user_id: user.id || '',
+        name: String(metadata.full_name || metadata.name || user.email || 'مستخدم'),
+        email: String(user.email || ''),
+        action: entryAction,
+        at: nowISO()
+      });
+      project.activityLog = log.slice(-100);
+    }
 
     function saveState(immediate) {
       STATE_REVISION++;
@@ -1987,6 +2013,7 @@ notify pgrst, 'reload schema';
           else if (row.owner_id === AUTH_USER.id) FRIENDS_STATE.outgoing.push({ email: row.invite_email, name: request.invitedName || row.invite_email });
           return;
         }
+        PROJECT_SYNC_FINGERPRINTS[row.id] = projectFingerprint(row.project);
         let p = Object.assign({}, row.project, { _bdWorkspaceId: row.id });
         if (row.owner_id === AUTH_USER.id) {
           const privateOwnerProject = S.projects.find(x => x.id === row.project.id);
@@ -2025,6 +2052,11 @@ notify pgrst, 'reload schema';
       CLOUD_BUSY = true;
       const syncingRevision = STATE_REVISION;
       const sync = (async () => { try {
+        for (const project of S.projects.filter(p => p._bdWorkspaceId && canEditProject(p))) {
+          const currentShared = canManageProject(project) ? sharedProjectSnapshot(project) : JSON.parse(JSON.stringify(project));
+          const fingerprint = projectFingerprint(currentShared);
+          if (PROJECT_SYNC_FINGERPRINTS[project._bdWorkspaceId] !== fingerprint) recordProjectActivity(project);
+        }
         const privateState = Object.assign({}, S, { projects: S.projects.filter(p => !p._bdWorkspaceId || canManageProject(p)) });
         const { error } = await SUPA.from('bd_account_data').upsert({ user_id: AUTH_USER.id, data: privateState, updated_at: nowISO() }, { onConflict: 'user_id' });
         if (error) throw error;
@@ -2033,6 +2065,7 @@ notify pgrst, 'reload schema';
           delete data._bdWorkspaceId;
           const result = await SUPA.rpc('bd_save_workspace_project', { p_id: project._bdWorkspaceId, p_project: data });
           if (result.error) throw result.error;
+          PROJECT_SYNC_FINGERPRINTS[project._bdWorkspaceId] = projectFingerprint(data);
         }
         CLOUD_SYNCED_REVISION = Math.max(CLOUD_SYNCED_REVISION, syncingRevision);
         const status = $('#saveState');
@@ -2114,6 +2147,7 @@ notify pgrst, 'reload schema';
         __bdFriendRequestData: {
           requesterName: String(metadata.full_name || metadata.name || AUTH_USER.email || 'مستخدم'),
           requesterEmail: String(AUTH_USER.email || '').toLowerCase(),
+          invitedEmail: normalizedEmail,
           invitedName: String(invitedName || normalizedEmail)
         }, participants: [], customQuestions: [], actionItems: []
       };
@@ -2149,9 +2183,10 @@ notify pgrst, 'reload schema';
       if (error) throw error;
       project._bdWorkspaceId = data.workspace_id;
       WORKSPACE_ROLES[data.workspace_id] = 'owner';
+      recordProjectActivity(project, 'أرسل دعوة مشاركة إلى ' + email.toLowerCase());
       saveState(true);
       const link = location.origin + location.pathname + '?invite=' + encodeURIComponent(data.invite_code);
-      const roleLabel = role === 'security' ? 'مشاهدة فقط' : 'مشاهدة وتعديل';
+      const roleLabel = role === 'security' ? 'شريك عادي — مشاهدة فقط' : 'مساعد — مشاهدة وتعديل';
       openModal('طلب مشاركة مشروع', '<p>أرسل الدعوة إلى <strong>' + esc(email) + '</strong>. عند قبولها سيرى الشخص المشروع والحقول التي سمحت بمشاركتها، بصلاحية <strong>' + roleLabel + '</strong>.</p><input id="inviteLink" type="text" readonly value="' + esc(link) + '">', () => {
         const input = $('#inviteLink'); input.select();
         if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(() => toast('تم نسخ رابط الدعوة', 'ok')).catch(() => document.execCommand('copy'));
@@ -2937,7 +2972,9 @@ notify pgrst, 'reload schema';
         }
       });
       if (readonly) {
-        $$('#view input, #view textarea, #view select').forEach(el => { el.disabled = true; });
+        $$('#view input, #view textarea, #view select').forEach(el => {
+          if (el.id !== 'partnerExactQuery') el.disabled = true;
+        });
         $$('#view button').forEach(btn => {
           const act = btn.getAttribute('data-act');
           if (!act || !READ_ONLY_ACTIONS.has(act)) btn.disabled = true;
@@ -3412,7 +3449,7 @@ notify pgrst, 'reload schema';
       html += card('الأصدقاء المقبولون (' + FRIENDS_STATE.accepted.length + ')', FRIENDS_STATE.accepted.length
         ? '<ul>' + FRIENDS_STATE.accepted.map(friend => {
           const shareControls = pr && owner && friend.email
-            ? ' <label class="tiny">صلاحية المشروع <select class="sel" data-friend-role="' + esc(friend.workspaceId) + '"><option value="security">مشاهدة فقط</option>' + (shareAccess.participants && shareAccess.answers ? '<option value="assistant">مشاهدة وتعديل</option>' : '') + '</select></label> <button class="btn sm" data-act="share-project-friend" data-id="' + esc(friend.workspaceId) + '">مشاركة المشروع المحدد</button>'
+            ? ' <label class="tiny">الصلاحية <select class="sel" data-friend-role="' + esc(friend.workspaceId) + '"><option value="security">شريك عادي — مشاهدة فقط</option>' + (shareAccess.participants && shareAccess.answers ? '<option value="assistant">مساعد — مشاهدة وتعديل</option>' : '') + '</select></label> <button class="btn sm" data-act="share-project-friend" data-id="' + esc(friend.workspaceId) + '">مشاركة المشروع المحدد</button>'
             : '';
           return '<li><strong>' + esc(friend.name || friend.email) + '</strong> · ' + esc(friend.email || '') + shareControls + '</li>';
         }).join('') + '</ul>'
@@ -3427,6 +3464,12 @@ notify pgrst, 'reload schema';
         : '<div class="tiny muted">لا توجد مشاريع مشتركة معك الآن. بعد قبول دعوة المشروع، يظهر المشروع المشترك عند الطرفين.</div>');
       if (pr && pr._bdWorkspaceId && owner) html += card('أعضاء المشروع والدعوات الإضافية', '<div id="teamRoster" class="hint">جارٍ تحميل أعضاء الفريق…</div>');
       if (ownSharedProjects.length) html += card('مشاريع تشاركها أنت (' + ownSharedProjects.length + ')', '<ul>' + ownSharedProjects.map(p => '<li>' + esc(p.name) + ' — لن يراها المدعو إلا بعد قبول الدعوة.</li>').join('') + '</ul>');
+      if (pr && pr._bdWorkspaceId) {
+        const activity = arr(pr.activityLog).slice(-20).reverse();
+        html += card('سجل نشاط المشروع', activity.length
+          ? '<ul>' + activity.map(item => '<li>' + esc(item.name || item.email || 'حساب') + ' — ' + esc(item.action || 'نشاط') + ' · ' + esc(item.at ? new Date(item.at).toLocaleString('ar-EG') : '') + '</li>').join('') + '</ul>'
+          : '<div class="tiny muted">ستظهر التحديثات هنا بعد أن يعدّل أحد أعضاء المشروع بياناته.</div>');
+      }
       html += card('الدور الحالي', '<div class="hint">' + esc(AUTH_ACCOUNT_TYPE === 'partner'
         ? 'شريك في البيانات — لا يظهر لك زر إنشاء مشروع. المشاريع التي يقبل صاحبها دعوتك تظهر هنا.'
         : (pr && owner ? 'صاحب المشروع المحدد — الدعوة تنشئ المشاركة، ولا تظهر بيانات المشروع للشريك إلا بعد قبوله.' : 'صاحب مشروع — اختر مشروعاً لإرسال دعوة مشاركة.')) + '</div>');
@@ -3440,13 +3483,13 @@ notify pgrst, 'reload schema';
         if (error) throw error;
         const entries = data || [];
           host.innerHTML = '<strong>أعضاء ودعوات المشروع</strong>' + (entries.length
-          ? '<ul style="margin-bottom:0">' + entries.map(m => '<li>' + esc(m.invite_email) + ' — ' + (m.role === 'security' ? 'مشاهدة فقط' : 'مشاهدة وتعديل') + ' — ' + (m.accepted ? 'قبل الدعوة' : 'بانتظار القبول') + '</li>').join('') + '</ul>'
+          ? '<ul style="margin-bottom:0">' + entries.map(m => '<li>' + esc(m.invite_email) + ' — ' + (m.role === 'security' ? 'شريك عادي، مشاهدة فقط' : 'مساعد، مشاهدة وتعديل') + ' — ' + (m.accepted ? 'قبل الدعوة' : 'بانتظار القبول') + '</li>').join('') + '</ul>'
           : '<div style="margin-top:6px">لا يوجد أعضاء مدعوون بعد.</div>');
       } catch (e) { host.textContent = 'تعذر تحميل أعضاء الفريق: ' + (e.message || ''); }
     }
 
     function viewSiteAdmin() {
-      return pageHead('لوحة مدير الموقع', 'عرض حسابات الموقع وبياناتها ومشاريعها، والتحكم في صلاحيات الإدارة العامة. صلاحية مدير الموقع منفصلة عن دور صاحب المشروع.') +
+      return pageHead('لوحة مدير الموقع', 'إدارة الحسابات والصلاحيات، ومراجعة صلاحيات المشاريع وآخر التحديثات المسجلة.') +
         card('حالة الموقع', '<div id="siteAdminStats" class="hint">جارٍ تحميل ملخص الموقع…</div>') +
         card('حسابات الموقع وبياناتها', '<div id="siteAdminAccounts" class="tiny muted">جارٍ تحميل الحسابات والبيانات…</div>');
     }
@@ -3457,18 +3500,43 @@ notify pgrst, 'reload schema';
         const { data, error } = await SUPA.rpc('bd_admin_list_accounts');
         if (error) throw error;
         const accounts = Array.isArray(data) ? data : [];
-        const projectsCount = accounts.reduce((total, account) => total + arr(account.private_data && account.private_data.projects).length + arr(account.shared_projects).length, 0);
+        const projectsCount = accounts.reduce((total, account) => total + arr(account.private_data && account.private_data.projects).length + arr(account.shared_projects).filter(entry => !(entry.project && entry.project.__bdFriendRequest)).length, 0);
         if (stats) stats.innerHTML = '<strong>' + accounts.length + '</strong> حساب · <strong>' + projectsCount + '</strong> مشروع خاص أو مشترك';
         if (!accounts.length) { host.textContent = 'لا توجد حسابات مسجلة بعد.'; return; }
         host.innerHTML = accounts.map(account => {
           const isSelf = account.user_id === AUTH_USER.id;
           const privateProjects = arr(account.private_data && account.private_data.projects);
-          const sharedProjects = arr(account.shared_projects);
+          const allSharedProjects = arr(account.shared_projects);
+          const friendRequests = allSharedProjects.filter(entry => entry.project && entry.project.__bdFriendRequest);
+          const sharedProjects = allSharedProjects.filter(entry => !(entry.project && entry.project.__bdFriendRequest));
           const roleLabel = account.site_role === 'site_admin' ? 'مدير الموقع' : 'مستخدم';
+          const accessItems = sharedProjects.map(entry => {
+            const project = entry.project || {};
+            const access = entry.role === 'owner' ? 'مالك المشروع' : entry.role === 'security' ? 'شريك عادي — مشاهدة فقط' : 'مساعد — مشاهدة وتعديل';
+            return '<li><strong>' + esc(project.name || 'مشروع بدون اسم') + '</strong> — ' + access + '</li>';
+          });
+          const recentActivity = privateProjects.concat(sharedProjects.map(entry => entry.project || {}))
+            .flatMap(project => arr(project.activityLog).map(item => Object.assign({ project_name: project.name || 'مشروع بدون اسم' }, item)))
+            .sort((a, b) => String(b.at || '').localeCompare(String(a.at || ''))).slice(0, 20);
+          const accessHtml = accessItems.length ? '<ul>' + accessItems.join('') + '</ul>' : '<div class="tiny muted">لا توجد صلاحيات مشاركة على مشاريع حالياً.</div>';
+          const friendRequestsHtml = friendRequests.length
+            ? '<ul>' + friendRequests.map(entry => {
+              const data = entry.project.__bdFriendRequestData || {};
+              const status = entry.role === 'owner' ? 'طلب مرسل — بانتظار القبول' : 'صداقة مقبولة';
+              const otherParty = entry.role === 'owner' ? (data.invitedEmail || data.invitedName || 'حساب') : (data.requesterEmail || data.requesterName || 'حساب');
+              return '<li>' + esc(status) + ' · الطرف الآخر: ' + esc(otherParty) + '</li>';
+            }).join('') + '</ul>'
+            : '<div class="tiny muted">لا توجد طلبات صداقة أو صداقات مسجلة.</div>';
+          const activityHtml = recentActivity.length
+            ? '<ul>' + recentActivity.map(item => '<li>' + esc(item.name || item.email || 'حساب') + ' — ' + esc(item.action || 'نشاط') + ' في «' + esc(item.project_name) + '» · ' + esc(item.at ? new Date(item.at).toLocaleString('ar-EG') : '') + '</li>').join('') + '</ul>'
+            : '<div class="tiny muted">ستظهر التغييرات بعد تسجيلها من الحسابات المشاركة.</div>';
           return '<details class="card" style="margin-bottom:10px"><summary style="cursor:pointer"><strong>' + esc(account.full_name || account.email || 'حساب بدون اسم') + '</strong> · ' + esc(account.email || '') + ' · ' + roleLabel + '</summary>' +
             '<div class="tiny muted" style="margin-top:10px">اسم المستخدم: ' + esc(account.username || '—') + ' · الهاتف: ' + esc(account.phone || '—') + ' · تاريخ التسجيل: ' + esc(account.created_at ? new Date(account.created_at).toLocaleDateString('ar-EG') : '—') + '</div>' +
             '<div class="row" style="margin-top:10px"><select class="sel" data-site-admin-role="' + esc(account.user_id) + '"' + (isSelf ? ' disabled' : '') + '><option value="member"' + (account.site_role !== 'site_admin' ? ' selected' : '') + '>مستخدم</option><option value="site_admin"' + (account.site_role === 'site_admin' ? ' selected' : '') + '>مدير الموقع</option></select>' +
             '<button class="btn xs" data-site-admin-save="' + esc(account.user_id) + '"' + (isSelf ? ' disabled' : '') + '>حفظ الصلاحية</button></div>' +
+            '<details style="margin-top:8px"><summary>طلبات الصداقة والقبول (' + friendRequests.length + ')</summary>' + friendRequestsHtml + '</details>' +
+            '<details style="margin-top:12px"><summary>من يملك صلاحية على مشاريعه وماذا يستطيع أن يفعل</summary>' + accessHtml + '</details>' +
+            '<details style="margin-top:8px"><summary>آخر الأنشطة المسجلة</summary>' + activityHtml + '</details>' +
             '<details style="margin-top:12px"><summary>البيانات والمشاريع الخاصة (' + privateProjects.length + ')</summary><pre style="white-space:pre-wrap;overflow:auto;max-height:360px;direction:ltr;text-align:left">' + esc(JSON.stringify(account.private_data || {}, null, 2)) + '</pre></details>' +
             '<details style="margin-top:8px"><summary>المشاريع المشتركة (' + sharedProjects.length + ')</summary><pre style="white-space:pre-wrap;overflow:auto;max-height:360px;direction:ltr;text-align:left">' + esc(JSON.stringify(sharedProjects, null, 2)) + '</pre></details></details>';
         }).join('');
@@ -3901,13 +3969,13 @@ notify pgrst, 'reload schema';
        ACTION DISPATCH
        ===================================================================== */
     function handleAction(act, id, el, event) {
-      if (isReadOnlyProject() && !READ_ONLY_ACTIONS.has(act)) {
-        if (event) event.preventDefault();
-        toast('دور الأمن يسمح بالمشاهدة فقط.', 'warn');
-        return;
-      }
       const pr = currentProject();
       const pt = currentParticipant();
+      if (isReadOnlyProject(pr) && !READ_ONLY_ACTIONS.has(act)) {
+        if (event) event.preventDefault();
+        toast('هذه المشاركة بصلاحية مشاهدة فقط.', 'warn');
+        return;
+      }
       switch (act) {
         case 'search-partners':
           if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
@@ -4221,7 +4289,7 @@ notify pgrst, 'reload schema';
         }
         const { error } = await SUPA.auth.signOut();
         if (error) { toast('تعذر تسجيل الخروج: ' + error.message, 'bad'); return; }
-        AUTH_USER = null; AUTH_ROLE = null; AUTH_ACCOUNT_TYPE = 'owner'; AUTH_SITE_ROLE = 'member'; WORKSPACE_ROLES = Object.create(null); PARTNERSHIP_STATE = { accepted: [], incoming: [], outgoing: [], results: [] }; FRIENDS_STATE = { accepted: [], outgoing: [] }; PENDING_INVITE_CODE = ''; PENDING_INVITE_KIND = 'project'; PENDING_INVITE_FROM = ''; $('#accountEmail').textContent = ''; $('#signOutBtn').style.display = 'none';
+        AUTH_USER = null; AUTH_ROLE = null; AUTH_ACCOUNT_TYPE = 'owner'; AUTH_SITE_ROLE = 'member'; WORKSPACE_ROLES = Object.create(null); PROJECT_SYNC_FINGERPRINTS = Object.create(null); PARTNERSHIP_STATE = { accepted: [], incoming: [], outgoing: [], results: [] }; FRIENDS_STATE = { accepted: [], outgoing: [] }; PENDING_INVITE_CODE = ''; PENDING_INVITE_KIND = 'project'; PENDING_INVITE_FROM = ''; $('#accountEmail').textContent = ''; $('#signOutBtn').style.display = 'none';
         $('.app').style.display = 'none'; S = defaultState(); authScreen('تم تسجيل الخروج.', 'login');
       });
       on(document, '#menuBtn', 'click', () => {
