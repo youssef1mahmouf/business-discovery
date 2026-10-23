@@ -960,6 +960,14 @@
       display: none
     }
 
+    .sidebar-close {
+      display: none
+    }
+
+    .sidebar-backdrop {
+      display: none
+    }
+
     .sidenote {
       font-size: .83rem;
       color: var(--muted)
@@ -1069,6 +1077,25 @@
         transform: translateX(0)
       }
 
+      .sidebar-close {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 38px;
+        height: 38px;
+        padding: 0;
+        margin-inline-start: auto;
+        flex: 0 0 auto
+      }
+
+      .sidebar.open + .sidebar-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 70;
+        background: rgba(15, 23, 42, .42)
+      }
+
       .menu-btn {
         display: inline-flex
       }
@@ -1092,12 +1119,23 @@
     }
 
     @media (max-width:560px) {
-      .main { padding: 12px max(10px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)) }
-      .topbar { gap: 7px; margin-bottom: 12px }
-      .topbar .pill { max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-      #accountEmail { max-width: 45vw; overflow-wrap: anywhere }
-      #saveNowBtn { margin-inline-start: auto }
-      .card { padding: 12px; margin-bottom: 12px }
+      .main { width: 100%; max-width: 100vw; padding: 12px max(10px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)) }
+      #view, .card, .grid, .grid > *, .page-head { min-width: 0; max-width: 100% }
+      .g2, .g3, .g4 { grid-template-columns: minmax(0, 1fr) }
+      .topbar { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); gap: 7px; margin-bottom: 12px; align-items: center }
+      .topbar .spacer { display: none }
+      .topbar .pill { max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+      #tbProject { grid-column: 2 }
+      #tbParticipant { grid-column: 3 }
+      #accountEmail { grid-column: 1 / -1; max-width: 100%; overflow-wrap: anywhere }
+      #signOutBtn { grid-column: 1 / 2 }
+      #saveNowBtn { grid-column: 2 / 4; margin: 0 }
+      #signOutBtn, #saveNowBtn { width: 100%; justify-content: center }
+      #saveState { grid-column: 1 / -1 }
+      .row { min-width: 0; gap: 7px }
+      .row > .btn { flex: 1 1 calc(50% - 7px); min-width: 0; justify-content: center; white-space: normal }
+      .row > input, .row > select, .row > textarea { min-width: 0; max-width: 100% }
+      .card { padding: 12px; margin-bottom: 12px; overflow-wrap: anywhere }
       .auth-screen { margin: 4vh auto; padding: 12px }
       .auth-screen .card { padding: 16px }
       .btn { min-height: 42px; justify-content: center }
@@ -1264,6 +1302,7 @@
           <h1>مستكشف المشاريع</h1>
           <small>اكتشاف الأعمال وقرار الشراكة</small>
         </div>
+        <button class="btn sidebar-close" id="sidebarCloseBtn" type="button" aria-label="إغلاق القائمة">×</button>
       </div>
       <nav class="nav" id="nav" aria-label="التنقل الرئيسي"></nav>
       <div style="margin-top:16px">
@@ -1271,6 +1310,7 @@
         <button class="btn sm danger" id="wipeBtn" style="width:100%;margin-top:6px">مسح كل البيانات المحفوظة</button>
       </div>
     </aside>
+    <div class="sidebar-backdrop" id="sidebarBackdrop" aria-hidden="true"></div>
 
     <main class="main" id="main">
       <div class="topbar no-print">
@@ -4442,7 +4482,20 @@ notify pgrst, 'reload schema';
       });
       on(document, '#menuBtn', 'click', () => {
         const sb = $('#sidebar');
-        if (sb) sb.classList.toggle('open');
+        if (!sb) return;
+        const isOpen = sb.classList.toggle('open');
+        $('#menuBtn').setAttribute('aria-expanded', String(isOpen));
+      });
+      const closeMobileMenu = () => {
+        const sb = $('#sidebar');
+        if (sb) sb.classList.remove('open');
+        const menuButton = $('#menuBtn');
+        if (menuButton) menuButton.setAttribute('aria-expanded', 'false');
+      };
+      on(document, '#sidebarCloseBtn', 'click', closeMobileMenu);
+      on(document, '#sidebarBackdrop', 'click', closeMobileMenu);
+      on(document, '#nav', 'click', (e) => {
+        if (e.target.closest('button[data-nav]')) closeMobileMenu();
       });
       on(document, '#fileInput', 'change', (e) => {
         const f = e.target.files && e.target.files[0];
@@ -4458,6 +4511,7 @@ notify pgrst, 'reload schema';
       });
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
+          closeMobileMenu();
           const host = $('#modalHost');
           if (host) host.innerHTML = '';
         }
