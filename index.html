@@ -1817,6 +1817,7 @@ notify pgrst, 'reload schema';
     let PENDING_INVITE_FROM = '';
     let INCOMING_INVITES = [];
     let INVITE_INBOX_TIMER = null;
+    const SENDING_FRIEND_REQUESTS = new Set();
     const READ_ONLY_ACTIONS = new Set(['export-json', 'export-csv', 'print-report', 'open-project', 'search-partners', 'request-partnership', 'refresh-partnerships', 'accept-workspace-invite', 'accept-inbox-invite', 'decline-inbox-invite', 'dismiss-workspace-invite']);
 
     /* ---------- tiny helpers ---------- */
@@ -2115,7 +2116,27 @@ notify pgrst, 'reload schema';
       if (!cloudReady()) { INCOMING_INVITES = []; return; }
       const { data, error } = await SUPA.rpc('bd_list_my_pending_invites');
       if (error) throw error;
-      INCOMING_INVITES = arr(data).filter(invite => invite && invite.invite_code);
+      const invites = arr(data).filter(invite => invite && invite.invite_code);
+      const friendRequests = new Map();
+      INCOMING_INVITES = [];
+      invites.forEach(invite => {
+        if (invite.request_kind !== 'friend' || !invite.sender_email) {
+          INCOMING_INVITES.push(invite);
+          return;
+        }
+        const key = String(invite.sender_email).trim().toLowerCase();
+        const existing = friendRequests.get(key);
+        if (!existing) {
+          invite.duplicate_codes = [invite.invite_code];
+          friendRequests.set(key, invite);
+          INCOMING_INVITES.push(invite);
+        } else {
+          existing.duplicate_codes.push(invite.invite_code);
+        }
+      });
+      INCOMING_INVITES.forEach(invite => {
+        if (invite.request_kind === 'friend' && invite.duplicate_codes) invite.duplicate_count = invite.duplicate_codes.length;
+      });
       return INCOMING_INVITES;
     }
     async function loadCloudState() {
@@ -2154,7 +2175,9 @@ notify pgrst, 'reload schema';
               });
             }
           }
-          else if (row.owner_id === AUTH_USER.id) FRIENDS_STATE.outgoing.push({ email: row.invite_email, name: request.invitedName || row.invite_email });
+          else if (row.owner_id === AUTH_USER.id && !FRIENDS_STATE.outgoing.some(friend => friend.email.toLowerCase() === String(row.invite_email || '').toLowerCase())) {
+            FRIENDS_STATE.outgoing.push({ email: row.invite_email, name: request.invitedName || row.invite_email });
+          }
           return;
         }
         PROJECT_SYNC_FINGERPRINTS[row.id] = projectFingerprint(row.project);
@@ -2233,8 +2256,16 @@ notify pgrst, 'reload schema';
     }
     async function acceptWorkspaceInvite(code) {
       try {
+        const duplicateCodes = INCOMING_INVITES
+          .filter(invite => invite.request_kind === 'friend' && arr(invite.duplicate_codes).some(item => String(item) === String(code)))
+          .flatMap(invite => arr(invite.duplicate_codes))
+          .filter(item => String(item) !== String(code));
         const { error } = await SUPA.rpc('bd_accept_workspace_invite', { p_code: code });
         if (error) throw error;
+        for (const duplicateCode of duplicateCodes) {
+          const { error: cleanupError } = await SUPA.rpc('bd_decline_workspace_invite', { p_code: duplicateCode });
+          if (cleanupError) console.warn('Could not remove duplicate friend request:', cleanupError);
+        }
         if (String(PENDING_INVITE_CODE) === String(code)) {
           lsDel(PENDING_INVITE_KEY);
           lsDel(PENDING_INVITE_KIND_KEY);
@@ -2250,8 +2281,14 @@ notify pgrst, 'reload schema';
     async function declineWorkspaceInvite(code) {
       if (!code) return;
       try {
-        const { error } = await SUPA.rpc('bd_decline_workspace_invite', { p_code: code });
-        if (error) throw error;
+        const duplicateCodes = INCOMING_INVITES
+          .filter(invite => invite.request_kind === 'friend' && arr(invite.duplicate_codes).some(item => String(item) === String(code)))
+          .flatMap(invite => arr(invite.duplicate_codes));
+        const codesToDecline = duplicateCodes.length ? duplicateCodes : [code];
+        for (const inviteCode of codesToDecline) {
+          const { error } = await SUPA.rpc('bd_decline_workspace_invite', { p_code: inviteCode });
+          if (error) throw error;
+        }
         if (String(PENDING_INVITE_CODE) === String(code)) {
           lsDel(PENDING_INVITE_KEY);
           lsDel(PENDING_INVITE_KIND_KEY);
@@ -2304,7 +2341,10 @@ notify pgrst, 'reload schema';
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) { toast('اكتب البريد الإلكتروني الكامل للشريك.', 'warn'); return; }
       if (normalizedEmail === String(AUTH_USER.email || '').toLowerCase()) { toast('لا يمكنك إرسال طلب صداقة إلى حسابك نفسه.', 'warn'); return; }
       if (FRIENDS_STATE.accepted.some(friend => friend.email.toLowerCase() === normalizedEmail)) { toast('هذا الحساب صديقك بالفعل.', 'info'); return; }
-      if (FRIENDS_STATE.outgoing.some(friend => friend.email.toLowerCase() === normalizedEmail)) { toast('أرسلت طلب صداقة لهذا البريد، وما زال ينتظر القبول.', 'info'); return; }
+      if (FRIENDS_STATE.outgoing.some(friend => friend.email.toLowerCase() === normalizedEmail)) { toast('طلب الصداقة مُرسل بالفعل وما زال ينتظر القبول. لم نرسل طلباً مكرراً.', 'info'); return; }
+      if (SENDING_FRIEND_REQUESTS.has(normalizedEmail)) { toast('جارٍ إرسال الطلب إلى هذا البريد؛ تجاهلنا ضغطة الإرسال المكررة.', 'info'); return; }
+      SENDING_FRIEND_REQUESTS.add(normalizedEmail);
+      try {
       const metadata = AUTH_USER.user_metadata || {};
       const requestProject = {
         id: uid('friend'), name: 'طلب صداقة', __bdFriendRequest: true,
@@ -2331,6 +2371,9 @@ notify pgrst, 'reload schema';
       PARTNERSHIP_STATE.results = [];
       await loadCloudState();
       render();
+      } finally {
+        SENDING_FRIEND_REQUESTS.delete(normalizedEmail);
+      }
     }
     async function createWorkspaceInvite(email, role) {
       const project = currentProject();
@@ -3589,7 +3632,9 @@ notify pgrst, 'reload schema';
       const sharedProjects = S.projects.filter(p => p._bdWorkspaceId);
       const receivedProjects = sharedProjects.filter(p => !canManageProject(p));
       const ownSharedProjects = sharedProjects.filter(p => canManageProject(p));
-      const inboxInvites = INCOMING_INVITES.filter(invite => String(invite.invite_code) !== String(PENDING_INVITE_CODE));
+      const inboxInvites = INCOMING_INVITES.filter(invite =>
+        String(invite.invite_code) !== String(PENDING_INVITE_CODE) &&
+        !arr(invite.duplicate_codes).some(code => String(code) === String(PENDING_INVITE_CODE)));
       let html = pageHead('إدارة الشراكات والدعوات', 'أرسل الدعوات من هنا، وتابع الطلبات الواردة والمرسلة، ثم اقبلها أو ارفضها من المكان نفسه.');
       const pr = currentProject();
       const owner = canManageProject(pr);
@@ -3602,6 +3647,7 @@ notify pgrst, 'reload schema';
             ' · من ' + esc(invite.sender_name || invite.sender_email || 'حساب') +
             (invite.sender_email ? ' · ' + esc(invite.sender_email) : '') +
             (isFriend ? '' : ' · ' + esc(roleLabel)) +
+            (isFriend && Number(invite.duplicate_count) > 1 ? '<div class="msg warn" style="margin:6px 0">تنبيه: أرسل هذا الحساب طلب الصداقة أكثر من مرة (' + (Number(invite.duplicate_count) - 1) + ' طلب مكرر). جمعناها في طلب واحد.</div>' : '') +
             ' <button class="btn sm primary" data-act="accept-inbox-invite" data-id="' + esc(invite.invite_code) + '">' + (isFriend ? 'قبول الصداقة' : 'قبول دعوة المشروع') + '</button>' +
             ' <button class="btn sm" data-act="decline-inbox-invite" data-id="' + esc(invite.invite_code) + '">رفض</button></li>';
         }).join('') + '</ul><div class="tiny muted">تُحدّث هذه القائمة تلقائياً كل 20 ثانية أثناء فتح صفحة الشركاء.</div>'
