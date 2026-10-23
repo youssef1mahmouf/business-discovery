@@ -3219,6 +3219,11 @@ notify pgrst, 'reload schema';
         '<button class="btn" data-act="import-json">استيراد JSON</button></div>' +
         '<div class="hint" style="margin-top:12px">بيانات كل حساب تُحفظ منفصلة على هذا الجهاز وفي Supabase عند اكتمال الربط. تحفظ الصفحة تلقائياً كل دقيقة وتزامن التعديلات غير المحفوظة مع السحابة. المشاريع المشتركة تظهر للشريك بعد قبول الدعوة. صدّر نسخة احتياطية دورية.</div>');
 
+      const recovery = readRecoveryBackup();
+      html += card('آخر نسخة قبل الاستبدال', recovery
+        ? '<div class="hint">محفوظة على هذا الجهاز منذ ' + esc(new Date(recovery.savedAt).toLocaleString('ar-EG')) + '. تبقى محفوظة حتى إنشاء نسخة أقدم جديدة قبل استيراد أو مسح آخر.</div><button class="btn" data-act="export-recovery">تنزيل آخر نسخة محفوظة</button>'
+        : '<div class="hint">لا توجد نسخة سابقة بعد. يحفظ الموقع نسخة قبل استيراد JSON أو مسح البيانات.</div>');
+
       const total = arr(S.projects).reduce((n, p) => n + arr(p.participants).length, 0);
       html += card('حالة التخزين',
         '<div class="grid g4">' +
@@ -3403,6 +3408,32 @@ notify pgrst, 'reload schema';
       document.body.appendChild(a); a.click();
       setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 500);
     }
+    function recoveryBackupKey() { return accountDataKey() + '_last_recovery_backup_v1'; }
+    function readRecoveryBackup() {
+      try {
+        const backup = JSON.parse(lsGet(recoveryBackupKey()) || 'null');
+        return backup && backup.data && Array.isArray(backup.data.projects) ? backup : null;
+      } catch (_) { return null; }
+    }
+    function backupFilename() {
+      return 'business-discovery-before-change-' + nowISO().replace(/[:.]/g, '-') + '.json';
+    }
+    function archiveCurrentData(reason) {
+      const stateCopy = JSON.parse(JSON.stringify(S));
+      const backup = { version: 1, reason, savedAt: nowISO(), data: stateCopy };
+      if (!lsSet(recoveryBackupKey(), JSON.stringify(backup))) {
+        throw new Error('تعذر حفظ النسخة الاحتياطية على هذا الجهاز؛ لم يتم استبدال البيانات. نزّل نسخة JSON يدوياً ثم أعد المحاولة.');
+      }
+      try { download(backupFilename(), JSON.stringify(stateCopy, null, 2), 'application/json;charset=utf-8'); }
+      catch (e) { console.warn('Recovery backup is saved locally, but its download could not start:', e); }
+      return backup;
+    }
+    function downloadRecoveryBackup() {
+      const backup = readRecoveryBackup();
+      if (!backup) { toast('لا توجد نسخة احتياطية سابقة.', 'warn'); return; }
+      download(backupFilename(), JSON.stringify(backup.data, null, 2), 'application/json;charset=utf-8');
+      toast('تم تنزيل آخر نسخة احتياطية محفوظة.', 'ok');
+    }
     function exportJSON() {
       const data = JSON.stringify(S, null, 2);
       download('business-discovery-' + todayISO() + '.json', data, 'application/json;charset=utf-8');
@@ -3437,17 +3468,26 @@ notify pgrst, 'reload schema';
     }
     function importJSON(file) {
       const reader = new FileReader();
-      reader.onload = () => {
+      reader.onload = async () => {
+        let data;
         try {
-          const data = JSON.parse(String(reader.result));
+          data = JSON.parse(String(reader.result));
           if (!data || !Array.isArray(data.projects)) throw new Error('صيغة غير صالحة');
-          S = Object.assign(defaultState(), data);
-          saveState(true);
-          toast('تم الاستيراد بنجاح', 'ok');
-          render();
         } catch (e) {
           toast('تعذّر قراءة الملف: ' + e.message, 'bad');
+          return;
         }
+        try { archiveCurrentData('before-json-restore'); }
+        catch (e) { toast(e.message || 'تعذر حفظ النسخة السابقة؛ لم يتم استيراد الملف.', 'bad'); return; }
+        S = Object.assign(defaultState(), data);
+        saveState(true);
+        try {
+          if (cloudReady()) await (CLOUD_SYNC_PROMISE || syncCloudState());
+          toast('تم استرداد JSON وحفظه. نُزّلت نسخة من البيانات السابقة ويمكنك تنزيلها مجدداً من صفحة البيانات.', 'ok');
+        } catch (e) {
+          toast('تم استرداد JSON على هذا الجهاز؛ تعذرت المزامنة السحابية: ' + (e.message || ''), 'warn');
+        }
+        render();
       };
       reader.readAsText(file, 'utf-8');
     }
@@ -3498,10 +3538,11 @@ notify pgrst, 'reload schema';
     }
     function wipeAll() {
       confirmBox('مسح بيانات الحساب', 'سيتم حذف المشاريع الخاصة والمشاركين والإجابات من حسابك. تبقى المشاريع المشتركة متاحة لشريكك. هل أنت متأكد؟', () => {
-        lsDel(accountDataKey());
+        try { archiveCurrentData('before-wipe'); }
+        catch (e) { toast(e.message || 'تعذر حفظ النسخة السابقة؛ لم يتم مسح البيانات.', 'bad'); return; }
         S = defaultState();
         saveState(true);
-        toast('تم مسح البيانات', 'ok');
+        toast('تم مسح البيانات بعد حفظ نسخة منها. يمكنك تنزيل آخر نسخة من صفحة البيانات.', 'ok');
         go('projects');
       });
     }
@@ -3706,6 +3747,7 @@ notify pgrst, 'reload schema';
         case 'import-json': { const f = $('#fileInput'); if (f) { f.value = ''; f.click(); } break; }
         case 'import-csv': { const f = $('#csvInput'); if (f) { f.value = ''; f.click(); } break; }
         case 'export-json': exportJSON(); break;
+        case 'export-recovery': downloadRecoveryBackup(); break;
         case 'export-csv': exportCSV(); break;
         case 'save-now': saveState(true); toast('تم الحفظ', 'ok'); break;
         case 'wipe': wipeAll(); break;
