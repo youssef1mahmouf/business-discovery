@@ -1420,6 +1420,7 @@ create table if not exists public.bd_workspaces (
   updated_at timestamptz not null default now(),
   constraint bd_one_partner_per_project unique (id, partner_id)
 );
+alter table public.bd_workspaces alter column invite_code drop not null;
 
 -- Project-level staff invitations. Roles are enforced by database functions.
 create table if not exists public.bd_workspace_members (
@@ -1589,6 +1590,52 @@ as $$
    order by m.created_at desc;
 $$;
 
+create or replace function public.bd_decline_workspace_invite(p_code uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_workspace_id uuid;
+  v_is_friend_request boolean;
+begin
+  if auth.uid() is null then raise exception 'يجب تسجيل الدخول أولاً'; end if;
+
+  select m.workspace_id, coalesce(w.project ->> '__bdFriendRequest' = 'true', false)
+    into v_workspace_id, v_is_friend_request
+    from public.bd_workspace_members m
+    join public.bd_workspaces w on w.id = m.workspace_id
+   where m.invite_code = p_code
+     and m.user_id is null
+     and lower(m.invite_email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+   for update of m, w;
+
+  if found then
+    delete from public.bd_workspace_members
+     where invite_code = p_code and user_id is null
+       and lower(invite_email) = lower(coalesce(auth.jwt() ->> 'email', ''));
+    if v_is_friend_request then
+      delete from public.bd_workspaces
+       where id = v_workspace_id and partner_id is null and project ->> '__bdFriendRequest' = 'true';
+    else
+      -- Invalidate a legacy project link when it reuses this member invite code.
+      update public.bd_workspaces
+         set invite_code = pg_catalog.gen_random_uuid(), updated_at = pg_catalog.now()
+       where id = v_workspace_id and invite_code = p_code and partner_id is null;
+    end if;
+    return;
+  end if;
+
+  -- Older project invitations may have a workspace invite code without a member row.
+  update public.bd_workspaces
+     set invite_code = pg_catalog.gen_random_uuid(), updated_at = pg_catalog.now()
+   where invite_code = p_code and partner_id is null
+     and lower(invite_email) = lower(coalesce(auth.jwt() ->> 'email', ''));
+  if not found then raise exception 'الدعوة غير صالحة أو أُرسلت إلى بريد مختلف'; end if;
+end;
+$$;
+
 create or replace function public.bd_delete_workspace(p_id uuid)
 returns void
 language plpgsql
@@ -1628,6 +1675,7 @@ $$;
 revoke all on function public.bd_create_workspace_invite(jsonb, text, text, uuid) from public;
 revoke all on function public.bd_accept_workspace_invite(uuid) from public;
 revoke all on function public.bd_list_my_pending_invites() from public;
+revoke all on function public.bd_decline_workspace_invite(uuid) from public;
 revoke all on function public.bd_delete_workspace(uuid) from public;
 revoke all on function public.bd_save_workspace_project(uuid, jsonb) from public;
 revoke all on function public.bd_my_workspace_roles() from public;
@@ -1635,6 +1683,7 @@ revoke all on function public.bd_list_workspace_members(uuid) from public;
 grant execute on function public.bd_create_workspace_invite(jsonb, text, text, uuid) to authenticated;
 grant execute on function public.bd_accept_workspace_invite(uuid) to authenticated;
 grant execute on function public.bd_list_my_pending_invites() to authenticated;
+grant execute on function public.bd_decline_workspace_invite(uuid) to authenticated;
 grant execute on function public.bd_delete_workspace(uuid) to authenticated;
 grant execute on function public.bd_save_workspace_project(uuid, jsonb) to authenticated;
 grant execute on function public.bd_my_workspace_roles() to authenticated;
@@ -1717,7 +1766,7 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
 -- Refresh the PostgREST function cache after installing or updating RPCs.
 notify pgrst, 'reload schema';
 `;
-    const CLOUD_SCHEMA_DOWNLOAD_VERSION = '2026-10-23-v3';
+    const CLOUD_SCHEMA_DOWNLOAD_VERSION = '2026-10-23-v4';
     let SUPA = null, AUTH_USER = null, AUTH_ROLE = null, AUTH_ACCOUNT_TYPE = 'owner', ROLE_PICKER_OPEN = false, AUTH_SITE_ROLE = 'member', CLOUD_BUSY = false, CLOUD_SYNC_PROMISE = null, SYNC_QUEUED = false, CLOUD_LOAD_WARNING = '', CLOUD_SCHEMA_MISSING = false;
     let WORKSPACE_ROLES = Object.create(null);
     let PROJECT_SYNC_FINGERPRINTS = Object.create(null);
@@ -1728,7 +1777,7 @@ notify pgrst, 'reload schema';
     let PENDING_INVITE_FROM = '';
     let INCOMING_INVITES = [];
     let INVITE_INBOX_TIMER = null;
-    const READ_ONLY_ACTIONS = new Set(['export-json', 'export-csv', 'print-report', 'open-project', 'search-partners', 'request-partnership', 'refresh-partnerships', 'accept-workspace-invite', 'accept-inbox-invite', 'dismiss-workspace-invite']);
+    const READ_ONLY_ACTIONS = new Set(['export-json', 'export-csv', 'print-report', 'open-project', 'search-partners', 'request-partnership', 'refresh-partnerships', 'accept-workspace-invite', 'accept-inbox-invite', 'decline-inbox-invite', 'dismiss-workspace-invite']);
 
     /* ---------- tiny helpers ---------- */
     const $ = (s, r) => (r || document).querySelector(s);
@@ -2157,6 +2206,23 @@ notify pgrst, 'reload schema';
         }
         await loadCloudState(); render(); toast('تم قبول الطلب. أصبحتما أصدقاء ويمكنكما مشاركة المشاريع بموافقة كل صاحب مشروع.', 'ok');
       } catch (e) { toast('تعذر قبول الدعوة: ' + e.message, 'bad'); }
+    }
+    async function declineWorkspaceInvite(code) {
+      if (!code) return;
+      try {
+        const { error } = await SUPA.rpc('bd_decline_workspace_invite', { p_code: code });
+        if (error) throw error;
+        if (String(PENDING_INVITE_CODE) === String(code)) {
+          lsDel(PENDING_INVITE_KEY);
+          lsDel(PENDING_INVITE_KIND_KEY);
+          lsDel(PENDING_INVITE_FROM_KEY);
+          PENDING_INVITE_CODE = '';
+          PENDING_INVITE_KIND = 'project';
+          PENDING_INVITE_FROM = '';
+          history.replaceState(null, '', location.pathname + location.hash);
+        }
+        await loadCloudState(); render(); toast('تم رفض الطلب وإلغاء الدعوة.', 'ok');
+      } catch (e) { toast('تعذر رفض الطلب: ' + (e.message || ''), 'bad'); }
     }
     function dismissPendingInvite() {
       PENDING_INVITE_CODE = '';
@@ -2893,7 +2959,7 @@ notify pgrst, 'reload schema';
        ===================================================================== */
     const VIEWS = [
       { id: 'projects', name: 'المشاريع', icon: '📁', grp: 'ابدأ هنا' },
-      { id: 'partners', name: 'الشركاء والدعوات', icon: '🤝' },
+      { id: 'partners', name: 'الشراكات والدعوات', icon: '🤝' },
       { id: 'participants', name: 'المشاركون', icon: '👤' },
       { id: 'questionnaire', name: 'الاستبيان', icon: '📝', grp: 'التقييم' },
       { id: 'compare', name: 'المقارنة', icon: '⚖️' },
@@ -2921,6 +2987,9 @@ notify pgrst, 'reload schema';
     function go(v, cat) {
       if (cat) CAT_VIEW = cat;
       setView(v);
+      if (v === 'partners' && cloudReady()) refreshIncomingInvites()
+        .then(() => { if (VIEW === 'partners') render(); })
+        .catch(e => console.warn('Could not load incoming invitations:', e));
     }
 
     function renderNav() {
@@ -3480,26 +3549,28 @@ notify pgrst, 'reload schema';
       const sharedProjects = S.projects.filter(p => p._bdWorkspaceId);
       const receivedProjects = sharedProjects.filter(p => !canManageProject(p));
       const ownSharedProjects = sharedProjects.filter(p => canManageProject(p));
-      let html = pageHead('الأصدقاء والشراكات', 'أرسل طلب صداقة واقبله أولاً. بعدها يختار صاحب كل مشروع ما يشاركه، وبأي صلاحية.');
+      const inboxInvites = INCOMING_INVITES.filter(invite => String(invite.invite_code) !== String(PENDING_INVITE_CODE));
+      let html = pageHead('إدارة الشراكات والدعوات', 'أرسل الدعوات من هنا، وتابع الطلبات الواردة والمرسلة، ثم اقبلها أو ارفضها من المكان نفسه.');
       const pr = currentProject();
       const owner = canManageProject(pr);
       const shareAccess = pr && pr._bdSharing || { participants: true, answers: true };
-      html += card('طلبات واردة (' + INCOMING_INVITES.length + ')', INCOMING_INVITES.length
-        ? '<ul>' + INCOMING_INVITES.map(invite => {
+      html += card('طلبات واردة (' + inboxInvites.length + ')', inboxInvites.length
+        ? '<ul>' + inboxInvites.map(invite => {
           const isFriend = invite.request_kind === 'friend';
           const roleLabel = invite.role === 'assistant' ? 'مساعد — مشاهدة وتعديل' : 'شريك عادي — مشاهدة فقط';
           return '<li style="margin:10px 0"><strong>' + esc(isFriend ? 'طلب صداقة' : 'دعوة مشروع: ' + (invite.project_name || 'مشروع مشترك')) + '</strong>' +
             ' · من ' + esc(invite.sender_name || invite.sender_email || 'حساب') +
             (invite.sender_email ? ' · ' + esc(invite.sender_email) : '') +
             (isFriend ? '' : ' · ' + esc(roleLabel)) +
-            ' <button class="btn sm primary" data-act="accept-inbox-invite" data-id="' + esc(invite.invite_code) + '">' + (isFriend ? 'قبول الصداقة' : 'قبول دعوة المشروع') + '</button></li>';
+            ' <button class="btn sm primary" data-act="accept-inbox-invite" data-id="' + esc(invite.invite_code) + '">' + (isFriend ? 'قبول الصداقة' : 'قبول دعوة المشروع') + '</button>' +
+            ' <button class="btn sm" data-act="decline-inbox-invite" data-id="' + esc(invite.invite_code) + '">رفض</button></li>';
         }).join('') + '</ul><div class="tiny muted">تُحدّث هذه القائمة تلقائياً كل 20 ثانية أثناء فتح صفحة الشركاء.</div>'
         : '<div class="tiny muted">لا توجد طلبات واردة الآن. تُحدّث القائمة تلقائياً كل 20 ثانية أثناء فتح هذه الصفحة.</div>');
       if (PENDING_INVITE_CODE) html += card(PENDING_INVITE_KIND === 'friend' ? 'طلب صداقة وارد' : 'طلب مشاركة مشروع وارد',
         '<div class="hint">' + (PENDING_INVITE_KIND === 'friend'
           ? 'قبول هذا الطلب يضيف الحساب إلى قائمة أصدقائك فقط. لا يفتح أي مشروع تلقائياً؛ مشاركة كل مشروع تحتاج موافقة صاحبه.'
           : 'قبول هذا الطلب يضيف المشروع المشترك إلى حسابك وفق صلاحية المشاهدة أو التعديل التي اختارها صاحبه.') + (PENDING_INVITE_FROM ? '<br>المرسل: <strong>' + esc(PENDING_INVITE_FROM) + '</strong>' : '') + '</div>' +
-        '<div class="row" style="margin-top:10px"><button class="btn primary" data-act="accept-workspace-invite">' + (PENDING_INVITE_KIND === 'friend' ? 'قبول طلب الصداقة' : 'قبول دعوة المشروع') + '</button><button class="btn" data-act="dismiss-workspace-invite">لاحقاً</button></div>');
+        '<div class="row" style="margin-top:10px"><button class="btn primary" data-act="accept-workspace-invite">' + (PENDING_INVITE_KIND === 'friend' ? 'قبول طلب الصداقة' : 'قبول دعوة المشروع') + '</button><button class="btn" data-act="decline-inbox-invite" data-id="' + esc(PENDING_INVITE_CODE) + '">رفض</button><button class="btn" data-act="dismiss-workspace-invite">لاحقاً</button></div>');
       html += card(AUTH_SITE_ROLE === 'site_admin' ? 'ابحث عن حساب في دليل الموقع' : 'طلب صداقة بالبريد الإلكتروني',
         '<div class="row" style="align-items:end"><label style="flex:1;min-width:220px">' + (AUTH_SITE_ROLE === 'site_admin' ? 'الاسم الكامل أو البريد أو اسم المستخدم' : 'البريد الإلكتروني الكامل') +
           '<input id="partnerExactQuery" type="search" autocomplete="off" placeholder="' + (AUTH_SITE_ROLE === 'site_admin' ? 'اكتب القيمة كاملة كما سُجلت' : 'name@example.com') + '" style="display:block;margin-top:6px;width:100%"></label>' +
@@ -4086,6 +4157,10 @@ notify pgrst, 'reload schema';
         case 'accept-inbox-invite':
           if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
           if (id) acceptWorkspaceInvite(id);
+          break;
+        case 'decline-inbox-invite':
+          if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
+          if (id || PENDING_INVITE_CODE) declineWorkspaceInvite(id || PENDING_INVITE_CODE);
           break;
         case 'dismiss-workspace-invite':
           dismissPendingInvite();
