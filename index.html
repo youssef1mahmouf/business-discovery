@@ -1917,7 +1917,7 @@ notify pgrst, 'reload schema';
         const detail = e.message || 'تعذر تحميل الجداول';
         CLOUD_SCHEMA_MISSING = /could not find (?:the )?(?:function|table)|schema cache|does not exist|relation .* does not exist/i.test(detail);
         CLOUD_LOAD_WARNING = CLOUD_SCHEMA_MISSING
-          ? 'تم تسجيل الدخول، واكتشف الموقع نقصاً في إعداد قاعدة البيانات. بدأ تنزيل أحدث ملف SQL؛ شغّله في Supabase → SQL Editor → Run، ثم أعد تحميل الصفحة. يمكن أيضاً تنزيل الملف بالزر أدناه. التفاصيل: ' + detail
+          ? 'تم تسجيل الدخول، واكتشف الموقع نقصاً في إعداد قاعدة البيانات. بدأ تنزيل أحدث ملف SQL؛ شغّله في Supabase → SQL Editor → Run، ثم اضغط «تحقق الآن بعد تشغيل SQL». يمكن تنزيل الملف مجدداً بالزر أدناه. التفاصيل: ' + detail
           : 'تم تسجيل الدخول، لكن تعذر تحميل البيانات السحابية. تحقق من إعداد قاعدة البيانات والاتصال ثم أعد تحميل الصفحة. التفاصيل: ' + detail;
         if (CLOUD_SCHEMA_MISSING) {
           try { download('supabase-setup.sql', CLOUD_SCHEMA_SQL, 'text/plain;charset=utf-8'); } catch (downloadError) { console.warn('Could not auto-download database setup:', downloadError); }
@@ -2764,9 +2764,27 @@ notify pgrst, 'reload schema';
       const readonly = isReadOnlyProject(pr);
       host.classList.toggle('read-only', readonly);
       host.innerHTML = (CLOUD_LOAD_WARNING ? '<div class="msg warn" role="status" style="margin-bottom:12px">' + esc(CLOUD_LOAD_WARNING) +
-        (CLOUD_SCHEMA_MISSING ? '<div style="margin-top:10px"><button class="btn" id="downloadCloudSchema">تنزيل أحدث ملف SQL</button></div>' : '') + '</div>' : '') +
+        (CLOUD_SCHEMA_MISSING ? '<div class="row" style="margin-top:10px;gap:8px"><button class="btn" id="downloadCloudSchema">تنزيل أحدث ملف SQL</button><button class="btn primary" id="retryCloudSchema">تحقق الآن بعد تشغيل SQL</button></div>' : '') + '</div>' : '') +
         (readonly ? '<div class="readonly-banner">دور الأمن: يمكنك مشاهدة هذا المشروع فقط، ولا يمكنك تعديل بياناته.</div>' : '') + html;
       on(host, '#downloadCloudSchema', 'click', () => download('supabase-setup.sql', CLOUD_SCHEMA_SQL, 'text/plain;charset=utf-8'));
+      on(host, '#retryCloudSchema', 'click', async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        button.textContent = 'جارٍ التحقق…';
+        try {
+          await loadCloudState();
+          CLOUD_LOAD_WARNING = '';
+          CLOUD_SCHEMA_MISSING = false;
+          render();
+          toast('تم الاتصال بقاعدة البيانات وتحميل البيانات بنجاح.', 'ok');
+        } catch (e) {
+          const detail = e.message || 'تعذر تحميل الجداول';
+          CLOUD_SCHEMA_MISSING = /could not find (?:the )?(?:function|table)|schema cache|does not exist|relation .* does not exist/i.test(detail);
+          CLOUD_LOAD_WARNING = 'لم يكتمل التحقق من قاعدة البيانات. تأكد من تشغيل أحدث ملف SQL في Supabase → SQL Editor → Run. التفاصيل: ' + detail;
+          render();
+          toast('قاعدة البيانات ما زالت تحتاج إلى تحديث.', 'bad');
+        }
+      });
       if (readonly) {
         $$('#view input, #view textarea, #view select').forEach(el => { el.disabled = true; });
         $$('#view button').forEach(btn => {
