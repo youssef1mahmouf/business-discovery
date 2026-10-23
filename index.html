@@ -1882,7 +1882,7 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
           let friendly = raw || 'راجع بيانات الدخول وإعداد قاعدة البيانات.';
           if (/bd_profiles_username_unique/i.test(raw)) friendly = 'اسم المستخدم مستخدم بالفعل. اختَر اسماً آخر.';
           else if (/bd_profiles_phone_unique/i.test(raw)) friendly = 'رقم الهاتف مسجل بالفعل. استخدم رقماً آخر أو سجّل الدخول إلى حسابك.';
-          else if (/email not confirmed/i.test(raw)) friendly = 'الحساب موجود لكنه غير مؤكّد. اعتمده مرة واحدة من Supabase → Authentication → Users، ثم سجّل الدخول. لن نرسل رسالة تأكيد.';
+          else if (/email not confirmed/i.test(raw)) friendly = 'هذا البريد مرتبط بحساب موجود، لكن اعتماد البريد لم يتم بعد. في Supabase افتح Authentication → Users، اختر هذا الحساب، ثم استخدم Confirm email / تأكيد البريد مرة واحدة. لن نرسل رسالة تأكيد، وبعدها ارجع إلى الموقع وسجّل الدخول بالبريد وكلمة المرور.';
           else if (/already registered|user already exists/i.test(raw)) friendly = 'هذا البريد مسجل بالفعل. استخدم تسجيل الدخول أو استعادة كلمة المرور.';
           else if (/invalid login credentials/i.test(raw)) friendly = 'البريد أو كلمة المرور غير صحيحة. إذا لم تنشئ الحساب من قبل، اختر «إنشاء حساب جديد». ';
           else if (/bd_profiles|bd_account_data|relation .* does not exist|schema cache|could not find the table/i.test(raw)) friendly = 'تحتاج قاعدة بيانات الموقع إلى تحديث. نزّل ملف التحديث من صفحة الدخول وشغّله في Supabase → SQL Editor → Run، ثم أعد المحاولة.';
