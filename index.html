@@ -260,6 +260,10 @@
     .auth-screen { max-width:520px; margin:8vh auto; padding:24px }
     .auth-screen .card { padding:22px }
     .auth-screen input { margin:6px 0 12px }
+    .auth-credit { margin-top:16px; padding:14px 16px; text-align:center; color:var(--muted); font-size:.88rem }
+    .auth-credit strong { color:var(--text) }
+    .auth-credit .row { justify-content:center; gap:8px 14px; margin-top:5px }
+    .auth-credit a { overflow-wrap:anywhere }
 
     .page-head {
       margin-bottom: 14px
@@ -1307,7 +1311,6 @@
       <nav class="nav" id="nav" aria-label="التنقل الرئيسي"></nav>
       <div style="margin-top:16px">
         <button class="btn sm" id="themeBtn" style="width:100%">تبديل المظهر (فاتح/داكن)</button>
-        <button class="btn sm danger" id="wipeBtn" style="width:100%;margin-top:6px">مسح كل البيانات المحفوظة</button>
       </div>
     </aside>
     <div class="sidebar-backdrop" id="sidebarBackdrop" aria-hidden="true"></div>
@@ -1370,7 +1373,7 @@
     const PENDING_INVITE_KEY = 'bd_pending_invite_v1';
     const PENDING_INVITE_KIND_KEY = 'bd_pending_invite_kind_v1';
     const PENDING_INVITE_FROM_KEY = 'bd_pending_invite_from_v1';
-    const CLOUD_SCHEMA_SQL = String.raw`-- Run this file once in Supabase Dashboard > SQL Editor.
+    const CLOUD_SCHEMA_BASE_SQL = String.raw`-- Run this file once in Supabase Dashboard > SQL Editor.
 -- The browser app uses only the project's public/publishable key. Never place a service_role key in the HTML.
 
 create table if not exists public.bd_account_data (
@@ -1806,7 +1809,197 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
 -- Refresh the PostgREST function cache after installing or updating RPCs.
 notify pgrst, 'reload schema';
 `;
-    const CLOUD_SCHEMA_DOWNLOAD_VERSION = '2026-10-23-v4';
+    const TASK_ACCESS_SQL = String.raw`
+-- Project participant privacy and task handoff permissions update.
+drop policy if exists "Workspace members read shared projects" on public.bd_workspaces;
+create policy "Workspace owners read their projects" on public.bd_workspaces
+  for select to authenticated using (owner_id = (select auth.uid()));
+
+create or replace function public.bd_list_my_workspaces()
+returns table(id uuid, project jsonb, owner_id uuid, partner_id uuid, invite_email text)
+language sql security definer set search_path = ''
+as $$
+  select w.id,
+         case when w.owner_id = auth.uid() then w.project else
+           w.project || jsonb_build_object(
+             '_bdSharing', coalesce(w.project -> '_bdSharing', '{"projects":{"view":true,"edit":false},"participants":{"view":true,"edit":false},"answers":{"view":false,"edit":false},"compare":{"view":true,"edit":false},"insights":{"view":true,"edit":false},"decision":{"view":false,"edit":false},"actions":{"view":true,"edit":true}}'::jsonb),
+             'notes', '{}'::jsonb,
+             'shortlist', '[]'::jsonb,
+             'decisionStatus', case when coalesce((w.project #>> '{_bdSharing,decision,view}')::boolean, false) then coalesce(w.project -> 'decisionStatus', '{}'::jsonb) else '{}'::jsonb end,
+             'activityLog', '[]'::jsonb,
+             'participants', coalesce((
+               select jsonb_agg(case
+                 when coalesce((w.project #>> '{_bdSharing,answers,view}')::boolean, false) then p
+                 when lower(coalesce(p ->> 'memberEmail', '')) = lower(coalesce(auth.jwt() ->> 'email', '')) then p
+                 else jsonb_build_object('id', p -> 'id', 'name', p -> 'name')
+               end order by p ->> 'id')
+                 from jsonb_array_elements(coalesce(w.project -> 'participants', '[]'::jsonb)) p
+                where coalesce((w.project #>> '{_bdSharing,answers,view}')::boolean, false)
+                   or lower(coalesce(p ->> 'memberEmail', '')) = lower(coalesce(auth.jwt() ->> 'email', ''))
+                   or coalesce((w.project #>> '{_bdSharing,participants,view}')::boolean, true)
+             ), '[]'::jsonb),
+             'actionItems', coalesce((
+               select jsonb_agg(t order by t ->> 'createdAt')
+                 from jsonb_array_elements(coalesce(w.project -> 'actionItems', '[]'::jsonb)) t
+                where coalesce((w.project #>> '{_bdSharing,actions,view}')::boolean, true)
+                  and (lower(coalesce(t ->> 'assigneeEmail', '')) = lower(coalesce(auth.jwt() ->> 'email', ''))
+                   or lower(coalesce(t ->> 'requestedByEmail', '')) = lower(coalesce(auth.jwt() ->> 'email', '')))
+             ), '[]'::jsonb)
+           )
+         end,
+         w.owner_id, w.partner_id, w.invite_email
+    from public.bd_workspaces w
+   where auth.uid() is not null and (
+     w.owner_id = auth.uid() or w.partner_id = auth.uid() or
+     exists (select 1 from public.bd_workspace_members m where m.workspace_id = w.id and m.user_id = auth.uid())
+   ) and (w.owner_id = auth.uid() or coalesce((w.project #>> '{_bdSharing,projects,view}')::boolean, true));
+$$;
+
+create or replace function public.bd_save_workspace_project(p_id uuid, p_project jsonb)
+returns void language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_current jsonb;
+  v_old_items jsonb;
+  v_new_items jsonb;
+  v_merged_items jsonb := '[]'::jsonb;
+  v_old_item jsonb;
+  v_new_item jsonb;
+  v_old_participants jsonb;
+  v_new_participants jsonb;
+  v_merged_participants jsonb := '[]'::jsonb;
+  v_old_participant jsonb;
+  v_new_participant jsonb;
+  v_old_files jsonb;
+  v_new_files jsonb;
+  v_email text := lower(coalesce(auth.jwt() ->> 'email', ''));
+  v_file_index integer;
+  v_answers_edit boolean := false;
+  v_actions_view boolean := true;
+  v_actions_edit boolean := true;
+begin
+  if auth.uid() is null then raise exception 'يجب تسجيل الدخول أولاً'; end if;
+  if jsonb_typeof(p_project) <> 'object' then raise exception 'بيانات المشروع غير صالحة'; end if;
+
+  update public.bd_workspaces set project = p_project, updated_at = pg_catalog.now()
+   where id = p_id and owner_id = auth.uid();
+  if found then return; end if;
+
+  select w.project into v_current from public.bd_workspaces w
+   where w.id = p_id and (w.partner_id = auth.uid() or exists (
+     select 1 from public.bd_workspace_members m where m.workspace_id = p_id
+       and m.user_id = auth.uid() and m.role in ('assistant', 'security')
+   )) and coalesce((w.project #>> '{_bdSharing,projects,view}')::boolean, true)
+   for update;
+  if not found then raise exception 'لا تملك صلاحية تعديل هذا المشروع'; end if;
+
+  v_answers_edit := coalesce((v_current #>> '{_bdSharing,answers,edit}')::boolean, false);
+  v_actions_view := coalesce((v_current #>> '{_bdSharing,actions,view}')::boolean, true);
+  v_actions_edit := coalesce((v_current #>> '{_bdSharing,actions,edit}')::boolean, true);
+
+  if v_answers_edit then
+    v_old_participants := coalesce(v_current -> 'participants', '[]'::jsonb);
+    v_new_participants := coalesce(p_project -> 'participants', '[]'::jsonb);
+    if jsonb_typeof(v_new_participants) <> 'array' then raise exception 'قائمة الإجابات غير صالحة'; end if;
+    if exists (
+      select 1 from jsonb_array_elements(v_new_participants) submitted
+       where not exists (select 1 from jsonb_array_elements(v_old_participants) saved where saved ->> 'id' = submitted ->> 'id')
+    ) then raise exception 'لا يمكنك إضافة مشاركين إلى المشروع'; end if;
+    for v_old_participant in select value from jsonb_array_elements(v_old_participants) loop
+      v_new_participant := null;
+      select value into v_new_participant from jsonb_array_elements(v_new_participants)
+       where value ->> 'id' = v_old_participant ->> 'id';
+      if lower(coalesce(v_old_participant ->> 'memberEmail', '')) = v_email then
+        if v_new_participant is null or
+           (v_new_participant - 'answers' - 'skipped' - 'notes' - 'flags' - 'lastQuestionId' - 'updatedAt') is distinct from
+           (v_old_participant - 'answers' - 'skipped' - 'notes' - 'flags' - 'lastQuestionId' - 'updatedAt') then
+          raise exception 'يمكنك تعديل إجابات حسابك فقط';
+        end if;
+        v_merged_participants := v_merged_participants || jsonb_build_array(v_new_participant);
+      else
+        v_merged_participants := v_merged_participants || jsonb_build_array(v_old_participant);
+      end if;
+    end loop;
+    v_current := jsonb_set(v_current, '{participants}', v_merged_participants, true);
+  end if;
+
+  v_old_items := coalesce(v_current -> 'actionItems', '[]'::jsonb);
+  v_new_items := coalesce(p_project -> 'actionItems', '[]'::jsonb);
+  if jsonb_typeof(v_new_items) <> 'array' then raise exception 'قائمة المهام غير صالحة'; end if;
+  for v_old_item in select value from jsonb_array_elements(v_old_items) loop
+    if not v_actions_view then
+      v_merged_items := v_merged_items || jsonb_build_array(v_old_item);
+      continue;
+    end if;
+    v_new_item := null;
+    select value into v_new_item from jsonb_array_elements(v_new_items) where value ->> 'id' = v_old_item ->> 'id';
+    if lower(coalesce(v_old_item ->> 'assigneeEmail', '')) = v_email then
+      if not v_actions_edit then
+        if v_new_item is distinct from v_old_item then raise exception 'لا تسمح الصلاحيات بتعديل المهام'; end if;
+        v_merged_items := v_merged_items || jsonb_build_array(v_old_item);
+        continue;
+      end if;
+      if v_new_item is null or (v_new_item - 'attachments' - 'status' - 'submittedAt' - 'submittedByEmail') is distinct from
+         (v_old_item - 'attachments' - 'status' - 'submittedAt' - 'submittedByEmail') then
+        raise exception 'يمكنك تعديل مرفقات المهمة المسندة إليك وإرسالها فقط';
+      end if;
+      v_old_files := coalesce(v_old_item -> 'attachments', '[]'::jsonb);
+      v_new_files := coalesce(v_new_item -> 'attachments', '[]'::jsonb);
+      if jsonb_typeof(v_new_files) <> 'array' or jsonb_array_length(v_new_files) < jsonb_array_length(v_old_files) then
+        raise exception 'لا يمكن حذف مرفقات المهمة';
+      end if;
+      for v_file_index in 0..jsonb_array_length(v_old_files) - 1 loop
+        if (v_old_files -> v_file_index) is distinct from (v_new_files -> v_file_index) then
+          raise exception 'لا يمكن تغيير مرفق سبق رفعه';
+        end if;
+      end loop;
+      for v_file_index in jsonb_array_length(v_old_files)..jsonb_array_length(v_new_files) - 1 loop
+        if lower(coalesce(v_new_files -> v_file_index ->> 'uploadedByEmail', '')) <> v_email then
+          raise exception 'يمكنك رفع مرفقات باسم حسابك فقط';
+        end if;
+      end loop;
+      if coalesce(v_new_item ->> 'status', '') <> coalesce(v_old_item ->> 'status', '') and not (
+        coalesce(v_old_item ->> 'status', 'todo') in ('todo', 'later') and v_new_item ->> 'status' = 'disc2'
+      ) then
+        raise exception 'يمكنك إرسال المهمة للمراجعة فقط';
+      end if;
+      if v_new_item ->> 'status' in ('disc2', 'res') and (
+        lower(coalesce(v_new_item ->> 'submittedByEmail', '')) <> v_email or
+        nullif(v_new_item ->> 'submittedAt', '') is null
+      ) then
+        raise exception 'بيانات تسليم المهمة غير صالحة';
+      end if;
+      v_merged_items := v_merged_items || jsonb_build_array(v_new_item);
+    else
+      if lower(coalesce(v_old_item ->> 'requestedByEmail', '')) = v_email then
+        if v_new_item is null or v_new_item is distinct from v_old_item then
+          raise exception 'يمكنك مشاهدة المهمة التي طلبتها فقط؛ التسليم يحدّثه المنفذ';
+        end if;
+        v_merged_items := v_merged_items || jsonb_build_array(v_old_item);
+      else
+        if v_new_item is not null then raise exception 'لا يمكنك تعديل مهمة مسندة إلى شخص آخر'; end if;
+        v_merged_items := v_merged_items || jsonb_build_array(v_old_item);
+      end if;
+    end if;
+  end loop;
+  if jsonb_array_length(v_new_items) <> case when v_actions_view then (
+    select count(*) from jsonb_array_elements(v_old_items) old_item
+     where lower(coalesce(old_item ->> 'assigneeEmail', '')) = v_email
+        or lower(coalesce(old_item ->> 'requestedByEmail', '')) = v_email
+  ) else 0 end then raise exception 'يمكنك تعديل المهام المسندة إليك فقط'; end if;
+  update public.bd_workspaces set project = jsonb_set(v_current, '{actionItems}', v_merged_items, true),
+         updated_at = pg_catalog.now() where id = p_id;
+end;
+$$;
+
+revoke all on function public.bd_list_my_workspaces() from public;
+grant execute on function public.bd_list_my_workspaces() to authenticated;
+revoke all on function public.bd_save_workspace_project(uuid, jsonb) from public;
+grant execute on function public.bd_save_workspace_project(uuid, jsonb) to authenticated;
+notify pgrst, 'reload schema';
+`;
+    const CLOUD_SCHEMA_SQL = CLOUD_SCHEMA_BASE_SQL + '\n' + TASK_ACCESS_SQL;
+  const CLOUD_SCHEMA_DOWNLOAD_VERSION = '2026-10-23-v6';
     let SUPA = null, AUTH_USER = null, AUTH_ROLE = null, AUTH_ACCOUNT_TYPE = 'owner', ROLE_PICKER_OPEN = false, AUTH_SITE_ROLE = 'member', CLOUD_BUSY = false, CLOUD_SYNC_PROMISE = null, SYNC_QUEUED = false, CLOUD_LOAD_WARNING = '', CLOUD_SCHEMA_MISSING = false;
     let WORKSPACE_ROLES = Object.create(null);
     let PROJECT_SYNC_FINGERPRINTS = Object.create(null);
@@ -1818,7 +2011,7 @@ notify pgrst, 'reload schema';
     let INCOMING_INVITES = [];
     let INVITE_INBOX_TIMER = null;
     const SENDING_FRIEND_REQUESTS = new Set();
-    const READ_ONLY_ACTIONS = new Set(['export-json', 'export-csv', 'print-report', 'open-project', 'search-partners', 'request-partnership', 'refresh-partnerships', 'accept-workspace-invite', 'accept-inbox-invite', 'decline-inbox-invite', 'dismiss-workspace-invite']);
+    const READ_ONLY_ACTIONS = new Set(['export-json', 'export-csv', 'print-report', 'open-project', 'search-partners', 'request-partnership', 'refresh-partnerships', 'accept-workspace-invite', 'accept-inbox-invite', 'decline-inbox-invite', 'dismiss-workspace-invite', 'pick-cat', 'prev-cat', 'next-cat', 'refresh-project']);
 
     /* ---------- tiny helpers ---------- */
     const $ = (s, r) => (r || document).querySelector(s);
@@ -1876,21 +2069,77 @@ notify pgrst, 'reload schema';
 
     function accountDataKey() { return APP.dataKey + (AUTH_USER ? '_' + AUTH_USER.id : ''); }
     function cloudReady() { return !!(SUPA && AUTH_USER); }
+    function workspaceMemberRole(project) {
+      return project && project._bdWorkspaceId ? (WORKSPACE_ROLES[project._bdWorkspaceId] || 'assistant') : 'owner';
+    }
+    function isProjectOwner(project) { return !!project && (!project._bdWorkspaceId || workspaceMemberRole(project) === 'owner'); }
+    const DEFAULT_SHARE_ACCESS = {
+      projects: { view: true, edit: false },
+      participants: { view: true, edit: false },
+      answers: { view: false, edit: false },
+      compare: { view: true, edit: false },
+      insights: { view: true, edit: false },
+      decision: { view: false, edit: false },
+      actions: { view: true, edit: true }
+    };
+    const SHARE_ACCESS_LABELS = {
+      projects: 'ملخص المشروع', participants: 'أسماء المشاركين', answers: 'الإجابات والتفضيلات', compare: 'المقارنة',
+      insights: 'الرؤى والأفكار', decision: 'قرار الشراكة', actions: 'المهام والملفات'
+    };
+    function shareAccessFor(project) {
+      const raw = project && project._bdSharing || {};
+      const access = {};
+      Object.keys(DEFAULT_SHARE_ACCESS).forEach(section => {
+        const source = raw[section];
+        if (source && typeof source === 'object') {
+          access[section] = { view: source.view === true, edit: source.edit === true };
+        } else if (section === 'participants' && typeof raw.participants === 'boolean') {
+          access[section] = { view: raw.participants, edit: false };
+        } else if (section === 'answers' && typeof raw.answers === 'boolean') {
+          access[section] = { view: raw.answers, edit: false };
+        } else {
+          access[section] = Object.assign({}, DEFAULT_SHARE_ACCESS[section]);
+        }
+        if (section !== 'answers' && access[section].edit) access[section].view = true;
+      });
+      return access;
+    }
+    function canViewSection(project, section) {
+      const sectionAccess = shareAccessFor(project)[section];
+      return canManageProject(project) || !!(sectionAccess && (sectionAccess.view || (section === 'answers' && sectionAccess.edit)));
+    }
+    function canWriteSection(project, section) {
+      return canManageProject(project) || shareAccessFor(project)[section]?.edit === true;
+    }
+    function currentSection() {
+      return VIEW === 'questionnaire' ? 'answers' : VIEW === 'actions' ? 'actions' : VIEW === 'projects' ? 'projects' : VIEW;
+    }
+    function isAssignedTask(project, task) {
+      const email = String(AUTH_USER && AUTH_USER.email || '').trim().toLowerCase();
+      return !!email && String(task && task.assigneeEmail || '').trim().toLowerCase() === email;
+    }
+    function canSyncWorkspaceProject(project) {
+      return isProjectOwner(project) ||
+        (canWriteSection(project, 'actions') && arr(project && project.actionItems).some(task => isAssignedTask(project, task))) ||
+        (canWriteSection(project, 'answers') && currentParticipantFor(project));
+    }
+    function currentParticipantFor(project) {
+      const email = String(AUTH_USER && AUTH_USER.email || '').trim().toLowerCase();
+      return !!email && arr(project && project.participants).some(participant => String(participant.memberEmail || '').trim().toLowerCase() === email);
+    }
     function projectRole(project) {
       if (!project) return 'none';
-      if (!project._bdWorkspaceId) return 'owner';
-      const role = WORKSPACE_ROLES[project._bdWorkspaceId] || 'assistant';
-      if (role === 'owner') return 'owner';
+      if (isProjectOwner(project)) return 'owner';
+      const role = workspaceMemberRole(project);
       return project._bdShareRestricted ? 'security' : role;
     }
     function canEditProject(project) { return projectRole(project) !== 'security'; }
-    function isReadOnlyProject(project) { return !!project && projectRole(project) === 'security'; }
+    function isReadOnlyProject(project) { return !!project && !isProjectOwner(project); }
     function projectFingerprint(project) {
       const snapshot = JSON.parse(JSON.stringify(project || {}));
       delete snapshot._bdWorkspaceId;
-      delete snapshot._bdSharing;
       delete snapshot.activityLog;
-      if (!snapshot._bdShareRestricted) delete snapshot._bdShareRestricted;
+      snapshot._bdSharing = shareAccessFor(project);
       return JSON.stringify(snapshot);
     }
     function recordProjectActivity(project, action) {
@@ -1971,6 +2220,8 @@ notify pgrst, 'reload schema';
     }
     function authScreen(message, mode) {
       const host = $('#authHost'), app = $('.app');
+      const authCredit = '<footer class="auth-credit"><div>© مستكشف المشاريع · <strong>Credited by Youssef Mahmoud</strong></div>' +
+        '<div class="row"><a href="mailto:youssef1mahmouf24@gmail.com">youssef1mahmouf24@gmail.com</a><a href="tel:+201141030264">01141030264</a></div></footer>';
       if (app) app.style.display = 'none';
       host.style.display = 'block';
       const cfg = readCloudConfig();
@@ -1983,7 +2234,7 @@ notify pgrst, 'reload schema';
         host.innerHTML = '<main class="auth-screen"><div class="card"><h2>تعيين كلمة مرور جديدة</h2>' +
           '<label for="newPassword">كلمة المرور الجديدة</label><input id="newPassword" type="password" minlength="8" autocomplete="new-password">' +
           '<button class="btn primary" id="updatePassword">حفظ كلمة المرور</button>' +
-          (message ? '<div class="hint" style="margin-top:12px">' + esc(message) + '</div>' : '') + '</div></main>';
+          (message ? '<div class="hint" style="margin-top:12px">' + esc(message) + '</div>' : '') + '</div>' + authCredit + '</main>';
         on(host, '#updatePassword', 'click', async () => {
           const password = $('#newPassword').value;
           if (password.length < 8) { toast('كلمة المرور يجب ألا تقل عن 8 أحرف', 'warn'); return; }
@@ -2007,7 +2258,7 @@ notify pgrst, 'reload schema';
         '<button class="btn" id="authMode">' + (signup ? 'لدي حساب بالفعل' : 'إنشاء حساب جديد') + '</button></div>' +
         (!signup ? '<button class="btn link" id="forgotPassword" style="margin-top:8px">نسيت كلمة المرور؟</button>' : '') +
         '<div class="hint" style="margin-top:12px">' + esc(message || 'بياناتك تحفظ تلقائياً في حسابك. تظل مسجلاً على هذا الجهاز ما دامت بيانات المتصفح محفوظة.') + '</div>' +
-        (AUTH_ROLE === 'owner' ? '<button class="btn link" id="downloadSchema" style="margin-top:8px">تنزيل ملف تحديث قاعدة البيانات</button>' : '') + '</div></main>';
+        (AUTH_ROLE === 'owner' ? '<button class="btn link" id="downloadSchema" style="margin-top:8px">تنزيل ملف تحديث قاعدة البيانات</button>' : '') + '</div>' + authCredit + '</main>';
       on(host, '#authMode', 'click', () => authScreen('', signup ? 'login' : 'signup'));
       on(host, '#togglePassword', 'click', (event) => {
         const input = $('#authPassword', host), button = event.currentTarget;
@@ -2158,7 +2409,7 @@ notify pgrst, 'reload schema';
         const old = lsGet(APP.dataKey);
         if (old) { try { S = Object.assign(defaultState(), JSON.parse(old)); migratedLegacy = true; } catch (_) { } }
       }
-      const { data: shared, error } = await SUPA.from('bd_workspaces').select('id,project,owner_id,partner_id,invite_email');
+      const { data: shared, error } = await SUPA.rpc('bd_list_my_workspaces');
       if (error) throw error;
       (shared || []).forEach(row => {
         if (row.owner_id === AUTH_USER.id) WORKSPACE_ROLES[row.id] = 'owner';
@@ -2220,15 +2471,16 @@ notify pgrst, 'reload schema';
       CLOUD_BUSY = true;
       const syncingRevision = STATE_REVISION;
       const sync = (async () => { try {
-        for (const project of S.projects.filter(p => p._bdWorkspaceId && canEditProject(p))) {
-          const currentShared = canManageProject(project) ? sharedProjectSnapshot(project) : JSON.parse(JSON.stringify(project));
-          const fingerprint = projectFingerprint(currentShared);
-          if (PROJECT_SYNC_FINGERPRINTS[project._bdWorkspaceId] !== fingerprint) recordProjectActivity(project);
+        for (const project of S.projects.filter(p => p._bdWorkspaceId && canSyncWorkspaceProject(p))) {
+          if (canManageProject(project)) {
+            const fingerprint = projectFingerprint(sharedProjectSnapshot(project));
+            if (PROJECT_SYNC_FINGERPRINTS[project._bdWorkspaceId] !== fingerprint) recordProjectActivity(project);
+          }
         }
         const privateState = Object.assign({}, S, { projects: S.projects.filter(p => !p._bdWorkspaceId || canManageProject(p)) });
         const { error } = await SUPA.from('bd_account_data').upsert({ user_id: AUTH_USER.id, data: privateState, updated_at: nowISO() }, { onConflict: 'user_id' });
         if (error) throw error;
-        for (const project of S.projects.filter(p => p._bdWorkspaceId && canEditProject(p))) {
+        for (const project of S.projects.filter(p => p._bdWorkspaceId && canSyncWorkspaceProject(p))) {
           const data = canManageProject(project) ? sharedProjectSnapshot(project) : JSON.parse(JSON.stringify(project));
           delete data._bdWorkspaceId;
           const result = await SUPA.rpc('bd_save_workspace_project', { p_id: project._bdWorkspaceId, p_project: data });
@@ -2406,19 +2658,7 @@ notify pgrst, 'reload schema';
     function sharedProjectSnapshot(project) {
       const snapshot = JSON.parse(JSON.stringify(project));
       delete snapshot._bdWorkspaceId;
-      delete snapshot._bdSharing;
-      const access = project._bdSharing || { participants: true, answers: true };
-      snapshot._bdShareRestricted = !access.participants || !access.answers;
-      if (!access.participants) snapshot.participants = [];
-      else if (!access.answers) snapshot.participants = arr(snapshot.participants).map(participant => Object.assign({}, participant, {
-        answers: {}, skipped: {}, notes: {}, flags: {}, lastQuestionId: null
-      }));
-      if (!access.participants || !access.answers) {
-        snapshot.shortlist = [];
-        snapshot.notes = { main: '' };
-        snapshot.decisionStatus = {};
-        snapshot.actionItems = [];
-      }
+      snapshot._bdSharing = shareAccessFor(project);
       return snapshot;
     }
     function normProject(p) {
@@ -2747,6 +2987,10 @@ notify pgrst, 'reload schema';
     function currentParticipant() {
       const pr = currentProject();
       if (!pr) return null;
+      if (!isProjectOwner(pr)) {
+        const email = String(AUTH_USER && AUTH_USER.email || '').trim().toLowerCase();
+        return arr(pr.participants).find(participant => String(participant.memberEmail || '').trim().toLowerCase() === email) || null;
+      }
       return byId(pr.participants, S.activeParticipantId) || pr.participants[0] || null;
     }
     function buildQuestions(catId, custom) {
@@ -3048,7 +3292,7 @@ notify pgrst, 'reload schema';
       { id: 'compare', name: 'المقارنة', icon: '⚖️' },
       { id: 'insights', name: 'الرؤى والأفكار', icon: '💡' },
       { id: 'decision', name: 'قرار الشراكة', icon: '🎯', grp: 'القرار' },
-      { id: 'actions', name: 'المهام والخطوات', icon: '✅' },
+      { id: 'actions', name: 'المهام والملفات', icon: '✅' },
       { id: 'data', name: 'البيانات', icon: '💾', grp: 'النظام' },
       { id: 'site-admin', name: 'إدارة الموقع', icon: '🛡️', grp: 'الإدارة' }
     ];
@@ -3080,11 +3324,13 @@ notify pgrst, 'reload schema';
         const nav = $('#nav');
         if (!nav) return;
         let html = '';
+        const pr = currentProject();
         VIEWS.forEach(v => {
           if (v.id === 'site-admin' && AUTH_SITE_ROLE !== 'site_admin') return;
+          const section = v.id === 'questionnaire' ? 'answers' : v.id === 'actions' ? 'actions' : v.id === 'projects' ? 'projects' : v.id;
+          if (pr && !canManageProject(pr) && ['projects', 'participants', 'answers', 'compare', 'insights', 'decision', 'actions'].includes(section) && !canViewSection(pr, section)) return;
           if (v.grp) html += '<div class="grp">' + esc(v.grp) + '</div>';
           let badge = '';
-          const pr = currentProject();
           if (v.id === 'participants' && pr) badge = '<span class="badge">' + pr.participants.length + '</span>';
           if (v.id === 'questionnaire' && pr) {
             const pt = currentParticipant();
@@ -3136,15 +3382,15 @@ notify pgrst, 'reload schema';
             : emptyState('لا يوجد مشروع بعد', 'ابدأ مشروعاً جديداً لتتمكن من استخدام هذه الشاشة.', '📁', 'مشروع جديد', 'new-project');
         } else {
           switch (VIEW) {
-            case 'projects': html = viewProjects(); break;
+            case 'projects': html = canViewSection(pr, 'projects') ? viewProjects() : '<div class="msg warn">صاحب المشروع لم يشارك ملخص المشروع معك.</div>'; break;
             case 'partners': html = viewPartners(); break;
             case 'site-admin': html = AUTH_SITE_ROLE === 'site_admin' ? viewSiteAdmin() : '<div class="msg warn">لوحة إدارة الموقع متاحة لمدير الموقع فقط.</div>'; break;
-            case 'participants': html = viewParticipants(); break;
-            case 'questionnaire': html = viewQuestionnaire(); break;
-            case 'compare': html = viewCompare(); break;
-            case 'insights': html = viewInsights(); break;
-            case 'decision': html = viewDecision(); break;
-            case 'actions': html = viewActions(); break;
+            case 'participants': html = canViewSection(pr, 'participants') ? viewParticipants() : '<div class="msg warn">أسماء المشاركين غير متاحة لهذا الحساب.</div>'; break;
+            case 'questionnaire': html = canViewSection(pr, 'answers') ? viewQuestionnaire() : '<div class="msg warn">الإجابات غير متاحة لهذا الحساب.</div>'; break;
+            case 'compare': html = canViewSection(pr, 'compare') ? viewCompare() : '<div class="msg warn">المقارنة غير متاحة لهذا الحساب.</div>'; break;
+            case 'insights': html = canViewSection(pr, 'insights') ? viewInsights() : '<div class="msg warn">الرؤى غير متاحة لهذا الحساب.</div>'; break;
+            case 'decision': html = canManageProject(pr) ? viewDecision() : canViewSection(pr, 'decision') ? viewSharedDecision(pr) : '<div class="msg warn">قرار الشراكة خاص بصاحب المشروع.</div>'; break;
+            case 'actions': html = canViewSection(pr, 'actions') ? viewActions() : '<div class="msg warn">المهام والملفات غير متاحة لهذا الحساب.</div>'; break;
             case 'data': html = viewData(); break;
             default: html = viewProjects();
           }
@@ -3157,11 +3403,11 @@ notify pgrst, 'reload schema';
           '<div style="margin-top:12px"><button class="btn primary" onclick="location.reload()">إعادة تحميل الصفحة</button></div>' +
           '</div>';
       }
-      const readonly = isReadOnlyProject(pr) && VIEW !== 'partners';
+      const readonly = isReadOnlyProject(pr) && VIEW !== 'partners' && !canWriteSection(pr, currentSection());
       host.classList.toggle('read-only', readonly);
       host.innerHTML = (CLOUD_LOAD_WARNING ? '<div class="msg warn" role="status" style="margin-bottom:12px">' + esc(CLOUD_LOAD_WARNING) +
         (CLOUD_SCHEMA_MISSING ? '<div class="row" style="margin-top:10px;gap:8px"><button class="btn" id="downloadCloudSchema">تنزيل أحدث ملف SQL</button><button class="btn primary" id="retryCloudSchema">تحقق الآن</button></div>' : '') + '</div>' : '') +
-        (readonly ? '<div class="readonly-banner">دور الأمن: يمكنك مشاهدة هذا المشروع فقط، ولا يمكنك تعديل بياناته.</div>' : '') + html;
+        (readonly ? '<div class="readonly-banner">المشروع للعرض في هذا الجزء. عدّل فقط الأجزاء التي أتاحها لك صاحب المشروع.</div>' : '') + html;
       on(host, '#downloadCloudSchema', 'click', () => download('supabase-setup.sql', CLOUD_SCHEMA_SQL, 'text/plain;charset=utf-8'));
       on(host, '#retryCloudSchema', 'click', async (event) => {
         const button = event.currentTarget;
@@ -3183,10 +3429,20 @@ notify pgrst, 'reload schema';
       });
       if (readonly) {
         $$('#view input, #view textarea, #view select').forEach(el => {
-          if (el.id !== 'partnerExactQuery') el.disabled = true;
+          if (el.id === 'partnerExactQuery') return;
+          if (el.matches('input[data-task-upload]')) {
+            const task = arr(pr && pr.actionItems).find(item => item.id === el.getAttribute('data-task-upload'));
+            if (task && canWriteSection(pr, 'actions') && isAssignedTask(pr, task) && task.status !== 'accept') return;
+          }
+          el.disabled = true;
         });
         $$('#view button').forEach(btn => {
           const act = btn.getAttribute('data-act');
+          if (['choose-task-file', 'submit-task'].includes(act)) {
+            const task = arr(pr && pr.actionItems).find(item => item.id === btn.getAttribute('data-id'));
+            if (task && canWriteSection(pr, 'actions') && isAssignedTask(pr, task) && task.status !== 'accept') return;
+          }
+          if (['skip-q', 'flag-q', 'clear-q'].includes(act) && canWriteSection(pr, 'answers')) return;
           if (!act || !READ_ONLY_ACTIONS.has(act)) btn.disabled = true;
         });
       }
@@ -3232,9 +3488,7 @@ notify pgrst, 'reload schema';
     function viewProjects() {
       let html = pageHead('المشاريع', AUTH_ACCOUNT_TYPE === 'partner' ? 'المشاريع التي يشاركها معك أصحابها تظهر هنا للعرض.' : 'أنشئ مشروعاً، أضف المشاركين، ثم ابدأ الاستبيان.');
       html += '<div class="row no-print" style="margin-bottom:14px">' +
-        (AUTH_ACCOUNT_TYPE !== 'partner' ? '<button class="btn primary" data-act="new-project">+ مشروع جديد</button>' : '') +
-        '<button class="btn" data-act="import-json">استيراد ملف</button>' +
-        '<button class="btn ghost" data-act="export-json">تصدير نسخة</button></div>';
+        (AUTH_ACCOUNT_TYPE !== 'partner' ? '<button class="btn primary" data-act="new-project">+ مشروع جديد</button><button class="btn" data-act="import-json">استيراد ملف</button><button class="btn ghost" data-act="export-json">تصدير نسخة</button>' : '') + '</div>';
       const list = arr(S.projects);
       if (!list.length) {
         html += card('', AUTH_ACCOUNT_TYPE === 'partner'
@@ -3255,9 +3509,8 @@ notify pgrst, 'reload schema';
           '<div style="margin-top:6px">' + progressBar(v.score) + '</div>' +
           '<div class="row" style="margin-top:10px">' +
           '<button class="btn sm" data-act="open-project" data-id="' + esc(p.id) + '">فتح</button>' +
-          '<button class="btn sm" data-act="rename-project" data-id="' + esc(p.id) + '">إعادة تسمية</button>' +
-          '<button class="btn sm" data-act="duplicate-project" data-id="' + esc(p.id) + '">نسخ</button>' +
-          '<button class="btn sm danger" data-act="delete-project" data-id="' + esc(p.id) + '">حذف</button>' +
+          (canManageProject(p) ? '<button class="btn sm" data-act="rename-project" data-id="' + esc(p.id) + '">إعادة تسمية</button>' +
+            '<button class="btn sm danger" data-act="delete-project" data-id="' + esc(p.id) + '">حذف</button>' : '') +
           '</div></div>';
       });
       html += '</div>';
@@ -3269,10 +3522,9 @@ notify pgrst, 'reload schema';
        ===================================================================== */
     function viewParticipants() {
       const pr = currentProject();
-      let html = pageHead('المشاركون', 'كل مشارك يجيب عن نفس الأسئلة، ثم نقارن بينكم.');
-      html += '<div class="row no-print" style="margin-bottom:14px">' +
-        '<button class="btn primary" data-act="add-participant">+ مشارك جديد</button>' +
-        '<select class="sel" id="prjSel" aria-label="المشروع الحالي"></select></div>';
+      const owner = canManageProject(pr);
+      let html = pageHead('المشاركون', owner ? 'أدر المشاركين واربط كل مشارك ببريد حسابه حتى يرى بياناته فقط.' : 'تظهر الأسماء فقط؛ لا يمكنك اختيار مشارك آخر أو مشاهدة إجاباته أو تعديل بياناته.');
+      if (owner) html += '<div class="row no-print" style="margin-bottom:14px"><button class="btn primary" data-act="add-participant">+ مشارك جديد</button><select class="sel" id="prjSel" aria-label="المشروع الحالي"></select></div>';
       const pts = arr(pr.participants);
       if (!pts.length) {
         html += card('', emptyState('لا يوجد مشاركون', 'أضف مشاركاً واحداً على الأقل لبدء التقييم.', '👤', 'إضافة مشارك', 'add-participant'));
@@ -3280,6 +3532,12 @@ notify pgrst, 'reload schema';
       }
       html += '<div class="grid g3">';
       pts.forEach(p => {
+        if (!owner) {
+          html += '<div class="idea"><h4 style="margin:0">' + esc(p.name) + '</h4>' +
+            (String(p.memberEmail || '').toLowerCase() === String(AUTH_USER && AUTH_USER.email || '').toLowerCase() ? '<div class="tiny muted" style="margin-top:5px">بياناتك — تفتح من صفحة الاستبيان</div>' : '') +
+            '</div>';
+          return;
+        }
         const s = scoreAll(p);
         const isActive = p.id === S.activeParticipantId;
         html += '<div class="idea' + (isActive ? ' top' : '') + '">' +
@@ -3289,6 +3547,8 @@ notify pgrst, 'reload schema';
           '<div class="score-pill">' + (s.overall === null ? '—' : s.overall) + '</div>' +
           '<div class="tiny muted">اكتمال ' + s.completeness + '% (' + s.answered + '/' + s.totalQ + ')</div>' +
           '<div style="margin-top:6px">' + progressBar(s.completeness) + '</div>' +
+          '<label class="tiny" style="display:block;margin-top:8px">بريد الحساب الذي يملك هذه البيانات' +
+          '<input type="email" data-participant-email="' + esc(p.id) + '" value="' + esc(p.memberEmail || '') + '" placeholder="name@example.com" style="width:100%"></label>' +
           '<div class="row" style="margin-top:10px">' +
           '<button class="btn sm" data-act="select-participant" data-id="' + esc(p.id) + '">اختيار</button>' +
           '<button class="btn sm" data-act="rename-participant" data-id="' + esc(p.id) + '">تعديل الاسم</button>' +
@@ -3296,7 +3556,7 @@ notify pgrst, 'reload schema';
           '</div></div>';
       });
       html += '</div>';
-      html += card('ملاحظات المشروع', '<textarea id="projNotes" placeholder="اكتب ملاحظات المشروع هنا…">' + esc(pr.notes && pr.notes.main ? pr.notes.main : '') + '</textarea>');
+      if (owner) html += card('ملاحظات المشروع', '<textarea id="projNotes" placeholder="اكتب ملاحظات المشروع هنا…">' + esc(pr.notes && pr.notes.main ? pr.notes.main : '') + '</textarea>');
       return html;
     }
 
@@ -3382,10 +3642,9 @@ notify pgrst, 'reload schema';
         return html;
       }
       html += '<div class="row no-print" style="margin-bottom:12px">' +
-        '<label style="margin:0">المشارك</label>' +
-        '<select class="sel" id="ptSel" aria-label="المشارك">' +
-        arr(pr.participants).map(p => '<option value="' + esc(p.id) + '"' + (p.id === pt.id ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') +
-        '</select><span class="spacer"></span>' +
+        (canManageProject(pr) ? '<label style="margin:0">المشارك</label><select class="sel" id="ptSel" aria-label="المشارك">' +
+          arr(pr.participants).map(p => '<option value="' + esc(p.id) + '"' + (p.id === pt.id ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') +
+          '</select>' : '<span class="pill info">بيانات: ' + esc(pt.name) + '</span>') + '<span class="spacer"></span>' +
         '<button class="btn sm" data-act="prev-cat">◀ السابق</button>' +
         '<button class="btn sm" data-act="next-cat">التالي ▶</button></div>';
 
@@ -3433,13 +3692,15 @@ notify pgrst, 'reload schema';
        ===================================================================== */
     function viewCompare() {
       const pr = currentProject();
-      const pts = arr(pr.participants);
+      const allParticipantsVisible = canManageProject(pr) || shareAccessFor(pr).answers.view;
+      const ownEmail = String(AUTH_USER && AUTH_USER.email || '').trim().toLowerCase();
+      const pts = arr(pr.participants).filter(participant => allParticipantsVisible || String(participant.memberEmail || '').trim().toLowerCase() === ownEmail);
       let html = pageHead('المقارنة', 'قارن إجابات المشاركين جنباً إلى جنب لكل قسم.');
       if (!pts.length) {
         html += card('', emptyState('لا يوجد مشاركون للمقارنة', 'أضف مشاركين على الأقل.', '👥', 'إضافة مشارك', 'add-participant'));
         return html;
       }
-      const compat = compatibility(pr);
+      const compat = allParticipantsVisible ? compatibility(pr) : null;
       if (compat) {
         html += card('درجة التوافق بين المشاركين',
           '<div class="row"><div style="flex:1">' + progressBar(compat.total) + '</div>' +
@@ -3478,9 +3739,12 @@ notify pgrst, 'reload schema';
        ===================================================================== */
     function viewInsights() {
       const pr = currentProject();
-      const pts = arr(pr.participants);
+      const allParticipantsVisible = canManageProject(pr) || shareAccessFor(pr).answers.view;
+      const ownEmail = String(AUTH_USER && AUTH_USER.email || '').trim().toLowerCase();
+      const pts = arr(pr.participants).filter(participant => allParticipantsVisible || String(participant.memberEmail || '').trim().toLowerCase() === ownEmail);
+      const visibleProject = Object.assign({}, pr, { participants: pts });
       let html = pageHead('الرؤى والأفكار', 'ما يقوله النموذج عن نقاط القوة والفجوات.');
-      const sug = ideaSuggestions(pr);
+      const sug = ideaSuggestions(visibleProject);
       if (!sug.length) {
         html += card('', emptyState('لا توجد رؤى بعد', 'أكمل الاستبيان أولاً.', '💡'));
         return html;
@@ -3492,7 +3756,7 @@ notify pgrst, 'reload schema';
       });
       html += '</div>';
 
-      const compat = compatibility(pr);
+      const compat = allParticipantsVisible ? compatibility(pr) : null;
       if (compat) {
         html += card('توافق الأقسام', CATS.filter(c => compat.perDim[c.id] !== undefined)
           .map(c => barRow(c.icon + ' ' + c.name, compat.perDim[c.id])).join(''));
@@ -3559,19 +3823,37 @@ notify pgrst, 'reload schema';
       return html;
     }
 
+    function viewSharedDecision(project) {
+      const status = project && project.decisionStatus || {};
+      const decision = DECISIONS.find(item => item.id === status.final);
+      return pageHead('قرار الشراكة', 'القرار الذي سمح لك صاحب المشروع بمشاهدته.') +
+        card('القرار النهائي', decision
+          ? '<div class="pill ' + toneClass(decision.tone) + '">' + esc(decision.label) + '</div>' +
+            (status.notes ? '<p style="margin-top:10px">' + esc(status.notes) + '</p>' : '')
+          : '<div class="tiny muted">لم يُحفظ قرار نهائي بعد.</div>');
+    }
+
     /* =====================================================================
        VIEW: ACTIONS
        ===================================================================== */
-    const TASK_GROUPS = { res: 'مقبولة', todo: 'قيد التنفيذ', disc2: 'تحتاج نقاشاً', later: 'مؤجّلة', accept: 'مؤكَّدة' };
+    const TASK_GROUPS = { todo: 'قيد التنفيذ', disc2: 'أُرسلت للمدير — بانتظار المراجعة', accept: 'استلمها المدير', res: 'مقبولة', later: 'مؤجّلة' };
+    const MAX_TASK_FILE_BYTES = 2 * 1024 * 1024;
+    const MAX_TASK_FILES_BYTES = 4 * 1024 * 1024;
     function viewActions() {
       const pr = currentProject();
-      let html = pageHead('المهام والخطوات', 'حوّل القرار إلى خطوات قابلة للتنفيذ.');
-      html += '<div class="row no-print" style="margin-bottom:12px">' +
-        '<input type="text" id="newTask" placeholder="اكتب مهمة جديدة…" style="flex:1;max-width:340px">' +
-        '<button class="btn primary" data-act="add-task">+ إضافة مهمة</button></div>';
+      const owner = canManageProject(pr);
+      let html = pageHead('المهام والملفات', owner ? 'اكتب المطلوب وحدد الشخص المنفذ. يرفع المنفذ ملفاته هنا، ثم تعتمد الاستلام.' : 'تظهر لك المهام المسندة إلى حسابك والمهام التي طلبتها. يمكنك رفع ملفات مهمتك وإرسالها لصاحب المشروع.');
+      html += '<div class="row no-print" style="margin-bottom:12px"><button class="btn" data-act="refresh-project">تحديث المهام</button></div>';
+      if (owner) html += '<div class="card no-print"><h3>طلب مهمة جديدة</h3>' +
+        '<div class="grid g2"><label>اسم المهمة<input type="text" id="newTask" placeholder="مثال: تجهيز ملف العميل"></label>' +
+        '<label>تفاصيل المطلوب<textarea id="newTaskDetails" rows="3" placeholder="اكتب المطلوب من المنفذ بالتفصيل"></textarea></label>' +
+        '<label>اسم المنفذ<input type="text" id="newTaskAssignee" placeholder="اسم الشخص"></label>' +
+        '<label>بريد حساب المنفذ<input type="email" id="newTaskAssigneeEmail" placeholder="name@example.com"></label>' +
+        '<label>موعد التسليم<input type="date" id="newTaskDue"></label></div>' +
+        '<button class="btn primary" style="margin-top:10px" data-act="add-task">+ إنشاء وإرسال المهمة</button></div>';
       const items = arr(pr.actionItems);
       if (!items.length) {
-        html += card('', emptyState('لا توجد مهام', 'أضف أول خطوة تنفّذها غداً.', '✅', 'إضافة مهمة', 'add-task'));
+        html += card('', owner ? emptyState('لا توجد مهام', 'أنشئ أول مهمة وحدد الشخص المنفذ.', '✅') : emptyState('لا توجد مهام ظاهرة', 'يظهر هنا ما أُسند إلى حسابك أو ما طلبته من الآخرين.', '✅'));
         return html;
       }
       html += '<div class="grid g2">';
@@ -3580,14 +3862,20 @@ notify pgrst, 'reload schema';
         html += '<div class="card"><h3>' + esc(TASK_GROUPS[k]) + ' <span class="badge-q">' + list.length + '</span></h3>';
         if (!list.length) html += '<div class="tiny muted">لا شيء هنا.</div>';
         list.forEach(i => {
+          const assigned = isAssignedTask(pr, i);
+          const attachments = arr(i.attachments);
           html += '<div class="disc ' + esc(i.status || 'todo') + '">' +
-            '<input type="checkbox" style="width:16px;height:16px;margin-top:5px" data-task-check="' + esc(i.id) + '"' + (i.done ? ' checked' : '') + '>' +
-            '<div style="flex:1"><div style="' + (i.done ? 'text-decoration:line-through;opacity:.6' : '') + '">' + esc(i.text) + '</div>' +
-            '<div class="tiny muted" style="margin-top:3px">' + esc(i.owner || 'بدون مالك') + ' · ' + esc(i.due || 'بلا موعد') + '</div></div>' +
-            '<select class="sel" data-task-status="' + esc(i.id) + '">' +
-            Object.keys(TASK_GROUPS).map(g => '<option value="' + g + '"' + (i.status === g ? ' selected' : '') + '>' + esc(TASK_GROUPS[g]) + '</option>').join('') +
-            '</select>' +
-            '<button class="btn xs danger" data-act="delete-task" data-id="' + esc(i.id) + '">حذف</button>' +
+            '<div style="flex:1;min-width:100%"><strong>' + esc(i.text || 'مهمة') + '</strong>' +
+            (i.details ? '<div style="margin-top:4px">' + esc(i.details) + '</div>' : '') +
+            '<div class="tiny muted" style="margin-top:5px">طلبها: ' + esc(i.requestedByName || i.owner || 'صاحب المشروع') +
+            ' · المنفذ: ' + esc(i.assigneeName || i.owner || 'غير محدد') +
+            (i.due ? ' · التسليم: ' + esc(i.due) : '') + '</div></div>' +
+            (attachments.length ? '<div style="width:100%"><strong class="tiny">الملفات</strong><ul class="tight">' + attachments.map(file =>
+              '<li><a download="' + esc(file.name || 'ملف') + '" href="' + esc(file.dataUrl || '') + '">' + esc(file.name || 'ملف') + '</a>' +
+              '<span class="tiny muted"> · ' + esc(file.uploadedByName || file.uploadedByEmail || '') + '</span></li>').join('') + '</ul></div>' : '') +
+            (assigned && i.status !== 'accept' ? '<input type="file" data-task-upload="' + esc(i.id) + '" multiple style="display:none"><div class="row no-print" style="width:100%"><button class="btn sm" data-act="choose-task-file" data-id="' + esc(i.id) + '">إرفاق ملف</button><button class="btn sm primary" data-act="submit-task" data-id="' + esc(i.id) + '">إرسال للمدير</button></div>' : '') +
+            (owner && i.status === 'disc2' ? '<button class="btn sm primary no-print" data-act="accept-task" data-id="' + esc(i.id) + '">تأكيد الاستلام</button>' : '') +
+            (owner ? '<button class="btn xs danger no-print" data-act="delete-task" data-id="' + esc(i.id) + '">حذف المهمة</button>' : '') +
             '</div>';
         });
         html += '</div>';
@@ -3638,7 +3926,7 @@ notify pgrst, 'reload schema';
       let html = pageHead('إدارة الشراكات والدعوات', 'أرسل الدعوات من هنا، وتابع الطلبات الواردة والمرسلة، ثم اقبلها أو ارفضها من المكان نفسه.');
       const pr = currentProject();
       const owner = canManageProject(pr);
-      const shareAccess = pr && pr._bdSharing || { participants: true, answers: true };
+      const shareAccess = shareAccessFor(pr);
       html += card('طلبات واردة (' + inboxInvites.length + ')', inboxInvites.length
         ? '<ul>' + inboxInvites.map(invite => {
           const isFriend = invite.request_kind === 'friend';
@@ -3675,16 +3963,26 @@ notify pgrst, 'reload schema';
       html += card('الأصدقاء المقبولون (' + FRIENDS_STATE.accepted.length + ')', FRIENDS_STATE.accepted.length
         ? '<ul>' + FRIENDS_STATE.accepted.map(friend => {
           const shareControls = pr && owner && friend.email
-            ? ' <label class="tiny">الصلاحية <select class="sel" data-friend-role="' + esc(friend.workspaceId) + '"><option value="security">شريك عادي — مشاهدة فقط</option>' + (shareAccess.participants && shareAccess.answers ? '<option value="assistant">مساعد — مشاهدة وتعديل</option>' : '') + '</select></label> <button class="btn sm" data-act="share-project-friend" data-id="' + esc(friend.workspaceId) + '">مشاركة المشروع المحدد</button>'
+            ? ' <label class="tiny">الدور <select class="sel" data-friend-role="' + esc(friend.workspaceId) + '"><option value="security">شريك</option><option value="assistant">مساعد</option></select></label> <button class="btn sm" data-act="share-project-friend" data-id="' + esc(friend.workspaceId) + '">مشاركة المشروع المحدد</button>'
             : '';
           return '<li><strong>' + esc(friend.name || friend.email) + '</strong> · ' + esc(friend.email || '') + shareControls + '</li>';
         }).join('') + '</ul>'
         : '<div class="tiny muted">بعد قبول طلب صداقة، سيظهر الحساب هنا. الصداقة وحدها لا تكشف بيانات المشاريع.</div>');
-      if (pr && owner) html += card('ما الذي تسمح بمشاركته في المشروع المحدد؟',
-        '<label style="display:flex;gap:8px;align-items:center;margin:8px 0"><input type="checkbox" data-sharing-option="participants"' + (shareAccess.participants ? ' checked' : '') + '> أسماء المشاركين</label>' +
-        '<label style="display:flex;gap:8px;align-items:center;margin:8px 0"><input type="checkbox" data-sharing-option="answers"' + (shareAccess.answers ? ' checked' : '') + '> إجابات المشاركين وتفضيلاتهم</label>' +
-        '<div class="hint">تُطبّق هذه الاختيارات على كل من تشارك معه هذا المشروع. عند إخفاء أحد الخيارين، تصبح الصلاحية مشاهدة فقط. بياناتك الكاملة تبقى محفوظة عندك.</div>' +
-        '<button class="btn" style="margin-top:10px" data-act="save-sharing-settings">حفظ اختيارات المشاركة</button>');
+      if (pr && owner) {
+        const sharingSections = Object.keys(SHARE_ACCESS_LABELS).map(section => {
+          const access = shareAccess[section];
+          const editLabel = section === 'answers' ? 'تعديل إجابات حسابه فقط' : section === 'actions' ? 'رفع ملفات المهام المسندة وإرسالها' : 'التعديل لصاحب المشروع فقط';
+          const canCollaboratorEdit = ['answers', 'actions'].includes(section);
+          return '<div class="idea"><strong>' + esc(SHARE_ACCESS_LABELS[section]) + '</strong>' +
+            '<div class="row" style="margin-top:6px">' +
+            '<label class="tiny"><input type="checkbox" data-sharing-option="' + section + '.view"' + (access.view ? ' checked' : '') + '> مشاهدة</label>' +
+            (canCollaboratorEdit ? '<label class="tiny"><input type="checkbox" data-sharing-option="' + section + '.edit"' + (access.edit ? ' checked' : '') + '> ' + esc(editLabel) + '</label>' : '<span class="tiny muted">' + esc(editLabel) + '</span>') +
+            '</div></div>';
+        }).join('');
+        html += card('صلاحيات المشروع المحدد', '<div class="grid g2">' + sharingSections + '</div>' +
+          '<div class="hint" style="margin-top:10px">تُطبّق الصلاحيات على أعضاء المشروع. إجابات الشريك قابلة للتعديل لحسابه فقط؛ لا يمكنه تعديل أسماء المشاركين أو بيانات غيره أو حذف المشروع والمهام. الحفظ يُحدّث الصلاحيات على المشروع.</div>' +
+          '<button class="btn primary" style="margin-top:10px" data-act="save-sharing-settings">حفظ الصلاحيات</button>');
+      }
       html += card('مشاريع شاركها معك أصحابها (' + receivedProjects.length + ')', receivedProjects.length
         ? '<ul>' + receivedProjects.map(p => '<li>' + esc(p.name) + ' — يمكنك فتح المشروع وفق الصلاحية الممنوحة لك.</li>').join('') + '</ul>'
         : '<div class="tiny muted">لا توجد مشاريع مشتركة معك الآن. بعد قبول دعوة المشروع، يظهر المشروع المشترك عند الطرفين.</div>');
@@ -4088,7 +4386,7 @@ notify pgrst, 'reload schema';
         });
       }
       const pn = $('#projNotes');
-      if (pn && pr) {
+      if (pn && pr && canManageProject(pr)) {
         pn.addEventListener('input', () => {
           pr.notes = pr.notes || {};
           pr.notes.main = pn.value;
@@ -4106,7 +4404,7 @@ notify pgrst, 'reload schema';
         });
       }
       const dn = $('#decNotes');
-      if (dn && pr) {
+      if (dn && pr && canManageProject(pr)) {
         dn.addEventListener('input', () => {
           pr.decisionStatus = pr.decisionStatus || { final: '', notes: '' };
           pr.decisionStatus.notes = dn.value;
@@ -4181,9 +4479,58 @@ notify pgrst, 'reload schema';
           if (e.key === 'Enter') { e.preventDefault(); const b = $('[data-act="add-task"]'); if (b) b.click(); }
         });
       }
+      $$('[data-participant-email]').forEach(input => {
+        input.addEventListener('change', () => {
+          if (!canManageProject(pr)) return;
+          const participant = arr(pr && pr.participants).find(item => item.id === input.getAttribute('data-participant-email'));
+          if (!participant) return;
+          const email = input.value.trim().toLowerCase();
+          if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast('اكتب بريداً إلكترونياً صحيحاً أو اترك الحقل فارغاً.', 'warn'); input.value = participant.memberEmail || ''; return; }
+          participant.memberEmail = email;
+          saveState(true);
+          toast('تم ربط بيانات المشارك بالحساب المحدد.', 'ok');
+        });
+      });
+      $$('[data-task-upload]').forEach(input => {
+        input.addEventListener('change', async () => {
+          const taskId = input.getAttribute('data-task-upload');
+          const task = arr(pr && pr.actionItems).find(item => item.id === taskId);
+          if (!task || !canWriteSection(pr, 'actions') || !isAssignedTask(pr, task) || task.status === 'accept') { input.value = ''; return; }
+          const files = Array.from(input.files || []);
+          if (!files.length) return;
+          const totalBytes = arr(task.attachments).reduce((sum, file) => sum + Number(file.size || 0), 0);
+          if (files.some(file => file.size > MAX_TASK_FILE_BYTES) || totalBytes + files.reduce((sum, file) => sum + file.size, 0) > MAX_TASK_FILES_BYTES) {
+            toast('حجم الملف الواحد يصل إلى 2 ميجابايت، وإجمالي مرفقات المهمة 4 ميجابايت.', 'warn'); input.value = ''; return;
+          }
+          try {
+            const meta = AUTH_USER.user_metadata || {};
+            task.attachments = arr(task.attachments);
+            for (const file of files) {
+              const dataUrl = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result || ''));
+                reader.onerror = () => reject(reader.error || new Error('تعذرت قراءة الملف'));
+                reader.readAsDataURL(file);
+              });
+              task.attachments.push({
+                id: uid('file'), name: file.name, type: file.type || 'application/octet-stream',
+                size: file.size, dataUrl, uploadedByEmail: String(AUTH_USER.email || '').toLowerCase(),
+                uploadedByName: String(meta.full_name || meta.name || AUTH_USER.email || 'مستخدم'), uploadedAt: nowISO()
+              });
+            }
+            task.status = 'disc2';
+            task.submittedAt = nowISO();
+            task.submittedByEmail = String(AUTH_USER.email || '').toLowerCase();
+            saveState(true);
+            render();
+            toast('تم رفع الملفات وإرسال المهمة لصاحب المشروع للمراجعة.', 'ok');
+          } catch (error) { toast('تعذر رفع الملف: ' + (error.message || ''), 'bad'); }
+          finally { input.value = ''; }
+        });
+      });
       $$('#view input[name="decision"]').forEach(r => {
         r.addEventListener('change', () => {
-          if (!pr) return;
+          if (!pr || !canManageProject(pr)) return;
           pr.decisionStatus = pr.decisionStatus || { final: '', notes: '' };
           pr.decisionStatus.final = r.value;
           saveState();
@@ -4197,9 +4544,12 @@ notify pgrst, 'reload schema';
     function handleAction(act, id, el, event) {
       const pr = currentProject();
       const pt = currentParticipant();
-      if (isReadOnlyProject(pr) && !READ_ONLY_ACTIONS.has(act)) {
+      const task = arr(pr && pr.actionItems).find(item => item.id === id);
+      const assignedTaskAction = ['choose-task-file', 'submit-task'].includes(act) && task && canWriteSection(pr, 'actions') && isAssignedTask(pr, task);
+      const answerWriteAction = ['skip-q', 'flag-q', 'clear-q'].includes(act) && canWriteSection(pr, 'answers');
+      if (isReadOnlyProject(pr) && !READ_ONLY_ACTIONS.has(act) && !assignedTaskAction && !answerWriteAction && act !== 'refresh-project') {
         if (event) event.preventDefault();
-        toast('هذه المشاركة بصلاحية مشاهدة فقط.', 'warn');
+        toast('يمكنك تعديل المهام المسندة إلى حسابك فقط.', 'warn');
         return;
       }
       switch (act) {
@@ -4228,15 +4578,25 @@ notify pgrst, 'reload schema';
         case 'save-sharing-settings': {
           const project = currentProject();
           if (!project || !canManageProject(project)) { toast('تعديل إعدادات المشاركة متاح لصاحب المشروع فقط.', 'warn'); break; }
-          project._bdSharing = {
-            participants: !!$('[data-sharing-option="participants"]')?.checked,
-            answers: !!$('[data-sharing-option="answers"]')?.checked
-          };
+          const nextAccess = shareAccessFor(project);
+          Object.keys(nextAccess).forEach(section => {
+            const viewControl = $('[data-sharing-option="' + section + '.view"]');
+            const editControl = $('[data-sharing-option="' + section + '.edit"]');
+            if (viewControl) nextAccess[section].view = !!viewControl.checked;
+            if (editControl) nextAccess[section].edit = !!editControl.checked;
+            if (section !== 'answers' && nextAccess[section].edit) nextAccess[section].view = true;
+          });
+          project._bdSharing = nextAccess;
           saveState(true);
-          toast('تم حفظ اختيارات مشاركة المشروع. ستُطبّق على المشاركات الحالية والجديدة.', 'ok');
+          toast('تم حفظ الصلاحيات لهذا المشروع. ستُطبّق على الأعضاء الحاليين والجدد.', 'ok');
           render();
           break;
         }
+        case 'refresh-project':
+          if (!cloudReady()) { toast('يلزم الاتصال بحسابك لتحديث المهام.', 'warn'); break; }
+          loadCloudState().then(() => { render(); toast('تم تحديث المشروع والمهام.', 'ok'); })
+            .catch(e => toast('تعذر تحديث المشروع: ' + (e.message || ''), 'bad'));
+          break;
         case 'accept-workspace-invite':
           if (cloudReady() && PENDING_INVITE_CODE) acceptWorkspaceInvite(PENDING_INVITE_CODE);
           break;
@@ -4277,27 +4637,14 @@ notify pgrst, 'reload schema';
           }
           break;
         case 'rename-project': {
+          if (!canManageProject(pr)) { toast('إعادة تسمية المشروع متاحة لصاحبه فقط.', 'warn'); break; }
           const p = byId(S.projects, id);
           if (!p) break;
           promptText('إعادة تسمية المشروع', 'الاسم الجديد', p.name, (nm) => { p.name = nm; saveState(true); render(); });
           break;
         }
-        case 'duplicate-project': {
-          const p = byId(S.projects, id);
-          if (!p) break;
-          const copy = JSON.parse(JSON.stringify(p));
-          copy.id = uid('prj');
-          delete copy._bdWorkspaceId;
-          copy.name = p.name + ' (نسخة)';
-          copy.createdAt = nowISO();
-          copy.participants.forEach(x => { x.id = uid('pt'); });
-          S.projects.push(copy);
-          saveState(true);
-          toast('تم نسخ المشروع', 'ok');
-          render();
-          break;
-        }
         case 'delete-project':
+          if (!canManageProject(pr)) { toast('حذف المشروع متاح لصاحبه فقط.', 'warn'); break; }
           if (!id) break;
           confirmBox('حذف المشروع', 'سيتم حذف المشروع وجميع المشاركين وإجاباتهم. متابعة؟', () => {
             (async () => {
@@ -4313,18 +4660,21 @@ notify pgrst, 'reload schema';
           });
           break;
         case 'select-participant':
+          if (!canManageProject(pr)) { toast('اختيار المشاركين متاح لصاحب المشروع.', 'warn'); break; }
           if (!id) break;
           S.activeParticipantId = id;
           saveState(true);
           go('questionnaire');
           break;
         case 'rename-participant': {
+          if (!canManageProject(pr)) { toast('تعديل أسماء المشاركين متاح لصاحب المشروع.', 'warn'); break; }
           const p = byId(pr.participants, id);
           if (!p) break;
           promptText('تعديل الاسم', 'الاسم الجديد', p.name, (nm) => { p.name = nm; saveState(true); render(); });
           break;
         }
         case 'delete-participant':
+          if (!canManageProject(pr)) { toast('حذف المشاركين متاح لصاحب المشروع.', 'warn'); break; }
           if (!id) break;
           confirmBox('حذف المشارك', 'سيتم حذف إجابات هذا المشارك نهائياً. متابعة؟', () => {
             pr.participants = pr.participants.filter(x => x.id !== id);
@@ -4374,7 +4724,7 @@ notify pgrst, 'reload schema';
           break;
         }
         case 'save-decision': {
-          if (!pr) break;
+          if (!pr || !canManageProject(pr)) { toast('قرار الشراكة يديره صاحب المشروع فقط.', 'warn'); break; }
           const sel = $('input[name="decision"]:checked');
           pr.decisionStatus = pr.decisionStatus || { final: '', notes: '' };
           pr.decisionStatus.final = sel ? sel.value : pr.decisionStatus.final;
@@ -4385,14 +4735,21 @@ notify pgrst, 'reload schema';
           break;
         }
         case 'add-task': {
-          if (!pr) break;
+          if (!pr || !canManageProject(pr)) { toast('إنشاء المهام وإسنادها متاح لصاحب المشروع.', 'warn'); break; }
           const inp = $('#newTask');
           const text = inp ? inp.value.trim() : '';
           if (!text) { toast('اكتب نص المهمة أولاً', 'warn'); if (inp) inp.focus(); break; }
+          const assigneeEmail = String($('#newTaskAssigneeEmail') && $('#newTaskAssigneeEmail').value || '').trim().toLowerCase();
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(assigneeEmail)) { toast('أدخل بريد حساب الشخص الذي سينفّذ المهمة.', 'warn'); $('#newTaskAssigneeEmail')?.focus(); break; }
+          const meta = AUTH_USER.user_metadata || {};
           pr.actionItems = arr(pr.actionItems);
           pr.actionItems.push({
-            id: uid('task'), text: text, status: 'todo', done: false,
-            owner: '', due: '', createdAt: nowISO()
+            id: uid('task'), text, details: String($('#newTaskDetails') && $('#newTaskDetails').value || '').trim(),
+            status: 'todo', done: false, owner: String($('#newTaskAssignee') && $('#newTaskAssignee').value || '').trim(),
+            assigneeName: String($('#newTaskAssignee') && $('#newTaskAssignee').value || '').trim() || assigneeEmail,
+            assigneeEmail, requestedByEmail: String(AUTH_USER.email || '').toLowerCase(),
+            requestedByName: String(meta.full_name || meta.name || AUTH_USER.email || 'صاحب المشروع'),
+            due: String($('#newTaskDue') && $('#newTaskDue').value || ''), attachments: [], createdAt: nowISO()
           });
           saveState(true);
           toast('تمت إضافة المهمة', 'ok');
@@ -4400,10 +4757,34 @@ notify pgrst, 'reload schema';
           break;
         }
         case 'delete-task': {
-          if (!pr || !id) break;
+          if (!pr || !id || !canManageProject(pr)) { toast('حذف المهمة متاح لصاحب المشروع فقط.', 'warn'); break; }
           pr.actionItems = arr(pr.actionItems).filter(t => t.id !== id);
           saveState(true);
           render();
+          break;
+        }
+        case 'choose-task-file': {
+          if (!task || !isAssignedTask(pr, task) || task.status === 'accept') { toast('يمكن للمنفذ فقط رفع ملفات المهمة قبل اعتمادها.', 'warn'); break; }
+          const input = $('[data-task-upload="' + id + '"]');
+          if (input) input.click();
+          break;
+        }
+        case 'submit-task': {
+          if (!task || !isAssignedTask(pr, task) || task.status === 'accept') { toast('لا يمكنك إرسال هذه المهمة.', 'warn'); break; }
+          task.status = 'disc2';
+          task.submittedAt = nowISO();
+          task.submittedByEmail = String(AUTH_USER.email || '').toLowerCase();
+          saveState(true); render();
+          toast('تم إرسال المهمة لصاحب المشروع للمراجعة.', 'ok');
+          break;
+        }
+        case 'accept-task': {
+          if (!task || !canManageProject(pr) || task.status !== 'disc2') { toast('لا يمكن اعتماد المهمة في حالتها الحالية.', 'warn'); break; }
+          task.status = 'accept';
+          task.acceptedAt = nowISO();
+          task.acceptedByEmail = String(AUTH_USER.email || '').toLowerCase();
+          saveState(true); render();
+          toast('تم اعتماد استلام المهمة.', 'ok');
           break;
         }
         default: break;
@@ -4503,7 +4884,6 @@ notify pgrst, 'reload schema';
     }
     function initShell() {
       on(document, '#themeBtn', 'click', toggleTheme);
-      on(document, '#wipeBtn', 'click', () => wipeAll());
       on(document, '#saveNowBtn', 'click', async () => {
         saveState(true);
         if (!cloudReady()) { toast('تم الحفظ على هذا الجهاز فقط', 'ok'); return; }
