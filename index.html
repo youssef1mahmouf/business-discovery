@@ -1328,6 +1328,8 @@
       key: 'sb_publishable_s5ezD58wMx14fQsLvd0YAw_PCU-6s6C'
     };
     const PENDING_INVITE_KEY = 'bd_pending_invite_v1';
+    const PENDING_INVITE_KIND_KEY = 'bd_pending_invite_kind_v1';
+    const PENDING_INVITE_FROM_KEY = 'bd_pending_invite_from_v1';
     const CLOUD_SCHEMA_SQL = String.raw`-- Run this file once in Supabase Dashboard > SQL Editor.
 -- The browser app uses only the project's public/publishable key. Never place a service_role key in the HTML.
 
@@ -1681,6 +1683,10 @@ notify pgrst, 'reload schema';
     let SUPA = null, AUTH_USER = null, AUTH_ROLE = null, AUTH_ACCOUNT_TYPE = 'owner', ROLE_PICKER_OPEN = false, AUTH_SITE_ROLE = 'member', CLOUD_BUSY = false, CLOUD_SYNC_PROMISE = null, SYNC_QUEUED = false, CLOUD_LOAD_WARNING = '', CLOUD_SCHEMA_MISSING = false;
     let WORKSPACE_ROLES = Object.create(null);
     let PARTNERSHIP_STATE = { accepted: [], incoming: [], outgoing: [], results: [] };
+    let FRIENDS_STATE = { accepted: [], outgoing: [] };
+    let PENDING_INVITE_CODE = '';
+    let PENDING_INVITE_KIND = 'project';
+    let PENDING_INVITE_FROM = '';
     const READ_ONLY_ACTIONS = new Set(['export-json', 'export-csv', 'print-report', 'open-project', 'search-partners', 'request-partnership', 'refresh-partnerships']);
 
     /* ---------- tiny helpers ---------- */
@@ -1741,7 +1747,10 @@ notify pgrst, 'reload schema';
     function cloudReady() { return !!(SUPA && AUTH_USER); }
     function projectRole(project) {
       if (!project) return 'none';
-      return project._bdWorkspaceId ? (WORKSPACE_ROLES[project._bdWorkspaceId] || 'assistant') : 'owner';
+      if (!project._bdWorkspaceId) return 'owner';
+      const role = WORKSPACE_ROLES[project._bdWorkspaceId] || 'assistant';
+      if (role === 'owner') return 'owner';
+      return project._bdShareRestricted ? 'security' : role;
     }
     function canEditProject(project) { return projectRole(project) !== 'security'; }
     function isReadOnlyProject(project) { return !!project && projectRole(project) === 'security'; }
@@ -1949,7 +1958,8 @@ notify pgrst, 'reload schema';
       if (roleError) throw roleError;
       WORKSPACE_ROLES = Object.create(null);
       (roleRows || []).forEach(row => { WORKSPACE_ROLES[row.workspace_id] = row.role; });
-      PARTNERSHIP_STATE = { results: [] };
+      PARTNERSHIP_STATE = { accepted: [], incoming: [], outgoing: [], results: [] };
+      FRIENDS_STATE = { accepted: [], outgoing: [] };
       const { data: account, error: accountErr } = await SUPA.from('bd_account_data').select('data').eq('user_id', AUTH_USER.id).maybeSingle();
       if (accountErr) throw accountErr;
       if (account && account.data) S = Object.assign(defaultState(), account.data);
@@ -1957,12 +1967,31 @@ notify pgrst, 'reload schema';
         const old = lsGet(APP.dataKey);
         if (old) { try { S = Object.assign(defaultState(), JSON.parse(old)); migratedLegacy = true; } catch (_) { } }
       }
-      const { data: shared, error } = await SUPA.from('bd_workspaces').select('id,project,owner_id,partner_id');
+      const { data: shared, error } = await SUPA.from('bd_workspaces').select('id,project,owner_id,partner_id,invite_email');
       if (error) throw error;
       (shared || []).forEach(row => {
         if (row.owner_id === AUTH_USER.id) WORKSPACE_ROLES[row.id] = 'owner';
         else if (!WORKSPACE_ROLES[row.id]) WORKSPACE_ROLES[row.id] = 'assistant';
-        const p = Object.assign({}, row.project, { _bdWorkspaceId: row.id });
+        if (row.project && row.project.__bdFriendRequest === true) {
+          const request = row.project.__bdFriendRequestData || {};
+          const friendEmail = row.owner_id === AUTH_USER.id ? row.invite_email : (request.requesterEmail || '');
+          if (row.partner_id) {
+            if (!FRIENDS_STATE.accepted.some(friend => friend.email.toLowerCase() === String(friendEmail || '').toLowerCase())) {
+              FRIENDS_STATE.accepted.push({
+                workspaceId: row.id,
+                email: friendEmail,
+                name: row.owner_id === AUTH_USER.id ? (request.invitedName || friendEmail) : (request.requesterName || 'صديق')
+              });
+            }
+          }
+          else if (row.owner_id === AUTH_USER.id) FRIENDS_STATE.outgoing.push({ email: row.invite_email, name: request.invitedName || row.invite_email });
+          return;
+        }
+        let p = Object.assign({}, row.project, { _bdWorkspaceId: row.id });
+        if (row.owner_id === AUTH_USER.id) {
+          const privateOwnerProject = S.projects.find(x => x.id === row.project.id);
+          if (privateOwnerProject) { p = privateOwnerProject; p._bdWorkspaceId = row.id; }
+        }
         const i = S.projects.findIndex(x => x._bdWorkspaceId === row.id);
         if (i >= 0) S.projects[i] = p; else S.projects.push(p);
       });
@@ -1974,8 +2003,21 @@ notify pgrst, 'reload schema';
         await syncCloudState();
         if (migratedLegacy) lsDel(APP.dataKey);
       }
-      const code = new URLSearchParams(location.search).get('invite') || lsGet(PENDING_INVITE_KEY);
-      if (code) await acceptWorkspaceInvite(code);
+      const inviteParams = new URLSearchParams(location.search);
+      const code = inviteParams.get('invite') || lsGet(PENDING_INVITE_KEY);
+      if (code) {
+        PENDING_INVITE_CODE = code;
+        PENDING_INVITE_KIND = inviteParams.get('friend') === '1' || lsGet(PENDING_INVITE_KIND_KEY) === 'friend' ? 'friend' : 'project';
+        PENDING_INVITE_FROM = inviteParams.get('from') || lsGet(PENDING_INVITE_FROM_KEY) || '';
+        lsSet(PENDING_INVITE_KEY, code);
+        lsSet(PENDING_INVITE_KIND_KEY, PENDING_INVITE_KIND);
+        if (PENDING_INVITE_FROM) lsSet(PENDING_INVITE_FROM_KEY, PENDING_INVITE_FROM);
+        go('partners');
+      } else {
+        PENDING_INVITE_CODE = '';
+        PENDING_INVITE_KIND = 'project';
+        PENDING_INVITE_FROM = '';
+      }
     }
     async function syncCloudState() {
       if (!cloudReady()) return;
@@ -1983,11 +2025,12 @@ notify pgrst, 'reload schema';
       CLOUD_BUSY = true;
       const syncingRevision = STATE_REVISION;
       const sync = (async () => { try {
-        const privateState = Object.assign({}, S, { projects: S.projects.filter(p => !p._bdWorkspaceId) });
+        const privateState = Object.assign({}, S, { projects: S.projects.filter(p => !p._bdWorkspaceId || canManageProject(p)) });
         const { error } = await SUPA.from('bd_account_data').upsert({ user_id: AUTH_USER.id, data: privateState, updated_at: nowISO() }, { onConflict: 'user_id' });
         if (error) throw error;
         for (const project of S.projects.filter(p => p._bdWorkspaceId && canEditProject(p))) {
-          const data = JSON.parse(JSON.stringify(project)); delete data._bdWorkspaceId;
+          const data = canManageProject(project) ? sharedProjectSnapshot(project) : JSON.parse(JSON.stringify(project));
+          delete data._bdWorkspaceId;
           const result = await SUPA.rpc('bd_save_workspace_project', { p_id: project._bdWorkspaceId, p_project: data });
           if (result.error) throw result.error;
         }
@@ -2015,9 +2058,24 @@ notify pgrst, 'reload schema';
         const { error } = await SUPA.rpc('bd_accept_workspace_invite', { p_code: code });
         if (error) throw error;
         lsDel(PENDING_INVITE_KEY);
+        lsDel(PENDING_INVITE_KIND_KEY);
+        lsDel(PENDING_INVITE_FROM_KEY);
+        PENDING_INVITE_CODE = '';
+        PENDING_INVITE_KIND = 'project';
+        PENDING_INVITE_FROM = '';
         history.replaceState(null, '', location.pathname + location.hash);
-        await loadCloudState(); render(); toast('تم قبول الدعوة ومشاركة المشروع معك', 'ok');
+        await loadCloudState(); render(); toast('تم قبول الطلب. أصبحتما أصدقاء ويمكنكما مشاركة المشاريع بموافقة كل صاحب مشروع.', 'ok');
       } catch (e) { toast('تعذر قبول الدعوة: ' + e.message, 'bad'); }
+    }
+    function dismissPendingInvite() {
+      PENDING_INVITE_CODE = '';
+      PENDING_INVITE_KIND = 'project';
+      PENDING_INVITE_FROM = '';
+      lsDel(PENDING_INVITE_KEY);
+      lsDel(PENDING_INVITE_KIND_KEY);
+      lsDel(PENDING_INVITE_FROM_KEY);
+      history.replaceState(null, '', location.pathname + location.hash);
+      render();
     }
     async function searchPartnerProfiles() {
       const query = ($('#partnerExactQuery') ? $('#partnerExactQuery').value : '').trim();
@@ -2037,20 +2095,53 @@ notify pgrst, 'reload schema';
         toast('دليل الأسماء متاح لمدير الموقع فقط. اكتب البريد الإلكتروني كاملاً لإرسال دعوة آمنة.', 'warn');
         return;
       }
-      await createWorkspaceInvite(query.toLowerCase(), 'assistant');
+      await createFriendInvite(query.toLowerCase());
     }
     async function requestPartnership(userId) {
       const result = PARTNERSHIP_STATE.results.find(item => item.user_id === userId);
       if (!result || !result.email) { toast('تعذر قراءة بريد الحساب المطابق.', 'bad'); return; }
-      await createWorkspaceInvite(result.email, 'assistant');
+      await createFriendInvite(result.email, result.full_name || result.username || result.email);
+    }
+    async function createFriendInvite(email, invitedName) {
+      const normalizedEmail = String(email || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) { toast('اكتب البريد الإلكتروني الكامل للشريك.', 'warn'); return; }
+      if (normalizedEmail === String(AUTH_USER.email || '').toLowerCase()) { toast('لا يمكنك إرسال طلب صداقة إلى حسابك نفسه.', 'warn'); return; }
+      if (FRIENDS_STATE.accepted.some(friend => friend.email.toLowerCase() === normalizedEmail)) { toast('هذا الحساب صديقك بالفعل.', 'info'); return; }
+      if (FRIENDS_STATE.outgoing.some(friend => friend.email.toLowerCase() === normalizedEmail)) { toast('أرسلت طلب صداقة لهذا البريد، وما زال ينتظر القبول.', 'info'); return; }
+      const metadata = AUTH_USER.user_metadata || {};
+      const requestProject = {
+        id: uid('friend'), name: 'طلب صداقة', __bdFriendRequest: true,
+        __bdFriendRequestData: {
+          requesterName: String(metadata.full_name || metadata.name || AUTH_USER.email || 'مستخدم'),
+          requesterEmail: String(AUTH_USER.email || '').toLowerCase(),
+          invitedName: String(invitedName || normalizedEmail)
+        }, participants: [], customQuestions: [], actionItems: []
+      };
+      const { data, error } = await SUPA.rpc('bd_create_workspace_invite', {
+        p_project: requestProject, p_email: normalizedEmail, p_role: 'security', p_workspace_id: null
+      });
+      if (error) throw error;
+      const label = encodeURIComponent(String(metadata.full_name || metadata.name || AUTH_USER.email || 'مستخدم'));
+      const link = location.origin + location.pathname + '?invite=' + encodeURIComponent(data.invite_code) + '&friend=1&from=' + label;
+      const safeName = esc(metadata.full_name || metadata.name || AUTH_USER.email || 'مستخدم');
+      openModal('طلب صداقة', '<p>أرسل طلب صداقة إلى <strong>' + esc(normalizedEmail) + '</strong>. لا تُشارك أي مشاريع بمجرد قبول الصداقة؛ يختار صاحب كل مشروع ما يشاركه لاحقاً.</p><label>رابط الطلب</label><input id="inviteLink" type="text" readonly value="' + esc(link) + '"><div class="hint" style="margin-top:8px">الطلب من: ' + safeName + '. أرسل الرابط للشخص المطلوب، ويحتاج إلى تسجيل الدخول ببريده ثم الضغط على «قبول طلب الصداقة».</div>', () => {
+        const input = $('#inviteLink'); input.select();
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(() => toast('تم نسخ رابط طلب الصداقة', 'ok')).catch(() => document.execCommand('copy'));
+        else document.execCommand('copy');
+        return true;
+      }, 'نسخ الرابط');
+      PARTNERSHIP_STATE.results = [];
+      await loadCloudState();
+      render();
     }
     async function createWorkspaceInvite(email, role) {
       const project = currentProject();
       if (!project) { toast('اختر مشروعاً أولاً', 'warn'); return; }
       if (!canManageProject(project)) { toast('إرسال الدعوات متاح للمالك فقط', 'warn'); return; }
       if (email.toLowerCase() === String(AUTH_USER.email || '').toLowerCase()) { toast('أدخل بريد شريك آخر', 'warn'); return; }
-      const snapshot = JSON.parse(JSON.stringify(project));
-      delete snapshot._bdWorkspaceId;
+      const access = project._bdSharing || { participants: true, answers: true };
+      if ((!access.participants || !access.answers) && role === 'assistant') role = 'security';
+      const snapshot = sharedProjectSnapshot(project);
       const { data, error } = await SUPA.rpc('bd_create_workspace_invite', {
         p_project: snapshot, p_email: email.toLowerCase(), p_role: role,
         p_workspace_id: project._bdWorkspaceId || null
@@ -2060,8 +2151,8 @@ notify pgrst, 'reload schema';
       WORKSPACE_ROLES[data.workspace_id] = 'owner';
       saveState(true);
       const link = location.origin + location.pathname + '?invite=' + encodeURIComponent(data.invite_code);
-      const roleLabel = role === 'security' ? 'الأمن (مشاهدة فقط)' : 'المساعد (مشاهدة وتعديل)';
-      openModal('رابط دعوة عضو الفريق', '<p>أرسل الدعوة إلى <strong>' + esc(email) + '</strong> بدور <strong>' + roleLabel + '</strong>. يجب أن ينشئ الشخص حساباً ببريده نفسه ثم يفتح الرابط لقبول الدعوة.</p><input id="inviteLink" type="text" readonly value="' + esc(link) + '">', () => {
+      const roleLabel = role === 'security' ? 'مشاهدة فقط' : 'مشاهدة وتعديل';
+      openModal('طلب مشاركة مشروع', '<p>أرسل الدعوة إلى <strong>' + esc(email) + '</strong>. عند قبولها سيرى الشخص المشروع والحقول التي سمحت بمشاركتها، بصلاحية <strong>' + roleLabel + '</strong>.</p><input id="inviteLink" type="text" readonly value="' + esc(link) + '">', () => {
         const input = $('#inviteLink'); input.select();
         if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(() => toast('تم نسخ رابط الدعوة', 'ok')).catch(() => document.execCommand('copy'));
         else document.execCommand('copy');
@@ -2070,6 +2161,24 @@ notify pgrst, 'reload schema';
       render();
     }
     function canManageProject(project) { return !!project && projectRole(project) === 'owner'; }
+    function sharedProjectSnapshot(project) {
+      const snapshot = JSON.parse(JSON.stringify(project));
+      delete snapshot._bdWorkspaceId;
+      delete snapshot._bdSharing;
+      const access = project._bdSharing || { participants: true, answers: true };
+      snapshot._bdShareRestricted = !access.participants || !access.answers;
+      if (!access.participants) snapshot.participants = [];
+      else if (!access.answers) snapshot.participants = arr(snapshot.participants).map(participant => Object.assign({}, participant, {
+        answers: {}, skipped: {}, notes: {}, flags: {}, lastQuestionId: null
+      }));
+      if (!access.participants || !access.answers) {
+        snapshot.shortlist = [];
+        snapshot.notes = { main: '' };
+        snapshot.decisionStatus = {};
+        snapshot.actionItems = [];
+      }
+      return snapshot;
+    }
     function normProject(p) {
       if (!p || typeof p !== 'object') return null;
       p.id = p.id || uid('prj');
@@ -3276,21 +3385,43 @@ notify pgrst, 'reload schema';
       const sharedProjects = S.projects.filter(p => p._bdWorkspaceId);
       const receivedProjects = sharedProjects.filter(p => !canManageProject(p));
       const ownSharedProjects = sharedProjects.filter(p => canManageProject(p));
-      let html = pageHead('الشركاء ومشاركة المشاريع', 'لا يرى الطرف الآخر بيانات المشروع إلا بعد قبول دعوة المشاركة.');
+      let html = pageHead('الأصدقاء والشراكات', 'أرسل طلب صداقة واقبله أولاً. بعدها يختار صاحب كل مشروع ما يشاركه، وبأي صلاحية.');
       const pr = currentProject();
       const owner = canManageProject(pr);
-      html += card(AUTH_SITE_ROLE === 'site_admin' ? 'ابحث عن حساب في دليل الموقع' : 'دعوة شريك بالبريد الإلكتروني',
+      const shareAccess = pr && pr._bdSharing || { participants: true, answers: true };
+      if (PENDING_INVITE_CODE) html += card(PENDING_INVITE_KIND === 'friend' ? 'طلب صداقة وارد' : 'طلب مشاركة مشروع وارد',
+        '<div class="hint">' + (PENDING_INVITE_KIND === 'friend'
+          ? 'قبول هذا الطلب يضيف الحساب إلى قائمة أصدقائك فقط. لا يفتح أي مشروع تلقائياً؛ مشاركة كل مشروع تحتاج موافقة صاحبه.'
+          : 'قبول هذا الطلب يضيف المشروع المشترك إلى حسابك وفق صلاحية المشاهدة أو التعديل التي اختارها صاحبه.') + (PENDING_INVITE_FROM ? '<br>المرسل: <strong>' + esc(PENDING_INVITE_FROM) + '</strong>' : '') + '</div>' +
+        '<div class="row" style="margin-top:10px"><button class="btn primary" data-act="accept-workspace-invite">' + (PENDING_INVITE_KIND === 'friend' ? 'قبول طلب الصداقة' : 'قبول دعوة المشروع') + '</button><button class="btn" data-act="dismiss-workspace-invite">لاحقاً</button></div>');
+      html += card(AUTH_SITE_ROLE === 'site_admin' ? 'ابحث عن حساب في دليل الموقع' : 'طلب صداقة بالبريد الإلكتروني',
         '<div class="row" style="align-items:end"><label style="flex:1;min-width:220px">' + (AUTH_SITE_ROLE === 'site_admin' ? 'الاسم الكامل أو البريد أو اسم المستخدم' : 'البريد الإلكتروني الكامل') +
           '<input id="partnerExactQuery" type="search" autocomplete="off" placeholder="' + (AUTH_SITE_ROLE === 'site_admin' ? 'اكتب القيمة كاملة كما سُجلت' : 'name@example.com') + '" style="display:block;margin-top:6px;width:100%"></label>' +
-          '<button class="btn primary" data-act="search-partners">' + (AUTH_SITE_ROLE === 'site_admin' ? 'بحث مطابق' : 'إرسال دعوة') + '</button><button class="btn" data-act="refresh-partnerships">تحديث المشاريع</button></div>' +
+          '<button class="btn primary" data-act="search-partners">' + (AUTH_SITE_ROLE === 'site_admin' ? 'بحث مطابق' : 'إرسال طلب صداقة') + '</button><button class="btn" data-act="refresh-partnerships">تحديث</button></div>' +
           '<div class="hint" style="margin-top:10px">' + (AUTH_SITE_ROLE === 'site_admin'
-            ? 'يبحث مدير الموقع في الحسابات الموجودة بالاسم أو البريد أو اسم المستخدم، مع مطابقة كاملة. لإتمام الشراكة يجب أن يقبل الطرف المدعو رابط الدعوة.'
-            : 'لخصوصية الحسابات، اكتب البريد الإلكتروني كاملاً. يرسل الموقع دعوة للمشروع المحدد، ولا يراه الطرف الآخر إلا بعد قبول رابط الدعوة. كل صاحب مشروع يشارك مشاريعه بدعوة وقبول مستقلين.') + '</div>' +
+            ? 'ابحث بمطابقة كاملة، ثم أرسل طلب صداقة. قبول الطلب لا يشارك أي مشروع تلقائياً.'
+            : 'اكتب البريد الإلكتروني كاملاً. أرسل رابط الطلب للشخص؛ وبعد قبوله تظهر الصداقة هنا. بعدها يختار كل صاحب مشروع ما يشاركه.') + '</div>' +
           (PARTNERSHIP_STATE.results.length ? '<div style="margin-top:12px"><strong>نتائج مطابقة</strong><ul>' + PARTNERSHIP_STATE.results.map(result => {
             return '<li><strong>' + esc(result.full_name || 'حساب بدون اسم') + '</strong> · ' + esc(result.email || '') +
               (result.username ? ' · @' + esc(result.username) : '') +
-              ' <button class="btn sm" data-act="request-partnership" data-id="' + esc(result.user_id) + '"' + (!pr || !owner ? ' disabled' : '') + '>دعوة لمشاركة المشروع المحدد</button></li>';
+              ' <button class="btn sm" data-act="request-partnership" data-id="' + esc(result.user_id) + '">إرسال طلب صداقة</button></li>';
           }).join('') + '</ul></div>' : ''));
+      html += card('طلبات الصداقة المرسلة (' + FRIENDS_STATE.outgoing.length + ')', FRIENDS_STATE.outgoing.length
+        ? '<ul>' + FRIENDS_STATE.outgoing.map(friend => '<li>' + esc(friend.name || friend.email) + ' · ' + esc(friend.email) + ' — بانتظار القبول.</li>').join('') + '</ul>'
+        : '<div class="tiny muted">لا توجد طلبات صداقة معلقة.</div>');
+      html += card('الأصدقاء المقبولون (' + FRIENDS_STATE.accepted.length + ')', FRIENDS_STATE.accepted.length
+        ? '<ul>' + FRIENDS_STATE.accepted.map(friend => {
+          const shareControls = pr && owner && friend.email
+            ? ' <label class="tiny">صلاحية المشروع <select class="sel" data-friend-role="' + esc(friend.workspaceId) + '"><option value="security">مشاهدة فقط</option>' + (shareAccess.participants && shareAccess.answers ? '<option value="assistant">مشاهدة وتعديل</option>' : '') + '</select></label> <button class="btn sm" data-act="share-project-friend" data-id="' + esc(friend.workspaceId) + '">مشاركة المشروع المحدد</button>'
+            : '';
+          return '<li><strong>' + esc(friend.name || friend.email) + '</strong> · ' + esc(friend.email || '') + shareControls + '</li>';
+        }).join('') + '</ul>'
+        : '<div class="tiny muted">بعد قبول طلب صداقة، سيظهر الحساب هنا. الصداقة وحدها لا تكشف بيانات المشاريع.</div>');
+      if (pr && owner) html += card('ما الذي تسمح بمشاركته في المشروع المحدد؟',
+        '<label style="display:flex;gap:8px;align-items:center;margin:8px 0"><input type="checkbox" data-sharing-option="participants"' + (shareAccess.participants ? ' checked' : '') + '> أسماء المشاركين</label>' +
+        '<label style="display:flex;gap:8px;align-items:center;margin:8px 0"><input type="checkbox" data-sharing-option="answers"' + (shareAccess.answers ? ' checked' : '') + '> إجابات المشاركين وتفضيلاتهم</label>' +
+        '<div class="hint">تُطبّق هذه الاختيارات على كل من تشارك معه هذا المشروع. عند إخفاء أحد الخيارين، تصبح الصلاحية مشاهدة فقط. بياناتك الكاملة تبقى محفوظة عندك.</div>' +
+        '<button class="btn" style="margin-top:10px" data-act="save-sharing-settings">حفظ اختيارات المشاركة</button>');
       html += card('مشاريع شاركها معك أصحابها (' + receivedProjects.length + ')', receivedProjects.length
         ? '<ul>' + receivedProjects.map(p => '<li>' + esc(p.name) + ' — يمكنك فتح المشروع وفق الصلاحية الممنوحة لك.</li>').join('') + '</ul>'
         : '<div class="tiny muted">لا توجد مشاريع مشتركة معك الآن. بعد قبول دعوة المشروع، يظهر المشروع المشترك عند الطرفين.</div>');
@@ -3308,8 +3439,8 @@ notify pgrst, 'reload schema';
         const { data, error } = await SUPA.rpc('bd_list_workspace_members', { p_workspace_id: workspaceId });
         if (error) throw error;
         const entries = data || [];
-        host.innerHTML = '<strong>أعضاء ودعوات المشروع</strong>' + (entries.length
-          ? '<ul style="margin-bottom:0">' + entries.map(m => '<li>' + esc(m.invite_email) + ' — ' + (m.role === 'security' ? 'الأمن، مشاهدة فقط' : 'المساعد، مشاهدة وتعديل') + ' — ' + (m.accepted ? 'قبل الدعوة' : 'بانتظار القبول') + '</li>').join('') + '</ul>'
+          host.innerHTML = '<strong>أعضاء ودعوات المشروع</strong>' + (entries.length
+          ? '<ul style="margin-bottom:0">' + entries.map(m => '<li>' + esc(m.invite_email) + ' — ' + (m.role === 'security' ? 'مشاهدة فقط' : 'مشاهدة وتعديل') + ' — ' + (m.accepted ? 'قبل الدعوة' : 'بانتظار القبول') + '</li>').join('') + '</ul>'
           : '<div style="margin-top:6px">لا يوجد أعضاء مدعوون بعد.</div>');
       } catch (e) { host.textContent = 'تعذر تحميل أعضاء الفريق: ' + (e.message || ''); }
     }
@@ -3791,11 +3922,38 @@ notify pgrst, 'reload schema';
           if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
           requestPartnership(id).catch(e => toast('تعذر إرسال طلب الشراكة: ' + (e.message || ''), 'bad'));
           break;
+        case 'share-project-friend': {
+          if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
+          const friend = FRIENDS_STATE.accepted.find(item => item.workspaceId === id);
+          if (!friend || !friend.email) { toast('تعذر العثور على بريد الصديق المقبول.', 'bad'); break; }
+          const roleSelect = $('[data-friend-role="' + id + '"]');
+          createWorkspaceInvite(friend.email, roleSelect ? roleSelect.value : 'security')
+            .catch(e => toast('تعذر مشاركة المشروع: ' + (e.message || ''), 'bad'));
+          break;
+        }
+        case 'save-sharing-settings': {
+          const project = currentProject();
+          if (!project || !canManageProject(project)) { toast('تعديل إعدادات المشاركة متاح لصاحب المشروع فقط.', 'warn'); break; }
+          project._bdSharing = {
+            participants: !!$('[data-sharing-option="participants"]')?.checked,
+            answers: !!$('[data-sharing-option="answers"]')?.checked
+          };
+          saveState(true);
+          toast('تم حفظ اختيارات مشاركة المشروع. ستُطبّق على المشاركات الحالية والجديدة.', 'ok');
+          render();
+          break;
+        }
+        case 'accept-workspace-invite':
+          if (cloudReady() && PENDING_INVITE_CODE) acceptWorkspaceInvite(PENDING_INVITE_CODE);
+          break;
+        case 'dismiss-workspace-invite':
+          dismissPendingInvite();
+          break;
         case 'invite-partner':
           if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
-          promptText('دعوة شريك', 'البريد الإلكتروني للشريك', '', (email) => {
+          promptText('طلب صداقة', 'البريد الإلكتروني للصديق', '', (email) => {
             if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast('اكتب بريداً إلكترونياً صحيحاً', 'warn'); return; }
-            createWorkspaceInvite(email, $('#inviteRole') ? $('#inviteRole').value : 'assistant').catch(e => toast('تعذر إنشاء الدعوة: ' + e.message, 'bad'));
+            createFriendInvite(email).catch(e => toast('تعذر إرسال طلب الصداقة: ' + e.message, 'bad'));
           });
           break;
         case 'new-project': newProject(); break;
@@ -4063,7 +4221,7 @@ notify pgrst, 'reload schema';
         }
         const { error } = await SUPA.auth.signOut();
         if (error) { toast('تعذر تسجيل الخروج: ' + error.message, 'bad'); return; }
-        AUTH_USER = null; AUTH_ROLE = null; AUTH_ACCOUNT_TYPE = 'owner'; AUTH_SITE_ROLE = 'member'; WORKSPACE_ROLES = Object.create(null); PARTNERSHIP_STATE = { accepted: [], incoming: [], outgoing: [], results: [] }; $('#accountEmail').textContent = ''; $('#signOutBtn').style.display = 'none';
+        AUTH_USER = null; AUTH_ROLE = null; AUTH_ACCOUNT_TYPE = 'owner'; AUTH_SITE_ROLE = 'member'; WORKSPACE_ROLES = Object.create(null); PARTNERSHIP_STATE = { accepted: [], incoming: [], outgoing: [], results: [] }; FRIENDS_STATE = { accepted: [], outgoing: [] }; PENDING_INVITE_CODE = ''; PENDING_INVITE_KIND = 'project'; PENDING_INVITE_FROM = ''; $('#accountEmail').textContent = ''; $('#signOutBtn').style.display = 'none';
         $('.app').style.display = 'none'; S = defaultState(); authScreen('تم تسجيل الخروج.', 'login');
       });
       on(document, '#menuBtn', 'click', () => {
@@ -4128,7 +4286,16 @@ notify pgrst, 'reload schema';
       applyTheme(prefs.theme || 'light');
       initShell();
       const urlInvite = new URLSearchParams(location.search).get('invite');
-      if (urlInvite) lsSet(PENDING_INVITE_KEY, urlInvite);
+      if (urlInvite) {
+        lsSet(PENDING_INVITE_KEY, urlInvite);
+        const kind = new URLSearchParams(location.search).get('friend') === '1' ? 'friend' : 'project';
+        lsSet(PENDING_INVITE_KIND_KEY, kind);
+        const from = new URLSearchParams(location.search).get('from') || '';
+        if (from) lsSet(PENDING_INVITE_FROM_KEY, from);
+        PENDING_INVITE_CODE = urlInvite;
+        PENDING_INVITE_KIND = kind;
+        PENDING_INVITE_FROM = from;
+      }
       if (!storeAvailable()) {
         toast('التخزين المحلي غير متاح — لن تُحفظ بياناتك. استخدم التصدير.', 'warn');
       }
