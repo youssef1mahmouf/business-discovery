@@ -1818,6 +1818,7 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
         return;
       }
       const signup = mode === 'signup';
+      const showResendConfirmation = !signup && /email not confirmed|رسالة التأكيد|تأكيد البريد/i.test(message || '');
       host.innerHTML = '<main class="auth-screen"><div class="brand"><div class="logo">م</div><div><h1>مستكشف المشاريع</h1><small>بياناتك ومشاريعك محفوظة في حسابك</small></div></div>' +
           '<div class="card"><h2>' + (signup ? 'إنشاء حساب' : 'تسجيل الدخول') + '</h2>' +
         (signup ? '<label for="authAccountType">نوع الحساب</label><select id="authAccountType"><option value="owner">صاحب مشروع</option><option value="partner">شريك في البيانات</option></select>' +
@@ -1828,6 +1829,7 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
         '<div class="row" style="align-items:end;gap:8px"><div style="flex:1;min-width:200px"><label for="authPassword">كلمة المرور</label><input id="authPassword" type="password" autocomplete="' + (signup ? 'new-password' : 'current-password') + '" minlength="8" required></div><button class="btn" type="button" id="togglePassword" aria-pressed="false" style="margin-bottom:2px">إظهار</button></div>' +
         '<div class="row"><button class="btn primary" id="authSubmit">' + (signup ? 'إنشاء الحساب' : 'دخول') + '</button>' +
         '<button class="btn" id="authMode">' + (signup ? 'لدي حساب بالفعل' : 'إنشاء حساب جديد') + '</button></div>' +
+        (showResendConfirmation ? '<button class="btn link" id="resendConfirmation" style="margin-top:8px">إعادة إرسال رسالة تأكيد البريد</button>' : '') +
         (!signup ? '<button class="btn link" id="forgotPassword" style="margin-top:8px">نسيت كلمة المرور؟</button>' : '') +
         '<div class="hint" style="margin-top:12px">' + esc(message || 'بياناتك تحفظ تلقائياً في حسابك. تظل مسجلاً على هذا الجهاز ما دامت بيانات المتصفح محفوظة.') + '</div>' +
         (AUTH_ROLE === 'owner' ? '<button class="btn link" id="downloadSchema" style="margin-top:8px">تنزيل ملف تحديث قاعدة البيانات</button>' : '') + '</div></main>';
@@ -1841,6 +1843,15 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
         button.setAttribute('aria-pressed', String(visible));
       });
       on(host, '#downloadSchema', 'click', () => download('supabase-setup.sql', CLOUD_SCHEMA_SQL, 'text/plain;charset=utf-8'));
+      on(host, '#resendConfirmation', 'click', async () => {
+        const email = ($('#authIdentifier') || {}).value.trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast('اكتب البريد الإلكتروني للحساب أولاً', 'warn'); return; }
+        const { error } = await SUPA.auth.resend({
+          type: 'signup', email,
+          options: { emailRedirectTo: location.origin + location.pathname }
+        });
+        toast(error ? 'تعذر إرسال رسالة التأكيد: ' + error.message : 'أُعيد إرسال رسالة التأكيد. افتح بريدك واضغط رابط التأكيد.', error ? 'bad' : 'ok');
+      });
       on(host, '#authSubmit', 'click', async () => {
         if (!SUPA) { authScreen('تعذر الاتصال بخدمة الحسابات. حدّث الصفحة وتأكد من اتصال الإنترنت.', mode); return; }
         const email = signup ? $('#authEmail').value.trim().toLowerCase() : '';
@@ -1871,17 +1882,24 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
             ? await SUPA.auth.signUp({ email, password, options: { data: metadata } })
             : await SUPA.auth.signInWithPassword(isEmail ? { email: identifier.toLowerCase(), password } : { phone: loginPhone, password });
           if (result.error) throw result.error;
-          if (!result.data.session) { authScreen('تم إنشاء الحساب، لكن الدخول لم يبدأ بعد. افتح رسالة التأكيد في بريدك واضغط رابط التأكيد، ثم ارجع وسجّل الدخول.', 'login'); return; }
+          if (!result.data.session) {
+            authScreen('الحساب أُنشئ لكنه يحتاج إلى تأكيد البريد قبل تسجيل الدخول. افتح رسالة التأكيد أو أعد إرسالها.', 'login');
+            const loginEmail = $('#authIdentifier'); if (loginEmail) loginEmail.value = email;
+            return;
+          }
           await enterApp(result.data.user);
         } catch (e) {
           const raw = e.message || '';
           let friendly = raw || 'راجع بيانات الدخول وإعداد قاعدة البيانات.';
           if (/bd_profiles_username_unique/i.test(raw)) friendly = 'اسم المستخدم مستخدم بالفعل. اختَر اسماً آخر.';
           else if (/bd_profiles_phone_unique/i.test(raw)) friendly = 'رقم الهاتف مسجل بالفعل. استخدم رقماً آخر أو سجّل الدخول إلى حسابك.';
+          else if (/email not confirmed/i.test(raw)) friendly = 'الحساب لم يؤكد بريده الإلكتروني بعد. أعد إرسال رسالة التأكيد، ثم افتح الرابط قبل تسجيل الدخول.';
           else if (/already registered|user already exists/i.test(raw)) friendly = 'هذا البريد مسجل بالفعل. استخدم تسجيل الدخول أو استعادة كلمة المرور.';
           else if (/invalid login credentials/i.test(raw)) friendly = 'البريد أو كلمة المرور غير صحيحة. إذا لم تنشئ الحساب من قبل، اختر «إنشاء حساب جديد». ';
-          else if (/bd_profiles|bd_account_data|relation .* does not exist|schema cache|could not find the table/i.test(raw)) friendly = 'قاعدة بيانات الموقع لم تُجهّز بعد. نزّل ملف SQL من قسم الإعداد وشغّل محتواه كاملاً في Supabase → SQL Editor → Run، ثم أعد المحاولة.';
+          else if (/bd_profiles|bd_account_data|relation .* does not exist|schema cache|could not find the table/i.test(raw)) friendly = 'تحتاج قاعدة بيانات الموقع إلى تحديث. نزّل ملف التحديث من صفحة الدخول وشغّله في Supabase → SQL Editor → Run، ثم أعد المحاولة.';
           authScreen('تعذر إكمال الطلب: ' + friendly, mode);
+          const retryIdentifier = $('#authIdentifier');
+          if (!signup && retryIdentifier) retryIdentifier.value = identifier;
         }
       });
       on(host, '#forgotPassword', 'click', async () => {
