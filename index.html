@@ -1677,6 +1677,7 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
 -- Refresh the PostgREST function cache after installing or updating RPCs.
 notify pgrst, 'reload schema';
 `;
+    const CLOUD_SCHEMA_DOWNLOAD_VERSION = '2026-10-23-v2';
     let SUPA = null, AUTH_USER = null, AUTH_ROLE = null, ROLE_PICKER_OPEN = false, AUTH_SITE_ROLE = 'member', CLOUD_BUSY = false, CLOUD_SYNC_PROMISE = null, SYNC_QUEUED = false, CLOUD_LOAD_WARNING = '', CLOUD_SCHEMA_MISSING = false;
     let WORKSPACE_ROLES = Object.create(null);
     const READ_ONLY_ACTIONS = new Set(['export-json', 'export-csv', 'print-report', 'open-project']);
@@ -1720,6 +1721,13 @@ notify pgrst, 'reload schema';
     function lsGet(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
     function lsSet(key, val) { try { localStorage.setItem(key, val); return true; } catch (e) { return false; } }
     function lsDel(key) { try { localStorage.removeItem(key); } catch (e) { } }
+    function autoDownloadCloudSchemaOnce() {
+      const key = 'bd_schema_auto_downloaded_version';
+      if (lsGet(key) === CLOUD_SCHEMA_DOWNLOAD_VERSION) return false;
+      download('supabase-setup.sql', CLOUD_SCHEMA_SQL, 'text/plain;charset=utf-8');
+      lsSet(key, CLOUD_SCHEMA_DOWNLOAD_VERSION);
+      return true;
+    }
 
     /* ---------- default state ---------- */
     function defaultState() {
@@ -1916,12 +1924,15 @@ notify pgrst, 'reload schema';
         console.error(e);
         const detail = e.message || 'تعذر تحميل الجداول';
         CLOUD_SCHEMA_MISSING = /could not find (?:the )?(?:function|table)|schema cache|does not exist|relation .* does not exist/i.test(detail);
-        CLOUD_LOAD_WARNING = CLOUD_SCHEMA_MISSING
-          ? 'تم تسجيل الدخول، واكتشف الموقع نقصاً في إعداد قاعدة البيانات. بدأ تنزيل أحدث ملف SQL؛ شغّله في Supabase → SQL Editor → Run، ثم اضغط «تحقق الآن بعد تشغيل SQL». يمكن تنزيل الملف مجدداً بالزر أدناه. التفاصيل: ' + detail
-          : 'تم تسجيل الدخول، لكن تعذر تحميل البيانات السحابية. تحقق من إعداد قاعدة البيانات والاتصال ثم أعد تحميل الصفحة. التفاصيل: ' + detail;
+        let schemaDownloadedNow = false;
         if (CLOUD_SCHEMA_MISSING) {
-          try { download('supabase-setup.sql', CLOUD_SCHEMA_SQL, 'text/plain;charset=utf-8'); } catch (downloadError) { console.warn('Could not auto-download database setup:', downloadError); }
+          try { schemaDownloadedNow = autoDownloadCloudSchemaOnce(); } catch (downloadError) { console.warn('Could not auto-download database setup:', downloadError); }
         }
+        CLOUD_LOAD_WARNING = CLOUD_SCHEMA_MISSING
+          ? (schemaDownloadedNow
+              ? 'تم اكتشاف نقص في قاعدة البيانات وبدأ تنزيل ملف SQL مرة واحدة لهذا الإصدار. شغّله في Supabase → SQL Editor → Run، ثم اضغط «تحقق الآن». إذا لم تجد الملف في Downloads، استخدم زر إعادة التنزيل. التفاصيل: '
+              : 'قاعدة البيانات ما زالت تحتاج إلى التحديث. استخدم ملف SQL الموجود في Downloads، أو اضغط «تنزيل أحدث ملف SQL» إذا لم تجده، ثم شغّله في Supabase → SQL Editor → Run واضغط «تحقق الآن». التفاصيل: ') + detail
+          : 'تم تسجيل الدخول، لكن تعذر تحميل البيانات السحابية. تحقق من إعداد قاعدة البيانات والاتصال ثم أعد تحميل الصفحة. التفاصيل: ' + detail;
         toast('تم الدخول، لكن المزامنة تحتاج إعداد قاعدة البيانات.', 'bad');
       }
       render();
@@ -2764,7 +2775,7 @@ notify pgrst, 'reload schema';
       const readonly = isReadOnlyProject(pr);
       host.classList.toggle('read-only', readonly);
       host.innerHTML = (CLOUD_LOAD_WARNING ? '<div class="msg warn" role="status" style="margin-bottom:12px">' + esc(CLOUD_LOAD_WARNING) +
-        (CLOUD_SCHEMA_MISSING ? '<div class="row" style="margin-top:10px;gap:8px"><button class="btn" id="downloadCloudSchema">تنزيل أحدث ملف SQL</button><button class="btn primary" id="retryCloudSchema">تحقق الآن بعد تشغيل SQL</button></div>' : '') + '</div>' : '') +
+        (CLOUD_SCHEMA_MISSING ? '<div class="row" style="margin-top:10px;gap:8px"><button class="btn" id="downloadCloudSchema">تنزيل أحدث ملف SQL</button><button class="btn primary" id="retryCloudSchema">تحقق الآن</button></div>' : '') + '</div>' : '') +
         (readonly ? '<div class="readonly-banner">دور الأمن: يمكنك مشاهدة هذا المشروع فقط، ولا يمكنك تعديل بياناته.</div>' : '') + html;
       on(host, '#downloadCloudSchema', 'click', () => download('supabase-setup.sql', CLOUD_SCHEMA_SQL, 'text/plain;charset=utf-8'));
       on(host, '#retryCloudSchema', 'click', async (event) => {
