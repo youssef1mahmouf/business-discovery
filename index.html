@@ -1673,8 +1673,11 @@ revoke all on function public.bd_admin_set_site_role(uuid, text) from public;
 grant execute on function public.bd_get_my_site_role() to authenticated;
 grant execute on function public.bd_admin_list_accounts() to authenticated;
 grant execute on function public.bd_admin_set_site_role(uuid, text) to authenticated;
+
+-- Refresh the PostgREST function cache after installing or updating RPCs.
+notify pgrst, 'reload schema';
 `;
-    let SUPA = null, AUTH_USER = null, AUTH_ROLE = null, ROLE_PICKER_OPEN = false, AUTH_SITE_ROLE = 'member', CLOUD_BUSY = false, CLOUD_SYNC_PROMISE = null, SYNC_QUEUED = false, CLOUD_LOAD_WARNING = '';
+    let SUPA = null, AUTH_USER = null, AUTH_ROLE = null, ROLE_PICKER_OPEN = false, AUTH_SITE_ROLE = 'member', CLOUD_BUSY = false, CLOUD_SYNC_PROMISE = null, SYNC_QUEUED = false, CLOUD_LOAD_WARNING = '', CLOUD_SCHEMA_MISSING = false;
     let WORKSPACE_ROLES = Object.create(null);
     const READ_ONLY_ACTIONS = new Set(['export-json', 'export-csv', 'print-report', 'open-project']);
 
@@ -1902,6 +1905,7 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
     async function enterApp(user) {
       AUTH_USER = user;
       CLOUD_LOAD_WARNING = '';
+      CLOUD_SCHEMA_MISSING = false;
       WORKSPACE_ROLES = Object.create(null);
       STATE_REVISION = 0; CLOUD_SYNCED_REVISION = 0;
       $('#authHost').style.display = 'none'; $('.app').style.display = '';
@@ -1910,7 +1914,14 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
       loadState();
       try { await loadCloudState(); } catch (e) {
         console.error(e);
-        CLOUD_LOAD_WARNING = 'تم تسجيل الدخول، لكن قاعدة بيانات الموقع لم تكتمل. شغّل ملف SQL كاملاً في Supabase → SQL Editor → Run، ثم سجّل الخروج وادخل مرة أخرى. التفاصيل: ' + (e.message || 'تعذر تحميل الجداول');
+        const detail = e.message || 'تعذر تحميل الجداول';
+        CLOUD_SCHEMA_MISSING = /could not find (?:the )?(?:function|table)|schema cache|does not exist|relation .* does not exist/i.test(detail);
+        CLOUD_LOAD_WARNING = CLOUD_SCHEMA_MISSING
+          ? 'تم تسجيل الدخول، واكتشف الموقع نقصاً في إعداد قاعدة البيانات. بدأ تنزيل أحدث ملف SQL؛ شغّله في Supabase → SQL Editor → Run، ثم أعد تحميل الصفحة. يمكن أيضاً تنزيل الملف بالزر أدناه. التفاصيل: ' + detail
+          : 'تم تسجيل الدخول، لكن تعذر تحميل البيانات السحابية. تحقق من إعداد قاعدة البيانات والاتصال ثم أعد تحميل الصفحة. التفاصيل: ' + detail;
+        if (CLOUD_SCHEMA_MISSING) {
+          try { download('supabase-setup.sql', CLOUD_SCHEMA_SQL, 'text/plain;charset=utf-8'); } catch (downloadError) { console.warn('Could not auto-download database setup:', downloadError); }
+        }
         toast('تم الدخول، لكن المزامنة تحتاج إعداد قاعدة البيانات.', 'bad');
       }
       render();
@@ -2752,8 +2763,10 @@ grant execute on function public.bd_admin_set_site_role(uuid, text) to authentic
       }
       const readonly = isReadOnlyProject(pr);
       host.classList.toggle('read-only', readonly);
-      host.innerHTML = (CLOUD_LOAD_WARNING ? '<div class="msg warn" role="status" style="margin-bottom:12px">' + esc(CLOUD_LOAD_WARNING) + '</div>' : '') +
+      host.innerHTML = (CLOUD_LOAD_WARNING ? '<div class="msg warn" role="status" style="margin-bottom:12px">' + esc(CLOUD_LOAD_WARNING) +
+        (CLOUD_SCHEMA_MISSING ? '<div style="margin-top:10px"><button class="btn" id="downloadCloudSchema">تنزيل أحدث ملف SQL</button></div>' : '') + '</div>' : '') +
         (readonly ? '<div class="readonly-banner">دور الأمن: يمكنك مشاهدة هذا المشروع فقط، ولا يمكنك تعديل بياناته.</div>' : '') + html;
+      on(host, '#downloadCloudSchema', 'click', () => download('supabase-setup.sql', CLOUD_SCHEMA_SQL, 'text/plain;charset=utf-8'));
       if (readonly) {
         $$('#view input, #view textarea, #view select').forEach(el => { el.disabled = true; });
         $$('#view button').forEach(btn => {
