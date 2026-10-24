@@ -1722,7 +1722,7 @@
         console.error(e);
         const detail = e.message || 'تعذر تحميل الجداول';
         CLOUD_SCHEMA_MISSING = /could not find (?:the )?(?:function|table)|schema cache|does not exist|relation .* does not exist/i.test(detail);
-        CLOUD_LOAD_WARNING = CLOUD_SCHEMA_MISSING ? 'Database update required: ' + detail : 'Could not load data: ' + detail;
+        CLOUD_LOAD_WARNING = 'Could not load data: ' + detail;
         toast('تم الدخول، لكن المزامنة تحتاج إعداد قاعدة البيانات.', 'bad');
       }
       render();
@@ -1781,7 +1781,7 @@
         const old = lsGet(APP.dataKey);
         if (old) { try { S = Object.assign(defaultState(), JSON.parse(old)); migratedLegacy = true; } catch (_) { } }
       }
-      const { data: shared, error } = await SUPA.rpc('bd_list_my_workspaces');
+      const { data: shared, error } = await SUPA.from('bd_workspaces').select('id, project, owner_id, partner_id, invite_email');
       if (error) throw error;
       (shared || []).forEach(row => {
         if (row.owner_id === AUTH_USER.id) WORKSPACE_ROLES[row.id] = 'owner';
