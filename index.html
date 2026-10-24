@@ -253,6 +253,8 @@
     .main {
       flex: 1;
       min-width: 0;
+      height: 100vh;
+      overflow: auto;
       padding: 20px clamp(12px, 3vw, 30px) 60px
     }
 
@@ -1393,6 +1395,8 @@
     let WORKSPACE_ROLES = Object.create(null);
     let PROJECT_SYNC_FINGERPRINTS = Object.create(null);
     let PARTNERSHIP_STATE = { accepted: [], incoming: [], outgoing: [], results: [] };
+    let PARTICIPANT_FILTER = 'all';
+    let PARTICIPANT_SEARCH = '';
     let FRIENDS_STATE = { accepted: [], outgoing: [] };
     let PENDING_INVITE_CODE = '';
     let PENDING_INVITE_KIND = 'project';
@@ -2365,9 +2369,9 @@
       if (!pr) return null;
       if (!isProjectOwner(pr)) {
         const email = String(AUTH_USER && AUTH_USER.email || '').trim().toLowerCase();
-        return arr(pr.participants).find(participant => String(participant.memberEmail || '').trim().toLowerCase() === email) || null;
+        return arr(pr.participants).filter(x => x.participantType !== 'company').find(participant => String(participant.memberEmail || '').trim().toLowerCase() === email) || null;
       }
-      return byId(pr.participants, S.activeParticipantId) || pr.participants[0] || null;
+      const active = byId(pr.participants, S.activeParticipantId); if (active && active.participantType !== 'company') return active; return arr(pr.participants).find(x => x.participantType !== 'company') || null;
     }
     function buildQuestions(catId, custom) {
       const base = arr(RAW[catId]).map(r => ({
@@ -2898,44 +2902,49 @@
     function viewParticipants() {
       const pr = currentProject();
       const owner = canManageProject(pr);
-      let html = pageHead('المشاركون', owner ? 'أدر المشاركين واربط كل مشارك ببريد حسابه حتى يرى بياناته فقط.' : 'تظهر الأسماء فقط؛ لا يمكنك اختيار مشارك آخر أو مشاهدة إجاباته أو تعديل بياناته.');
-      if (owner) html += '<div class="row no-print" style="margin-bottom:14px"><button class="btn primary" data-act="add-participant">+ مشارك جديد</button><select class="sel" id="prjSel" aria-label="المشروع الحالي"></select></div>';
-      const pts = arr(pr.participants);
-      if (!pts.length) {
-        html += card('', emptyState('لا يوجد مشاركون', 'أضف مشاركاً واحداً على الأقل لبدء التقييم.', '👤', 'إضافة مشارك', 'add-participant'));
-        return html;
-      }
+      let html = pageHead('المشاركون', owner ? 'أدر المشاركين والشركات واربط كل مشارك ببريد حسابه حتى يرى بياناته فقط.' : 'تظهر الأسماء فقط؛ لا يمكنك اختيار مشارك آخر أو مشاهدة إجاباته أو تعديل بياناته.');
+      if (owner) html += '<div class="row no-print" style="margin-bottom:14px;gap:8px;flex-wrap:wrap"><button class="btn primary" data-act="add-participant">+ مشارك جديد</button><button class="btn" data-act="add-company">+ شركة جديدة</button><select class="sel" id="prjSel" aria-label="المشروع الحالي"></select></div>';
+      const allPts = arr(pr && pr.participants);
+      const filter = PARTICIPANT_FILTER || 'all';
+      const search = String(PARTICIPANT_SEARCH || '').trim().toLowerCase();
+      const filtered = allPts.filter(p => {
+        const type = p.participantType === 'company' ? 'company' : 'individual';
+        if (filter === 'individuals' && type !== 'individual') return false;
+        if (filter === 'companies' && type !== 'company') return false;
+        if (!search) return true;
+        const haystack = [p.name, p.contactPerson, p.memberEmail, p.phone, p.companyRole, p.membershipStatus, p.info].map(v => String(v || '').toLowerCase()).join(' ');
+        return haystack.indexOf(search) !== -1;
+      });
+      html += '<div class="tabs no-print" style="margin-bottom:12px">' + ['all:الكل','individuals:الأفراد','companies:الشركات'].map(item => { const parts=item.split(':'); const key=parts[0], label=parts[1]; return '<button class="' + (filter===key?'active':'') + '" data-act="set-participant-filter" data-id="' + key + '">' + label + '</button>'; }).join('') + '</div>';
+      html += '<div class="no-print" style="margin-bottom:12px"><input id="participantSearch" type="search" placeholder="بحث في المشاركين والشركات…" value="' + esc(PARTICIPANT_SEARCH || '') + '" style="width:100%"></div>';
+      if (!allPts.length) { html += card('', emptyState('لا يوجد مشاركون', 'أضف مشاركاً أو شركة للبدء.', '👤', 'إضافة مشارك', 'add-participant')); return html; }
+      if (!filtered.length) { html += card('', emptyState('لا توجد نتائج', 'غيّر الفلتر أو البحث.', '🔎')); return html; }
       html += '<div class="grid g3">';
-      pts.forEach(p => {
-        if (!owner) {
-          html += '<div class="idea"><h4 style="margin:0">' + esc(p.name) + '</h4>' +
-            (String(p.memberEmail || '').toLowerCase() === String(AUTH_USER && AUTH_USER.email || '').toLowerCase() ? '<div class="tiny muted" style="margin-top:5px">بياناتك — تفتح من صفحة الاستبيان</div>' : '') +
-            '</div>';
+      filtered.forEach(p => {
+        const isCompany = p.participantType === 'company';
+        if (!owner) { html += '<div class="idea"><h4 style="margin:0">' + (isCompany ? '🏢 ' : '') + esc(p.name) + '</h4></div>'; return; }
+        if (!isCompany) {
+          const s = scoreAll(p);
+          const isActive = p.id === S.activeParticipantId;
+          html += '<div class="idea' + (isActive ? ' top' : '') + '">' + '<div class="row"><h4 style="margin:0;flex:1">' + esc(p.name) + '</h4>' + (isActive ? '<span class="pill info">الحالي</span>' : '') + '</div>' + '<div class="tiny muted" style="margin:4px 0 8px">آخر تحديث ' + esc((p.updatedAt || '').slice(0,10)) + '</div>' + '<div class="score-pill">' + (s.overall === null ? '—' : s.overall) + '</div>' + '<div class="tiny muted">اكتمال ' + s.completeness + '% (' + s.answered + '/' + s.totalQ + ')</div>' + '<div style="margin-top:6px">' + progressBar(s.completeness) + '</div>' + '<label class="tiny" style="display:block;margin-top:8px">بريد الحساب الذي يملك هذه البيانات' + '<input type="email" data-participant-email="' + esc(p.id) + '" value="' + esc(p.memberEmail || '') + '" placeholder="name@example.com" style="width:100%"></label>' + '<div class="row" style="margin-top:10px">' + '<button class="btn sm" data-act="select-participant" data-id="' + esc(p.id) + '">اختيار</button>' + '<button class="btn sm" data-act="rename-participant" data-id="' + esc(p.id) + '">تعديل الاسم</button>' + '<button class="btn sm danger" data-act="delete-participant" data-id="' + esc(p.id) + '">حذف</button>' + '</div></div>';
           return;
         }
-        const s = scoreAll(p);
-        const isActive = p.id === S.activeParticipantId;
-        html += '<div class="idea' + (isActive ? ' top' : '') + '">' +
-          '<div class="row"><h4 style="margin:0;flex:1">' + esc(p.name) + '</h4>' +
-          (isActive ? '<span class="pill info">الحالي</span>' : '') + '</div>' +
-          '<div class="tiny muted" style="margin:4px 0 8px">آخر تحديث ' + esc((p.updatedAt || '').slice(0, 10)) + '</div>' +
-          '<div class="score-pill">' + (s.overall === null ? '—' : s.overall) + '</div>' +
-          '<div class="tiny muted">اكتمال ' + s.completeness + '% (' + s.answered + '/' + s.totalQ + ')</div>' +
-          '<div style="margin-top:6px">' + progressBar(s.completeness) + '</div>' +
-          '<label class="tiny" style="display:block;margin-top:8px">بريد الحساب الذي يملك هذه البيانات' +
-          '<input type="email" data-participant-email="' + esc(p.id) + '" value="' + esc(p.memberEmail || '') + '" placeholder="name@example.com" style="width:100%"></label>' +
-          '<div class="row" style="margin-top:10px">' +
-          '<button class="btn sm" data-act="select-participant" data-id="' + esc(p.id) + '">اختيار</button>' +
-          '<button class="btn sm" data-act="rename-participant" data-id="' + esc(p.id) + '">تعديل الاسم</button>' +
-          '<button class="btn sm danger" data-act="delete-participant" data-id="' + esc(p.id) + '">حذف</button>' +
-          '</div></div>';
+        const logo = p.logo ? '<img src="' + esc(p.logo) + '" alt="" style="width:40px;height:40px;object-fit:contain;border-radius:8px;background:#fff;margin-inline-end:8px">' : '<span style="font-size:24px;margin-inline-end:8px">🏢</span>';
+        const fields = [];
+        if (p.contactPerson) fields.push('<div class="tiny"><strong>جهة الاتصال:</strong> ' + esc(p.contactPerson) + '</div>');
+        if (p.memberEmail) fields.push('<div class="tiny"><strong>البريد:</strong> ' + esc(p.memberEmail) + '</div>');
+        if (p.phone) fields.push('<div class="tiny"><strong>الهاتف:</strong> ' + esc(p.phone) + '</div>');
+        if (p.companyRole) fields.push('<div class="tiny"><strong>الدور/النوع:</strong> ' + esc(p.companyRole) + '</div>');
+        if (arr(p.projects).length) fields.push('<div class="tiny"><strong>المشاريع:</strong> ' + esc(arr(p.projects).join('، ')) + '</div>');
+        if (p.membershipStatus) fields.push('<div class="tiny"><strong>حالة العضوية:</strong> ' + esc(p.membershipStatus) + '</div>');
+        if (p.joinDate) fields.push('<div class="tiny"><strong>تاريخ الانضمام:</strong> ' + esc(String(p.joinDate).slice(0,10)) + '</div>');
+        if (p.info) fields.push('<div class="tiny muted" style="margin-top:4px">' + esc(p.info) + '</div>');
+        html += '<div class="idea" style="border-inline-start:4px solid var(--primary)">' + '<div class="row"><div style="display:flex;align-items:center;flex:1">' + logo + '<h4 style="margin:0">' + esc(p.name) + '</h4></div>' + '<span class="pill info">شركة</span></div>' + '<div class="tiny muted" style="margin:4px 0 8px">آخر تحديث ' + esc((p.updatedAt || '').slice(0,10)) + '</div>' + fields.join('') + '<div class="row" style="margin-top:10px">' + '<button class="btn sm" data-act="edit-company" data-id="' + esc(p.id) + '">تعديل</button>' + '<button class="btn sm danger" data-act="delete-participant" data-id="' + esc(p.id) + '">حذف</button>' + '</div></div>';
       });
       html += '</div>';
       if (owner) html += card('ملاحظات المشروع', '<textarea id="projNotes" placeholder="اكتب ملاحظات المشروع هنا…">' + esc(pr.notes && pr.notes.main ? pr.notes.main : '') + '</textarea>');
       return html;
-    }
-
-    /* =====================================================================
+    }    /* =====================================================================
        VIEW: QUESTIONNAIRE
        ===================================================================== */
     function qInput(q, v, pt) {
@@ -3069,7 +3078,7 @@
       const pr = currentProject();
       const allParticipantsVisible = canManageProject(pr) || shareAccessFor(pr).answers.view;
       const ownEmail = String(AUTH_USER && AUTH_USER.email || '').trim().toLowerCase();
-      const pts = arr(pr.participants).filter(participant => allParticipantsVisible || String(participant.memberEmail || '').trim().toLowerCase() === ownEmail);
+      const pts = arr(pr.participants).filter(participant => participant.participantType !== 'company' && (allParticipantsVisible || String(participant.memberEmail || '').trim().toLowerCase() === ownEmail));
       let html = pageHead('المقارنة', 'قارن إجابات المشاركين جنباً إلى جنب لكل قسم.');
       if (!pts.length) {
         html += card('', emptyState('لا يوجد مشاركون للمقارنة', 'أضف مشاركين على الأقل.', '👥', 'إضافة مشارك', 'add-participant'));
@@ -3116,7 +3125,7 @@
       const pr = currentProject();
       const allParticipantsVisible = canManageProject(pr) || shareAccessFor(pr).answers.view;
       const ownEmail = String(AUTH_USER && AUTH_USER.email || '').trim().toLowerCase();
-      const pts = arr(pr.participants).filter(participant => allParticipantsVisible || String(participant.memberEmail || '').trim().toLowerCase() === ownEmail);
+      const pts = arr(pr.participants).filter(participant => participant.participantType !== 'company' && (allParticipantsVisible || String(participant.memberEmail || '').trim().toLowerCase() === ownEmail));
       const visibleProject = Object.assign({}, pr, { participants: pts });
       let html = pageHead('الرؤى والأفكار', 'ما يقوله النموذج عن نقاط القوة والفجوات.');
       const sug = ideaSuggestions(visibleProject);
@@ -3340,7 +3349,7 @@
           const shareControls = pr && owner && friend.email
             ? ' <label class="tiny">الدور <select class="sel" data-friend-role="' + esc(friend.workspaceId) + '"><option value="security">شريك</option><option value="assistant">مساعد</option></select></label> <button class="btn sm" data-act="share-project-friend" data-id="' + esc(friend.workspaceId) + '">مشاركة المشروع المحدد</button>'
             : '';
-          return '<li><strong>' + esc(friend.name || friend.email) + '</strong> · ' + esc(friend.email || '') + shareControls + '</li>';
+          return '<li><strong>' + esc(friend.name || friend.email) + '</strong> · ' + esc(friend.email || '') + shareControls + ' <button class=\"btn sm danger\" data-act=\"remove-friend\" data-id=\"' + esc(friend.workspaceId) + '\">Remove Friend / إزالة من الأصدقاء</button></li>';
         }).join('') + '</ul>'
         : '<div class="tiny muted">بعد قبول طلب صداقة، سيظهر الحساب هنا. الصداقة وحدها لا تكشف بيانات المشاريع.</div>');
       if (pr && owner) {
@@ -3536,6 +3545,42 @@
         toast('تمت إضافة: ' + name, 'ok');
         render();
       });
+    function addCompanyParticipant() {
+      const pr = currentProject();
+      if (!pr) { toast('أنشئ مشروعاً أولاً', 'warn'); return; }
+      if (!canManageProject(pr)) { toast('إضافة الشركات متاحة لصاحب المشروع.', 'warn'); return; }
+      promptText('شركة جديدة', 'اسم الشركة', '', (name) => {
+        const p = makeParticipant(name);
+        p.participantType = 'company';
+        p.contactPerson = '';
+        p.phone = '';
+        p.companyRole = '';
+        p.projects = [];
+        p.membershipStatus = '';
+        p.joinDate = null;
+        p.info = '';
+        p.logo = '';
+        pr.participants.push(p);
+        pr.updatedAt = nowISO();
+        saveState(true);
+        toast('تمت إضافة الشركة: ' + name, 'ok');
+        render();
+      });
+    }
+    function editCompanyParticipant(id) {
+      const pr = currentProject();
+      if (!pr || !canManageProject(pr)) { toast('تعديل الشركات متاح لصاحب المشروع.', 'warn'); return; }
+      const p = byId(pr.participants, id);
+      if (!p) return;
+      promptText('تعديل الشركة', 'اسم الشركة', p.name, (nm) => {
+        p.name = nm;
+        p.updatedAt = nowISO();
+        saveState(true);
+        render();
+        toast('تم تعديل الشركة', 'ok');
+      });
+    }
+
     }
 
     /* =====================================================================
@@ -3950,6 +3995,29 @@
             .catch(e => toast('تعذر مشاركة المشروع: ' + (e.message || ''), 'bad'));
           break;
         }
+        case 'remove-friend': {
+          if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
+          const rfriend = FRIENDS_STATE.accepted.find(item => item.workspaceId === id);
+          if (!rfriend) { toast('تعذر العثور على الصديق.', 'bad'); break; }
+          if (String(rfriend.email || '').toLowerCase() === String(AUTH_USER && AUTH_USER.email || '').toLowerCase()) { toast('لا يمكنك إزالة نفسك.', 'warn'); break; }
+          confirmBox('Remove Friend / إزالة من الأصدقاء', 'سيتم إنهاء الصداقة. قد يفقد هذا الشخص الوصول إلى المشاريع المشتركة. لن يتم حذف أي مشروع أو بيانات. متابعة؟', () => {
+            (async () => {
+              try {
+                if (rfriend.workspaceId) {
+                  const { error } = await SUPA.rpc('bd_delete_workspace', { p_id: rfriend.workspaceId });
+                  if (error) { toast(error.message, 'bad'); return; }
+                }
+                FRIENDS_STATE.accepted = FRIENDS_STATE.accepted.filter(f => f.workspaceId !== id);
+                await loadCloudState();
+                toast('تم إزالة الصديق.', 'ok');
+                render();
+              } catch (e) {
+                toast('تعذر إزالة الصديق: ' + (e.message || ''), 'bad');
+              }
+            })();
+          });
+          break;
+        }
         case 'save-sharing-settings': {
           const project = currentProject();
           if (!project || !canManageProject(project)) { toast('تعديل إعدادات المشاركة متاح لصاحب المشروع فقط.', 'warn'); break; }
@@ -4048,6 +4116,9 @@
           promptText('تعديل الاسم', 'الاسم الجديد', p.name, (nm) => { p.name = nm; saveState(true); render(); });
           break;
         }
+        case 'set-participant-filter': { PARTICIPANT_FILTER = id || 'all'; render(); break; }
+        case 'add-company': { addCompanyParticipant(); break; }
+        case 'edit-company': { editCompanyParticipant(id); break; }
         case 'delete-participant':
           if (!canManageProject(pr)) { toast('حذف المشاركين متاح لصاحب المشروع.', 'warn'); break; }
           if (!id) break;
