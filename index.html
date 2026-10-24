@@ -141,13 +141,24 @@
     .sidebar {
       width: 264px;
       flex: 0 0 264px;
+      min-width: 0;
       background: var(--surface);
       border-inline-start: 1px solid var(--line);
       padding: 16px;
       position: sticky;
       top: 0;
       height: 100vh;
-      overflow: auto
+      overflow: auto;
+      transition: width .22s ease, flex-basis .22s ease, padding .22s ease, opacity .22s ease, border-color .22s ease
+    }
+
+    .sidebar.collapsed {
+      width: 0;
+      flex: 0 0 0;
+      padding: 0;
+      opacity: 0;
+      border-inline-start-color: transparent;
+      overflow: hidden
     }
 
     .brand {
@@ -961,7 +972,11 @@
     }
 
     .menu-btn {
-      display: none
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 44px;
+      min-height: 44px
     }
 
     .sidebar-close {
@@ -2506,7 +2521,10 @@ notify pgrst, 'reload schema';
       try { return await sync; }
       finally { if (CLOUD_SYNC_PROMISE === sync) CLOUD_SYNC_PROMISE = null; }
     }
+    const ACCEPTING_INVITES = new Set();
     async function acceptWorkspaceInvite(code) {
+      if (!code || ACCEPTING_INVITES.has(String(code))) return;
+      ACCEPTING_INVITES.add(String(code));
       try {
         const duplicateCodes = INCOMING_INVITES
           .filter(invite => invite.request_kind === 'friend' && arr(invite.duplicate_codes).some(item => String(item) === String(code)))
@@ -2529,6 +2547,7 @@ notify pgrst, 'reload schema';
         }
         await loadCloudState(); render(); toast('تم قبول الطلب. أصبحتما أصدقاء ويمكنكما مشاركة المشاريع بموافقة كل صاحب مشروع.', 'ok');
       } catch (e) { toast('تعذر قبول الدعوة: ' + e.message, 'bad'); }
+      finally { ACCEPTING_INVITES.delete(String(code)); }
     }
     async function declineWorkspaceInvite(code) {
       if (!code) return;
@@ -4906,22 +4925,55 @@ notify pgrst, 'reload schema';
         AUTH_USER = null; AUTH_ROLE = null; AUTH_ACCOUNT_TYPE = 'owner'; AUTH_SITE_ROLE = 'member'; WORKSPACE_ROLES = Object.create(null); PROJECT_SYNC_FINGERPRINTS = Object.create(null); PARTNERSHIP_STATE = { accepted: [], incoming: [], outgoing: [], results: [] }; FRIENDS_STATE = { accepted: [], outgoing: [] }; PENDING_INVITE_CODE = ''; PENDING_INVITE_KIND = 'project'; PENDING_INVITE_FROM = ''; $('#accountEmail').textContent = ''; $('#signOutBtn').style.display = 'none';
         $('.app').style.display = 'none'; S = defaultState(); authScreen('تم تسجيل الخروج.', 'login');
       });
-      on(document, '#menuBtn', 'click', () => {
+      const isMobileViewport = () => window.matchMedia('(max-width:900px)').matches;
+      const setSidebarVisible = (visible) => {
         const sb = $('#sidebar');
         if (!sb) return;
-        const isOpen = sb.classList.toggle('open');
-        $('#menuBtn').setAttribute('aria-expanded', String(isOpen));
-      });
-      const closeMobileMenu = () => {
-        const sb = $('#sidebar');
-        if (sb) sb.classList.remove('open');
-        const menuButton = $('#menuBtn');
-        if (menuButton) menuButton.setAttribute('aria-expanded', 'false');
+        const btn = $('#menuBtn');
+        if (isMobileViewport()) {
+          sb.classList.toggle('open', visible);
+        } else {
+          sb.classList.toggle('collapsed', !visible);
+        }
+        if (btn) btn.setAttribute('aria-expanded', String(visible));
       };
-      on(document, '#sidebarCloseBtn', 'click', closeMobileMenu);
-      on(document, '#sidebarBackdrop', 'click', closeMobileMenu);
-      on(document, '#nav', 'click', (e) => {
-        if (e.target.closest('button[data-nav]')) closeMobileMenu();
+      const toggleSidebar = () => {
+        const sb = $('#sidebar');
+        if (!sb) return;
+        const visible = isMobileViewport()
+          ? sb.classList.contains('open')
+          : !sb.classList.contains('collapsed');
+        setSidebarVisible(!visible);
+      };
+      const closeMobileSidebar = () => {
+        if (!isMobileViewport()) return;
+        setSidebarVisible(false);
+      };
+      on(document, '#menuBtn', 'click', toggleSidebar);
+      const closeBtn = $('#sidebarCloseBtn');
+      if (closeBtn) closeBtn.addEventListener('click', closeMobileSidebar);
+      const backdrop = $('#sidebarBackdrop');
+      if (backdrop) backdrop.addEventListener('click', closeMobileSidebar);
+      const nav = $('#nav');
+      if (nav) nav.addEventListener('click', (e) => {
+        if (e.target.closest('button[data-nav]')) closeMobileSidebar();
+      });
+      const menuButton = $('#menuBtn');
+      if (menuButton) menuButton.setAttribute('aria-expanded', isMobileViewport() ? 'false' : 'true');
+      window.addEventListener('resize', () => {
+        const sb2 = $('#sidebar');
+        if (!sb2) return;
+        if (isMobileViewport()) {
+          sb2.classList.remove('collapsed');
+          const btn2 = $('#menuBtn');
+          if (btn2) btn2.setAttribute('aria-expanded', String(sb2.classList.contains('open')));
+        } else {
+          sb2.classList.remove('open');
+          const bd = $('#sidebarBackdrop');
+          if (bd) bd.style.display = '';
+          const btn2 = $('#menuBtn');
+          if (btn2) btn2.setAttribute('aria-expanded', String(!sb2.classList.contains('collapsed')));
+        }
       });
       on(document, '#fileInput', 'change', (e) => {
         const f = e.target.files && e.target.files[0];
@@ -4937,7 +4989,7 @@ notify pgrst, 'reload schema';
       });
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
-          closeMobileMenu();
+          closeMobileSidebar();
           const host = $('#modalHost');
           if (host) host.innerHTML = '';
         }
