@@ -1467,9 +1467,12 @@
       decision: { view: false, edit: false },
       actions: { view: true, edit: true }
     };
-    const SHARE_ACCESS_LABELS = {
-      projects: 'ملخص المشروع', participants: 'أسماء المشاركين', answers: 'الإجابات والتفضيلات', compare: 'المقارنة',
-      insights: 'الرؤى والأفكار', decision: 'قرار الشراكة', actions: 'المهام والملفات'
+    const SHARE_ACCESS_LABELS = { projects: 'ملخص المشروع', participants: 'أسماء المشاركين', answers: 'الإجابات والتفضيلات', compare: 'المقارنة', insights: 'الرؤى والأفكار', decision: 'قرار الشراكة', actions: 'المهام والملفات' };
+    const PERMISSION_PRESETS = {
+      viewer: { viewProject: true, editProject: false, deleteProject: false, manageSettings: false, questionsView: true, questionsAdd: false, questionsEdit: false, questionsDelete: false, answersEdit: false, participantsView: true, invitationsManage: false, permissionsManage: false, compareEdit: false, insightsEdit: false, decisionsEdit: false, tasksManage: false, exportData: true },
+      collaborator: { viewProject: true, editProject: true, deleteProject: false, manageSettings: false, questionsView: true, questionsAdd: true, questionsEdit: true, questionsDelete: false, answersEdit: true, participantsView: true, invitationsManage: false, permissionsManage: false, compareEdit: true, insightsEdit: true, decisionsEdit: true, tasksManage: true, exportData: true },
+      manager: { viewProject: true, editProject: true, deleteProject: false, manageSettings: true, questionsView: true, questionsAdd: true, questionsEdit: true, questionsDelete: true, answersEdit: true, participantsView: true, invitationsManage: true, permissionsManage: true, compareEdit: true, insightsEdit: true, decisionsEdit: true, tasksManage: true, exportData: true },
+      custom: null
     };
     function shareAccessFor(project) {
       const raw = project && project._bdSharing || {};
@@ -3021,14 +3024,15 @@
       const pr = currentProject();
       const pt = currentParticipant();
       let html = pageHead('الاستبيان', 'أجب عن الأسئلة في كل قسم — يمكنك التخطي والعودة لاحقاً.');
-      if (!pt) {
-        html += card('', emptyState('لا يوجد مشارك', 'أضف مشاركاً ثم عد إلى هنا.', '👤', 'إضافة مشارك', 'add-participant'));
+      if (!pr) {
+        html += '<div class="msg warn" style="margin-bottom:12px">لا يوجد مشروع محدد. يمكنك تصفح الأسئلة الأصلية أدناه. لحفظ الإجابات، أنشئ مشروعاً واختر مشاركاً.</div>'; CATS.forEach(function(c){ var qs = buildQuestions(c.id, []); html += card(c.icon + ' ' + c.name + ' — ' + c.desc, '<ul>' + qs.map(function(q){ return '<li><span class="badge-q">' + esc(q.id) + '</span> ' + esc(q.text) + '</li>'; }).join('') + '</ul>'); });
         return html;
       }
+      const hasPt = !!pt;
       html += '<div class="row no-print" style="margin-bottom:12px">' +
         (canManageProject(pr) ? '<label style="margin:0">المشارك</label><select class="sel" id="ptSel" aria-label="المشارك">' +
-          arr(pr.participants).map(p => '<option value="' + esc(p.id) + '"' + (p.id === pt.id ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') +
-          '</select>' : '<span class="pill info">بيانات: ' + esc(pt.name) + '</span>') + '<span class="spacer"></span>' +
+          arr(pr.participants).map(p => '<option value="' + esc(p.id) + '"' + (pt && p.id === pt.id ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') +
+          '</select>' : '<span class="pill info">بيانات: ' + esc(pt ? pt.name : 'بدون مشارك') + '</span>') + '<span class="spacer"></span>' +
         '<button class="btn sm" data-act="prev-cat">◀ السابق</button>' +
         '<button class="btn sm" data-act="next-cat">التالي ▶</button></div>';
 
@@ -3051,8 +3055,8 @@
       html += card(cat.icon + ' ' + cat.name + ' — ' + cat.desc, '<div id="qList">' + qs.map(q => {
         const v = answerOf(pt, q.id);
         const answered = isAnswered(v);
-        const skipped = pt.skipped && pt.skipped[q.id];
-        const flagged = pt.flags && pt.flags[q.id];
+        const skipped = pt && pt.skipped && pt.skipped[q.id];
+        const flagged = pt && pt.flags && pt.flags[q.id];
         return '<div class="qcard' + (answered ? ' answered' : skipped ? ' skipped' : '') + (flagged ? ' flagged' : '') + '" data-qcard="' + esc(q.id) + '">' +
           '<div class="qmeta"><span class="badge-q">' + esc(q.id) + '</span>' +
           (answered ? '<span class="pill ok">مُجاب</span>' : skipped ? '<span class="pill warn">متخطّى</span>' : '') +
@@ -3067,7 +3071,7 @@
       }).join('') + '</div>');
 
       html += card('ملاحظات على هذا القسم', '<textarea id="catNotes" placeholder="ملاحظاتك…">' +
-        esc((pt.notes && pt.notes[cat.id]) ? pt.notes[cat.id] : '') + '</textarea>');
+        esc((pt && pt.notes && pt.notes[cat.id]) ? pt.notes[cat.id] : '') + '</textarea>');
       return html;
     }
 
@@ -3522,7 +3526,6 @@
       };
     }
     function newProject() {
-      if (AUTH_ACCOUNT_TYPE === 'partner') { toast('إنشاء المشاريع متاح لحساب صاحب المشروع. يمكنك طلب الشراكة من صفحة الشركاء.', 'warn'); return; }
       promptText('مشروع جديد', 'اسم المشروع', '', (name) => {
         const p = makeProject(name);
         S.projects.push(p);
@@ -4000,11 +4003,11 @@
           const rfriend = FRIENDS_STATE.accepted.find(item => item.workspaceId === id);
           if (!rfriend) { toast('تعذر العثور على الصديق.', 'bad'); break; }
           if (String(rfriend.email || '').toLowerCase() === String(AUTH_USER && AUTH_USER.email || '').toLowerCase()) { toast('لا يمكنك إزالة نفسك.', 'warn'); break; }
-          confirmBox('Remove Friend / إزالة من الأصدقاء', 'سيتم إنهاء الصداقة. قد يفقد هذا الشخص الوصول إلى المشاريع المشتركة. لن يتم حذف أي مشروع أو بيانات. متابعة؟', () => {
+          confirmBox('Remove Friend / إزالة من الأصدقاء', 'سيتم إنهاء الصداقة فقط. لن يتم حذف أي مشروع أو بيانات، ولن يتم إلغاء الوصول إلى المشاريع المشتركة بشكل مستقل. متابعة؟', () => {
             (async () => {
               try {
                 if (rfriend.workspaceId) {
-                  const { error } = await SUPA.rpc('bd_delete_workspace', { p_id: rfriend.workspaceId });
+                  const { error } = await SUPA.rpc('bd_remove_friendship', { p_id: rfriend.workspaceId });
                   if (error) { toast(error.message, 'bad'); return; }
                 }
                 FRIENDS_STATE.accepted = FRIENDS_STATE.accepted.filter(f => f.workspaceId !== id);
@@ -4181,7 +4184,7 @@
           break;
         }
         case 'add-task': {
-          if (!pr || !canManageProject(pr)) { toast('إنشاء المهام وإسنادها متاح لصاحب المشروع.', 'warn'); break; }
+          if (!pr || (!canManageProject(pr) && !canWriteSection(pr, 'actions'))) { toast('إنشاء المهام متاح لصاحب المشروع أو من لديه صلاحية إدارة المهام.', 'warn'); break; }
           const inp = $('#newTask');
           const text = inp ? inp.value.trim() : '';
           if (!text) { toast('اكتب نص المهمة أولاً', 'warn'); if (inp) inp.focus(); break; }
