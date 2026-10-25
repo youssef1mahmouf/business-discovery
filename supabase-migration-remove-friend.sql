@@ -6,6 +6,8 @@
 -- This function does NOT delete independently shared projects, memberships,
 -- messages, or any other unrelated data. It deletes only the friendship row.
 
+BEGIN;
+
 create or replace function public.bd_remove_friendship(p_id uuid)
 returns void
 language plpgsql
@@ -60,3 +62,5 @@ grant execute on function public.bd_remove_friendship(uuid) to authenticated;
 
 -- Ask PostgREST to refresh its schema cache after deployment.
 notify pgrst, 'reload schema';
+
+COMMIT;

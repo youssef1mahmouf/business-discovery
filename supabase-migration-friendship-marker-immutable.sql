@@ -3,6 +3,9 @@
 -- shared project into a friendship record and then deleting it through
 -- public.bd_remove_friendship.
 
+BEGIN;
+
+
 create or replace function public.bd_create_workspace_invite(p_project jsonb, p_email text, p_role text, p_workspace_id uuid default null)
 returns jsonb
 language plpgsql
@@ -178,4 +181,12 @@ begin
 end;
 $$;
 
+revoke all on function public.bd_create_workspace_invite(jsonb, text, text, uuid) from public;
+revoke all on function public.bd_save_workspace_project(uuid, jsonb) from public;
+grant execute on function public.bd_create_workspace_invite(jsonb, text, text, uuid) to authenticated;
+grant execute on function public.bd_save_workspace_project(uuid, jsonb) to authenticated;
+
+-- Ask PostgREST to refresh its schema cache after deployment.
 notify pgrst, 'reload schema';
+
+COMMIT;
