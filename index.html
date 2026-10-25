@@ -1445,6 +1445,111 @@
     function lsGet(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
     function lsSet(key, val) { try { localStorage.setItem(key, val); return true; } catch (e) { return false; } }
     function lsDel(key) { try { localStorage.removeItem(key); } catch (e) { } }
+    /* ---------- offline storage foundation (Phase 1, isolated, unused) ---------- */
+    const BD_OFFLINE_DB_NAME = "bd_offline_foundation_v1";
+    const BD_OFFLINE_DB_VERSION = 1;
+    const BD_STORAGE = (function () {
+      let dbPromise = null;
+      function supported() {
+        try { return !!window.indexedDB; } catch (e) { return false; }
+      }
+      function openDb() {
+        if (!supported()) return Promise.resolve(null);
+        if (dbPromise) return dbPromise;
+        dbPromise = new Promise((resolve) => {
+          try {
+            const req = window.indexedDB.open(BD_OFFLINE_DB_NAME, BD_OFFLINE_DB_VERSION);
+            req.onupgradeneeded = function () {
+              try {
+                const db = req.result;
+                if (!db.objectStoreNames.contains("profiles")) db.createObjectStore("profiles", { keyPath: "email" });
+                if (!db.objectStoreNames.contains("state")) db.createObjectStore("state", { keyPath: "profileEmail" });
+                if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "key" });
+                if (!db.objectStoreNames.contains("kv")) db.createObjectStore("kv", { keyPath: "key" });
+              } catch (e) { console.warn("IndexedDB upgrade failed:", e); }
+            };
+            req.onsuccess = function () { resolve(req.result); };
+            req.onerror = function () { console.warn("IndexedDB open failed:", req.error); resolve(null); };
+            req.onblocked = function () { console.warn("IndexedDB open blocked"); resolve(null); };
+          } catch (e) { console.warn("IndexedDB init error:", e); resolve(null); }
+        });
+        return dbPromise;
+      }
+      function idbRequest(storeName, mode, operation) {
+        return openDb().then(function (db) {
+          if (!db) return null;
+          return new Promise((resolve) => {
+            try {
+              const tx = db.transaction(storeName, mode);
+              const store = tx.objectStore(storeName);
+              const req = operation(store);
+              req.onsuccess = function () { resolve(req.result); };
+              req.onerror = function () { console.warn("IndexedDB request failed:", req.error); resolve(null); };
+              tx.onerror = function () { console.warn("IndexedDB tx failed:", tx.error); };
+            } catch (e) { console.warn("IndexedDB operation error:", e); resolve(null); }
+          });
+        }).catch(function (e) { console.warn("IndexedDB promise error:", e); return null; });
+      }
+      function lsGetSafe(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+      function lsSetSafe(key, val) { try { localStorage.setItem(key, val); return true; } catch (e) { return false; } }
+      function lsDelSafe(key) { try { localStorage.removeItem(key); } catch (e) { } }
+      return {
+        supported: supported,
+        init: openDb,
+        async kvGet(key) {
+          const res = await idbRequest("kv", "readonly", (s) => s.get(key));
+          if (res && res.value !== undefined) return res.value;
+          const raw = lsGetSafe("bd_offline_kv_" + key);
+          if (raw == null) return null;
+          try { return JSON.parse(raw); } catch (e) { return raw; }
+        },
+        async kvSet(key, value) {
+          await idbRequest("kv", "readwrite", (s) => s.put({ key: key, value: value, updatedAt: new Date().toISOString() }));
+          try { lsSetSafe("bd_offline_kv_" + key, JSON.stringify(value)); } catch (e) { }
+          return true;
+        },
+        async kvDelete(key) {
+          await idbRequest("kv", "readwrite", (s) => s.delete(key));
+          lsDelSafe("bd_offline_kv_" + key);
+          return true;
+        },
+        async metaGet(key) {
+          const res = await idbRequest("meta", "readonly", (s) => s.get(key));
+          if (res && res.value !== undefined) return res.value;
+          const raw = lsGetSafe("bd_offline_meta_" + key);
+          if (raw == null) return null;
+          try { return JSON.parse(raw); } catch (e) { return raw; }
+        },
+        async metaSet(key, value) {
+          await idbRequest("meta", "readwrite", (s) => s.put({ key: key, value: value, updatedAt: new Date().toISOString() }));
+          try { lsSetSafe("bd_offline_meta_" + key, JSON.stringify(value)); } catch (e) { }
+          return true;
+        },
+        async profileGet(email) {
+          if (!email) return null;
+          return await idbRequest("profiles", "readonly", (s) => s.get(String(email).toLowerCase()));
+        },
+        async profileSet(profile) {
+          if (!profile || !profile.email) return false;
+          const rec = Object.assign({}, profile, { email: String(profile.email).toLowerCase(), updatedAt: new Date().toISOString() });
+          await idbRequest("profiles", "readwrite", (s) => s.put(rec));
+          return true;
+        },
+        async stateGet(profileEmail) {
+          if (!profileEmail) return null;
+          const res = await idbRequest("state", "readonly", (s) => s.get(String(profileEmail).toLowerCase()));
+          return res ? res.data : null;
+        },
+        async stateSet(profileEmail, data) {
+          if (!profileEmail) return false;
+          await idbRequest("state", "readwrite", (s) => s.put({ profileEmail: String(profileEmail).toLowerCase(), data: data, revision: (data && data._rev) || 0, updatedAt: new Date().toISOString() }));
+          return true;
+        }
+      };
+    })();
+    window.BD_STORAGE = BD_STORAGE;
+    try { BD_STORAGE.init().catch(function (e) { console.warn("BD_STORAGE init failed:", e); }); } catch (e) { console.warn("BD_STORAGE init threw:", e); }
+
     /* ---------- default state ---------- */
     function defaultState() {
       return { schema: APP.schema, createdAt: nowISO(), activeProjectId: null, activeParticipantId: null, projects: [] };
