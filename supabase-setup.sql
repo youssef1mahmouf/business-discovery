@@ -245,7 +245,7 @@ set search_path = ''
 as $$
   select m.invite_code,
          m.workspace_id,
-         case when w.project ->> '__bdFriendRequest' = 'true' then 'friend' else 'project' end,
+         case when w.project -> '__bdFriendRequest' = 'true'::jsonb then 'friend' else 'project' end,
          coalesce(nullif(p.full_name, ''), nullif(p.username, ''), u.email, 'حساب')::text,
          u.email::text,
          coalesce(w.project ->> 'name', 'مشروع مشترك')::text,
@@ -274,7 +274,7 @@ declare
 begin
   if auth.uid() is null then raise exception 'يجب تسجيل الدخول أولاً'; end if;
 
-  select m.workspace_id, coalesce(w.project ->> '__bdFriendRequest' = 'true', false)
+  select m.workspace_id, coalesce(w.project -> '__bdFriendRequest' = 'true'::jsonb, false)
     into v_workspace_id, v_is_friend_request
     from public.bd_workspace_members m
     join public.bd_workspaces w on w.id = m.workspace_id
@@ -289,7 +289,7 @@ begin
        and lower(invite_email) = lower(coalesce(auth.jwt() ->> 'email', ''));
     if v_is_friend_request then
       delete from public.bd_workspaces
-       where id = v_workspace_id and partner_id is null and project ->> '__bdFriendRequest' = 'true';
+       where id = v_workspace_id and partner_id is null and project -> '__bdFriendRequest' = 'true'::jsonb;
     else
       -- Invalidate a legacy project link when it reuses this member invite code.
       update public.bd_workspaces
@@ -337,7 +337,7 @@ begin
   if auth.uid() is null then raise exception 'يجب تسجيل الدخول أولاً'; end if;
   if p_id is null then raise exception 'معرّف الصداقة غير صالح'; end if;
 
-  select w.id, coalesce(w.project ->> '__bdFriendRequest' = 'true', false)
+  select w.id, coalesce(w.project -> '__bdFriendRequest' = 'true'::jsonb, false)
     into v_workspace_id, v_is_friend_request
     from public.bd_workspaces w
    where w.id = p_id
@@ -350,7 +350,7 @@ begin
   delete from public.bd_workspaces
    where id = v_workspace_id
      and (owner_id = auth.uid() or partner_id = auth.uid())
-     and project ->> '__bdFriendRequest' = 'true';
+     and project -> '__bdFriendRequest' = 'true'::jsonb;
 
   get diagnostics v_count = row_count;
   if v_count <> 1 then raise exception 'تعذر إزالة الصداقة'; end if;
@@ -828,7 +828,10 @@ begin
     values (v_workspace_id, auth.uid(), v_email, v_invite_code, p_project);
   else
     v_workspace_id := p_workspace_id;
-    update public.bd_workspaces set project = p_project, updated_at = now()
+    update public.bd_workspaces
+       set project = jsonb_set(p_project, '{__bdFriendRequest}',
+              coalesce((select w.project -> '__bdFriendRequest' from public.bd_workspaces w where w.id = v_workspace_id), 'false'::jsonb), true),
+           updated_at = now()
       where id = v_workspace_id and owner_id = auth.uid();
     if not found then raise exception 'فقط المالك يستطيع دعوة أعضاء لهذا المشروع'; end if;
   end if;
@@ -911,7 +914,7 @@ set search_path = ''
 as $$
   select m.invite_code,
          m.workspace_id,
-         case when w.project ->> '__bdFriendRequest' = 'true' then 'friend' else 'project' end,
+         case when w.project -> '__bdFriendRequest' = 'true'::jsonb then 'friend' else 'project' end,
          coalesce(nullif(p.full_name, ''), nullif(p.username, ''), u.email, 'حساب')::text,
          u.email::text,
          coalesce(w.project ->> 'name', 'مشروع مشترك')::text,
@@ -940,7 +943,7 @@ declare
 begin
   if auth.uid() is null then raise exception 'يجب تسجيل الدخول أولاً'; end if;
 
-  select m.workspace_id, coalesce(w.project ->> '__bdFriendRequest' = 'true', false)
+  select m.workspace_id, coalesce(w.project -> '__bdFriendRequest' = 'true'::jsonb, false)
     into v_workspace_id, v_is_friend_request
     from public.bd_workspace_members m
     join public.bd_workspaces w on w.id = m.workspace_id
@@ -955,7 +958,7 @@ begin
        and lower(invite_email) = lower(coalesce(auth.jwt() ->> 'email', ''));
     if v_is_friend_request then
       delete from public.bd_workspaces
-       where id = v_workspace_id and partner_id is null and project ->> '__bdFriendRequest' = 'true';
+       where id = v_workspace_id and partner_id is null and project -> '__bdFriendRequest' = 'true'::jsonb;
     else
       -- Invalidate a legacy project link when it reuses this member invite code.
       update public.bd_workspaces
@@ -999,7 +1002,9 @@ declare
   v_count integer;
 begin
   update public.bd_workspaces
-     set project = p_project, updated_at = now()
+     set project = jsonb_set(p_project, '{__bdFriendRequest}',
+            coalesce((select w2.project -> '__bdFriendRequest' from public.bd_workspaces w2 where w2.id = p_id), 'false'::jsonb), true),
+         updated_at = now()
    where id = p_id and (
      owner_id = auth.uid() or
      (partner_id = auth.uid() and not exists (select 1 from public.bd_workspace_members m where m.workspace_id = p_id and m.user_id = auth.uid() and m.role = 'security')) or
@@ -1176,7 +1181,10 @@ begin
   if auth.uid() is null then raise exception 'يجب تسجيل الدخول أولاً'; end if;
   if jsonb_typeof(p_project) <> 'object' then raise exception 'بيانات المشروع غير صالحة'; end if;
 
-  update public.bd_workspaces set project = p_project, updated_at = pg_catalog.now()
+  update public.bd_workspaces
+     set project = jsonb_set(p_project, '{__bdFriendRequest}',
+            coalesce((select w.project -> '__bdFriendRequest' from public.bd_workspaces w where w.id = p_id), 'false'::jsonb), true),
+         updated_at = pg_catalog.now()
    where id = p_id and owner_id = auth.uid();
   if found then return; end if;
 

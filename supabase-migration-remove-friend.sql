@@ -27,7 +27,7 @@ begin
 
   -- Lock and verify that the caller is a legitimate participant in this record.
   select w.id,
-         coalesce(w.project ->> '__bdFriendRequest' = 'true', false)
+         coalesce(w.project -> '__bdFriendRequest' = 'true'::jsonb, false)
     into v_workspace_id, v_is_friend_request
     from public.bd_workspaces w
    where w.id = p_id
@@ -46,7 +46,7 @@ begin
   delete from public.bd_workspaces
    where id = v_workspace_id
      and (owner_id = auth.uid() or partner_id = auth.uid())
-     and project ->> '__bdFriendRequest' = 'true';
+     and project -> '__bdFriendRequest' = 'true'::jsonb;
 
   get diagnostics v_count = row_count;
   if v_count <> 1 then

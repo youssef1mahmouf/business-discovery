@@ -3412,15 +3412,15 @@
         const { data, error } = await SUPA.rpc('bd_admin_list_accounts');
         if (error) throw error;
         const accounts = Array.isArray(data) ? data : [];
-        const projectsCount = accounts.reduce((total, account) => total + arr(account.private_data && account.private_data.projects).length + arr(account.shared_projects).filter(entry => !(entry.project && entry.project.__bdFriendRequest)).length, 0);
+        const projectsCount = accounts.reduce((total, account) => total + arr(account.private_data && account.private_data.projects).length + arr(account.shared_projects).filter(entry => !(entry.project && entry.project.__bdFriendRequest === true)).length, 0);
         if (stats) stats.innerHTML = '<strong>' + accounts.length + '</strong> حساب · <strong>' + projectsCount + '</strong> مشروع خاص أو مشترك';
         if (!accounts.length) { host.textContent = 'لا توجد حسابات مسجلة بعد.'; return; }
         host.innerHTML = accounts.map(account => {
           const isSelf = account.user_id === AUTH_USER.id;
           const privateProjects = arr(account.private_data && account.private_data.projects);
           const allSharedProjects = arr(account.shared_projects);
-          const friendRequests = allSharedProjects.filter(entry => entry.project && entry.project.__bdFriendRequest);
-          const sharedProjects = allSharedProjects.filter(entry => !(entry.project && entry.project.__bdFriendRequest));
+          const friendRequests = allSharedProjects.filter(entry => entry.project && entry.project.__bdFriendRequest === true);
+          const sharedProjects = allSharedProjects.filter(entry => !(entry.project && entry.project.__bdFriendRequest === true));
           const roleLabel = account.site_role === 'site_admin' ? 'مدير الموقع' : 'مستخدم';
           const accessItems = sharedProjects.map(entry => {
             const project = entry.project || {};
