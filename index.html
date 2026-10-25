@@ -1479,14 +1479,17 @@
         return openDb().then(function (db) {
           if (!db) return null;
           return new Promise((resolve) => {
+            let settled = false;
+            function settle(value) { if (!settled) { settled = true; resolve(value); } }
             try {
               const tx = db.transaction(storeName, mode);
               const store = tx.objectStore(storeName);
               const req = operation(store);
-              req.onsuccess = function () { resolve(req.result); };
-              req.onerror = function () { console.warn("IndexedDB request failed:", req.error); resolve(null); };
-              tx.onerror = function () { console.warn("IndexedDB tx failed:", tx.error); };
-            } catch (e) { console.warn("IndexedDB operation error:", e); resolve(null); }
+              req.onsuccess = function () { settle(req.result); };
+              req.onerror = function () { console.warn("IndexedDB request failed:", req.error); settle(null); };
+              tx.onerror = function () { console.warn("IndexedDB tx failed:", tx.error); settle(null); };
+              tx.onabort = function () { console.warn("IndexedDB tx aborted:", tx.error); settle(null); };
+            } catch (e) { console.warn("IndexedDB operation error:", e); settle(null); }
           });
         }).catch(function (e) { console.warn("IndexedDB promise error:", e); return null; });
       }
@@ -1498,15 +1501,32 @@
         init: openDb,
         async kvGet(key) {
           const res = await idbRequest("kv", "readonly", (s) => s.get(key));
-          if (res && res.value !== undefined) return res.value;
+          let idbValue = undefined, idbTime = null;
+          if (res && res.value !== undefined) { idbValue = res.value; idbTime = res.updatedAt || null; }
           const raw = lsGetSafe("bd_offline_kv_" + key);
-          if (raw == null) return null;
-          try { return JSON.parse(raw); } catch (e) { return raw; }
+          let lsValue = undefined, lsTime = null;
+          if (raw != null) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (parsed && typeof parsed === "object" && parsed.__bd_offline_envelope === true) { lsValue = parsed.value; lsTime = parsed.updatedAt || null; }
+              else { lsValue = parsed; lsTime = null; }
+            } catch (e) { lsValue = raw; lsTime = null; }
+          }
+          if (idbValue !== undefined && lsValue !== undefined) {
+            if (lsTime && (!idbTime || String(lsTime) > String(idbTime))) return lsValue;
+            return idbValue;
+          }
+          if (idbValue !== undefined) return idbValue;
+          if (lsValue !== undefined) return lsValue;
+          return null;
         },
         async kvSet(key, value) {
-          await idbRequest("kv", "readwrite", (s) => s.put({ key: key, value: value, updatedAt: new Date().toISOString() }));
-          try { lsSetSafe("bd_offline_kv_" + key, JSON.stringify(value)); } catch (e) { }
-          return true;
+          const ts = new Date().toISOString();
+          const idbRes = await idbRequest("kv", "readwrite", (s) => s.put({ key: key, value: value, updatedAt: ts }));
+          const idbOk = idbRes !== null;
+          let lsOk = false;
+          try { lsOk = lsSetSafe("bd_offline_kv_" + key, JSON.stringify({ __bd_offline_envelope: true, value: value, updatedAt: ts })); } catch (e) { lsOk = false; }
+          return idbOk || lsOk;
         },
         async kvDelete(key) {
           await idbRequest("kv", "readwrite", (s) => s.delete(key));
@@ -1515,15 +1535,32 @@
         },
         async metaGet(key) {
           const res = await idbRequest("meta", "readonly", (s) => s.get(key));
-          if (res && res.value !== undefined) return res.value;
+          let idbValue = undefined, idbTime = null;
+          if (res && res.value !== undefined) { idbValue = res.value; idbTime = res.updatedAt || null; }
           const raw = lsGetSafe("bd_offline_meta_" + key);
-          if (raw == null) return null;
-          try { return JSON.parse(raw); } catch (e) { return raw; }
+          let lsValue = undefined, lsTime = null;
+          if (raw != null) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (parsed && typeof parsed === "object" && parsed.__bd_offline_envelope === true) { lsValue = parsed.value; lsTime = parsed.updatedAt || null; }
+              else { lsValue = parsed; lsTime = null; }
+            } catch (e) { lsValue = raw; lsTime = null; }
+          }
+          if (idbValue !== undefined && lsValue !== undefined) {
+            if (lsTime && (!idbTime || String(lsTime) > String(idbTime))) return lsValue;
+            return idbValue;
+          }
+          if (idbValue !== undefined) return idbValue;
+          if (lsValue !== undefined) return lsValue;
+          return null;
         },
         async metaSet(key, value) {
-          await idbRequest("meta", "readwrite", (s) => s.put({ key: key, value: value, updatedAt: new Date().toISOString() }));
-          try { lsSetSafe("bd_offline_meta_" + key, JSON.stringify(value)); } catch (e) { }
-          return true;
+          const ts = new Date().toISOString();
+          const idbRes = await idbRequest("meta", "readwrite", (s) => s.put({ key: key, value: value, updatedAt: ts }));
+          const idbOk = idbRes !== null;
+          let lsOk = false;
+          try { lsOk = lsSetSafe("bd_offline_meta_" + key, JSON.stringify({ __bd_offline_envelope: true, value: value, updatedAt: ts })); } catch (e) { lsOk = false; }
+          return idbOk || lsOk;
         },
         async profileGet(email) {
           if (!email) return null;
@@ -1532,8 +1569,8 @@
         async profileSet(profile) {
           if (!profile || !profile.email) return false;
           const rec = Object.assign({}, profile, { email: String(profile.email).toLowerCase(), updatedAt: new Date().toISOString() });
-          await idbRequest("profiles", "readwrite", (s) => s.put(rec));
-          return true;
+          const res = await idbRequest("profiles", "readwrite", (s) => s.put(rec));
+          return res !== null;
         },
         async stateGet(profileEmail) {
           if (!profileEmail) return null;
@@ -1542,8 +1579,8 @@
         },
         async stateSet(profileEmail, data) {
           if (!profileEmail) return false;
-          await idbRequest("state", "readwrite", (s) => s.put({ profileEmail: String(profileEmail).toLowerCase(), data: data, revision: (data && data._rev) || 0, updatedAt: new Date().toISOString() }));
-          return true;
+          const res = await idbRequest("state", "readwrite", (s) => s.put({ profileEmail: String(profileEmail).toLowerCase(), data: data, revision: (data && data._rev) || 0, updatedAt: new Date().toISOString() }));
+          return res !== null;
         }
       };
     })();
