@@ -1339,6 +1339,7 @@
         <span class="pill" id="tbParticipant">لا يوجد مشارك</span>
         <span class="spacer"></span>
         <span class="tiny muted" id="accountEmail"></span>
+        <button class="btn sm" id="accountSettingsBtn" style="display:none">إعدادات الحساب</button>
         <button class="btn sm" id="signOutBtn" style="display:none">تسجيل الخروج</button>
         <button class="btn sm" id="saveNowBtn">حفظ الآن</button>
         <span class="tiny muted" id="saveState" role="status" aria-live="polite"></span>
@@ -3740,11 +3741,15 @@ host.innerHTML = (readonly ? '<div class="readonly-banner">المشروع للع
     saveState(true);
     toast('?? ????? ??? ??? ??????', 'ok');
   });
+on(document, '#accountSettingsBtn', 'click', async () => { await accountSettingsScreen(); });
   on(document, '#signOutBtn', 'click', async () => {
     CURRENT_PROFILE_ID = null;
     AUTH_USER = null;
     AUTH_ACCOUNT_TYPE = 'owner';
     lsDel('bd_selected_profile_v1');
+    if ($('#signOutBtn')) $('#signOutBtn').style.display = 'none';
+    if ($('#accountSettingsBtn')) $('#accountSettingsBtn').style.display = 'none';
+    $('#accountEmail').textContent = '';
     $('.app').style.display = 'none';
     S = defaultState();
     await localEntryScreen('');
@@ -3846,7 +3851,8 @@ host.innerHTML = (readonly ? '<div class="readonly-banner">المشروع للع
       $('#authHost').style.display = 'none';
       if ($('.app')) $('.app').style.display = '';
       $('#accountEmail').textContent = profile.email || '';
-      if ($('#signOutBtn')) $('#signOutBtn').style.display = 'none';
+      if ($('#signOutBtn')) $('#signOutBtn').style.display = '';
+      if ($('#accountSettingsBtn')) $('#accountSettingsBtn').style.display = '';
       await loadState();
       render();
     }
@@ -3918,7 +3924,8 @@ async function init() {
       const selectedProfile = lsGet('bd_selected_profile_v1');
       if (selectedProfile) {
         const prof = await BD_STORAGE.profileGet(selectedProfile);
-        if (prof) { await enterLocalApp(prof); return; }
+        if (prof && prof.passwordHash) { await enterLocalApp(prof); return; }
+        if (prof) { await localEntryScreen('Legacy account without password'); return; }
       }
       await localEntryScreen('');
     }
@@ -3968,6 +3975,182 @@ async function init() {
     } else {
       safeInit();
     }
+
+/* appended offline auth */
+async function localEntryScreen(message) {
+  const host = $('#authHost'), app = $('.app');
+  if (app) app.style.display = 'none';
+  if (host) host.style.display = 'block';
+  const L = (ar, en) => (document.documentElement.lang === 'en' ? en : ar);
+  host.innerHTML = '<div class="card" style="max-width:460px;margin:40px auto;padding:24px">' +
+    '<h2 style="margin-top:0">' + L('حساب محلي','Local account') + '</h2>' +
+    (message ? '<div class="tiny" style="color:var(--danger);margin-bottom:8px">' + esc(message) + '</div>' : '') +
+    '<div class="tiny muted" style="margin-bottom:12px">' + L('حسابات محلية على هذا المتصفح فقط — غير مُتحقَّق منها.','Local accounts on this browser only — not verified.') + '</div>' +
+    '<div style="display:flex;gap:8px;margin-bottom:12px"><button class="btn" id="tabLogin" style="flex:1">' + L('تسجيل دخول','Sign in') + '</button><button class="btn" id="tabRegister" style="flex:1">' + L('إنشاء حساب','Register') + '</button></div>' +
+    '<div id="authForm"></div></div>';
+  const form = $('#authForm');
+  function renderLogin() {
+    form.innerHTML = '<div class="field"><label>' + L('البريد أو اسم المستخدم','Email or username') + '</label><input id="liId" type="text"></div>' +
+      '<div class="field"><label>' + L('كلمة المرور','Password') + '</label><div style="display:flex;gap:6px"><input id="liPw" type="password" style="flex:1"><button class="btn xs" id="togglePw" type="button">' + L('إظهار','Show') + '</button></div></div>' +
+      '<button class="btn primary" id="loginBtn" style="width:100%">' + L('دخول','Sign in') + '</button><div id="authErr" class="tiny" style="color:var(--danger);margin-top:8px"></div>';
+    $('#togglePw').addEventListener('click', () => { const i = $('#liPw'); i.type = i.type === 'password' ? 'text' : 'password'; });
+    $('#loginBtn').addEventListener('click', doLogin);
+  }
+  function renderRegister() {
+    form.innerHTML = '<div class="field"><label>' + L('اسم المستخدم','Username') + '</label><input id="rgUser" type="text"></div>' +
+      '<div class="field"><label>' + L('البريد الإلكتروني','Email') + '</label><input id="rgEmail" type="email"></div>' +
+      '<div class="field"><label>' + L('رقم الهاتف (اختياري)','Phone (optional)') + '</label><input id="rgPhone" type="text"></div>' +
+      '<div class="field"><label>' + L('كلمة المرور','Password') + '</label><div style="display:flex;gap:6px"><input id="rgPw" type="password" style="flex:1"><button class="btn xs" id="togglePw2" type="button">' + L('إظهار','Show') + '</button></div></div>' +
+      '<div class="field"><label>' + L('تأكيد كلمة المرور','Confirm password') + '</label><input id="rgPw2" type="password"></div>' +
+      '<button class="btn primary" id="registerBtn" style="width:100%">' + L('إنشاء حساب','Register') + '</button><div id="authErr" class="tiny" style="color:var(--danger);margin-top:8px"></div>';
+    $('#togglePw2').addEventListener('click', () => { const i = $('#rgPw'); i.type = i.type === 'password' ? 'text' : 'password'; });
+    $('#registerBtn').addEventListener('click', doRegister);
+  }
+  $('#tabLogin').addEventListener('click', renderLogin);
+  $('#tabRegister').addEventListener('click', renderRegister);
+  renderLogin();
+
+  async function doLogin() {
+    const err = $('#authErr');
+    const id = ($('#liId').value || '').trim();
+    const pw = $('#liPw').value || '';
+    if (!id || !pw) { err.textContent = L('أدخل المعرّف وكلمة المرور','Enter identifier and password'); return; }
+    const accounts = await BD_STORAGE.profileAll();
+    const acct = accounts.find(a => (a.email === id.toLowerCase()) || (a.username && a.username.toLowerCase() === id.toLowerCase()));
+    if (!acct) { err.textContent = L('بيانات الدخول غير صحيحة','Invalid credentials'); return; }
+    if (!acct.passwordHash || !acct.salt) { err.textContent = L('حساب قديم بدون كلمة مرور','Legacy account without password'); return; }
+    const ok = await verifyPassword(pw, acct);
+    if (!ok) { err.textContent = L('بيانات الدخول غير صحيحة','Invalid credentials'); return; }
+    lsSet('bd_selected_profile_v1', acct.email);
+    await enterLocalApp(acct);
+  }
+
+  async function doRegister() {
+    const err = $('#authErr');
+    const username = ($('#rgUser').value || '').trim();
+    const email = ($('#rgEmail').value || '').trim().toLowerCase();
+    const phone = ($('#rgPhone').value || '').trim();
+    const pw = $('#rgPw').value || '';
+    const pw2 = $('#rgPw2').value || '';
+    if (!username) { err.textContent = L('اسم المستخدم مطلوب','Username required'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { err.textContent = L('بريد إلكتروني غير صحيح','Invalid email'); return; }
+    if (pw.length < 8) { err.textContent = L('كلمة المرور 8 أحرف على الأقل','Password at least 8 chars'); return; }
+    if (pw !== pw2) { err.textContent = L('كلمتا المرور غير متطابقتين','Passwords do not match'); return; }
+    const accounts = await BD_STORAGE.profileAll();
+    if (accounts.some(a => a.email === email)) { err.textContent = L('البريد مسجل بالفعل','Email already registered'); return; }
+    if (accounts.some(a => a.username && a.username.toLowerCase() === username.toLowerCase())) { err.textContent = L('اسم المستخدم مسجل بالفعل','Username already taken'); return; }
+    const hp = await hashPassword(pw);
+    const profile = { email: email, username: username, phone: phone || null, name: username, passwordHash: hp.hash, salt: hp.salt, iterations: hp.iterations, createdAt: nowISO(), updatedAt: nowISO() };
+    const ok = await BD_STORAGE.profileSet(profile);
+    if (!ok) { err.textContent = L('تعذّر حفظ الحساب','Failed to save account'); return; }
+    let list = [];
+    try { list = JSON.parse(lsGet('bd_local_profiles_v1') || '[]') || []; } catch (_) { list = []; }
+    if (!list.some(p => p.email === email)) list.push({ email: email, name: username });
+    lsSet('bd_local_profiles_v1', JSON.stringify(list));
+    lsSet('bd_selected_profile_v1', email);
+    await enterLocalApp(profile);
+  }
+}
+
+
+async function accountSettingsScreen() {
+  const prof = await BD_STORAGE.profileGet(CURRENT_PROFILE_ID);
+  if (!prof) { toast('تعذّر تحميل الحساب','bad'); return; }
+  const L = (ar, en) => (document.documentElement.lang === 'en' ? en : ar);
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  overlay.innerHTML = '<div class="card" style="max-width:520px;width:100%;padding:20px;max-height:90vh;overflow:auto">' +
+    '<h2 style="margin-top:0">' + L('إعدادات الحساب','Account settings') + '</h2>' +
+    '<div class="field"><label>' + L('اسم المستخدم','Username') + '</label><input id="asUser" type="text" value="' + esc(prof.username || '') + '"></div>' +
+    '<div class="field"><label>' + L('البريد الإلكتروني','Email') + '</label><input id="asEmail" type="email" value="' + esc(prof.email || '') + '"></div>' +
+    '<div class="field"><label>' + L('رقم الهاتف','Phone') + '</label><input id="asPhone" type="text" value="' + esc(prof.phone || '') + '"></div>' +
+    '<button class="btn primary" id="asSave" style="width:100%">' + L('حفظ','Save') + '</button>' +
+    '<hr><h3>' + L('تغيير كلمة المرور','Change password') + '</h3>' +
+    '<div class="field"><label>' + L('كلمة المرور الحالية','Current password') + '</label><input id="asCur" type="password"></div>' +
+    '<div class="field"><label>' + L('كلمة المرور الجديدة','New password') + '</label><input id="asNew" type="password"></div>' +
+    '<div class="field"><label>' + L('تأكيد','Confirm') + '</label><input id="asNew2" type="password"></div>' +
+    '<button class="btn" id="asPw" style="width:100%">' + L('تغيير كلمة المرور','Change password') + '</button>' +
+    '<hr><button class="btn danger" id="asDelete" style="width:100%">' + L('حذف الحساب','Delete account') + '</button>' +
+    '<button class="btn" id="asClose" style="width:100%;margin-top:8px">' + L('إغلاق','Close') + '</button>' +
+    '<div id="asErr" class="tiny" style="color:var(--danger);margin-top:8px"></div></div>';
+  document.body.appendChild(overlay);
+  const q = (sel) => overlay.querySelector(sel);
+  q('#asClose').addEventListener('click', () => overlay.remove());
+  q('#asSave').addEventListener('click', async () => {
+    const err = q('#asErr');
+    const newUsername = (q('#asUser').value || '').trim();
+    const newEmail = (q('#asEmail').value || '').trim().toLowerCase();
+    const newPhone = (q('#asPhone').value || '').trim();
+    if (!newUsername) { err.textContent = L('اسم المستخدم مطلوب','Username required'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) { err.textContent = L('بريد غير صحيح','Invalid email'); return; }
+    const accounts = await BD_STORAGE.profileAll();
+    if (accounts.some(a => a.email !== prof.email && a.email === newEmail)) { err.textContent = L('البريد مستخدم','Email in use'); return; }
+    if (accounts.some(a => a.email !== prof.email && a.username && a.username.toLowerCase() === newUsername.toLowerCase())) { err.textContent = L('اسم المستخدم مستخدم','Username in use'); return; }
+    const updated = Object.assign({}, prof, { username: newUsername, email: newEmail, phone: newPhone || null, name: newUsername, updatedAt: nowISO() });
+    if (newEmail !== prof.email) {
+      const st = await BD_STORAGE.stateGet(prof.email);
+      await BD_STORAGE.profileDelete(prof.email);
+      await BD_STORAGE.stateDelete(prof.email);
+      if (st) await BD_STORAGE.stateSet(newEmail, st);
+    }
+    const ok = await BD_STORAGE.profileSet(updated);
+    if (!ok) { err.textContent = L('تعذّر الحفظ','Save failed'); return; }
+    if (newEmail !== CURRENT_PROFILE_ID) {
+      lsDel('bd_selected_profile_v1');
+      lsSet('bd_selected_profile_v1', newEmail);
+      CURRENT_PROFILE_ID = newEmail;
+      AUTH_USER = { email: newEmail, user_metadata: {} };
+      $('#accountEmail').textContent = newEmail;
+    }
+    Object.assign(prof, updated);
+    toast(L('تم الحفظ','Saved'), 'ok');
+  });
+  q('#asPw').addEventListener('click', async () => {
+    const err = q('#asErr');
+    const cur = q('#asCur').value || '';
+    const nw = q('#asNew').value || '';
+    const nw2 = q('#asNew2').value || '';
+    if (nw.length < 8) { err.textContent = L('كلمة المرور 8 أحرف على الأقل','At least 8 chars'); return; }
+    if (nw !== nw2) { err.textContent = L('غير متطابقتين','Mismatch'); return; }
+    if (!prof.passwordHash || !(await verifyPassword(cur, prof))) { err.textContent = L('كلمة المرور الحالية غير صحيحة','Current password incorrect'); return; }
+    const hp = await hashPassword(nw);
+    const updated = Object.assign({}, prof, { passwordHash: hp.hash, salt: hp.salt, iterations: hp.iterations, updatedAt: nowISO() });
+    const ok = await BD_STORAGE.profileSet(updated);
+    if (!ok) { err.textContent = L('تعذّر الحفظ','Save failed'); return; }
+    Object.assign(prof, updated);
+    toast(L('تم تغيير كلمة المرور','Password changed'), 'ok');
+  });
+  q('#asDelete').addEventListener('click', async () => {
+    if (!confirm(L('سيتم حذف الحساب وبياناته المحلية. هل أنت متأكد؟','Account and its local data will be deleted. Are you sure?'))) return;
+    await BD_STORAGE.profileDelete(CURRENT_PROFILE_ID);
+    await BD_STORAGE.stateDelete(CURRENT_PROFILE_ID);
+    let list = [];
+    try { list = JSON.parse(lsGet('bd_local_profiles_v1') || '[]') || []; } catch (_) { list = []; }
+    list = list.filter(p => p.email !== CURRENT_PROFILE_ID);
+    lsSet('bd_local_profiles_v1', JSON.stringify(list));
+    lsDel('bd_selected_profile_v1');
+    CURRENT_PROFILE_ID = null;
+    AUTH_USER = null;
+    $('.app').style.display = 'none';
+    overlay.remove();
+    await localEntryScreen('');
+  });
+}
+
+async function hashPassword(password, saltBytes, iterations) {
+  const enc = new TextEncoder();
+  const it = iterations || 200000;
+  const salt = saltBytes || crypto.getRandomValues(new Uint8Array(16));
+  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: salt, iterations: it, hash: 'SHA-256' }, keyMaterial, 256);
+  return { salt: btoa(String.fromCharCode.apply(null, salt)), hash: btoa(String.fromCharCode.apply(null, new Uint8Array(bits))), iterations: it };
+}
+async function verifyPassword(password, rec) {
+  const salt = Uint8Array.from(atob(rec.salt), c => c.charCodeAt(0));
+  const r = await hashPassword(password, salt, rec.iterations || 200000);
+  return r.hash === rec.passwordHash;
+}
+try { document.addEventListener('click', function(e){ if (e.target && e.target.id === 'accountEmail') accountSettingsScreen(); }); } catch(_){}
 
   </script>
 </body>
