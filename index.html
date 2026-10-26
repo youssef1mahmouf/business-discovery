@@ -1546,6 +1546,20 @@
           if (!profileEmail) return false;
           const res = await idbRequest("state", "readwrite", (s) => s.put({ profileEmail: String(profileEmail).toLowerCase(), data: data, revision: (data && data._rev) || 0, updatedAt: new Date().toISOString() }));
           return res !== null;
+        },
+        async profileAll() {
+          const res = await idbRequest("profiles", "readonly", (s) => s.getAll());
+          return Array.isArray(res) ? res : (res ? [res] : []);
+        },
+        async profileDelete(email) {
+          if (!email) return false;
+          const res = await idbRequest("profiles", "readwrite", (s) => s.delete(String(email).toLowerCase()));
+          return res !== null;
+        },
+        async stateDelete(profileEmail) {
+          if (!profileEmail) return false;
+          await idbRequest("state", "readwrite", (s) => s.delete(String(profileEmail).toLowerCase()));
+          return true;
         }
       };
     })();
@@ -1557,7 +1571,7 @@
       return { schema: APP.schema, createdAt: nowISO(), activeProjectId: null, activeParticipantId: null, projects: [] };
     }
     let S = defaultState();
-    let SAVE_TIMER = null, STATE_REVISION = 0;
+    let SAVE_TIMER = null, STATE_REVISION = 0, CURRENT_PROFILE_ID = null, AUTH_USER = null, AUTH_ACCOUNT_TYPE = 'owner', AUTH_SITE_ROLE = 'member', AUTH_ROLE = null;
 
     function accountDataKey() { return APP.dataKey + (CURRENT_PROFILE_ID ? '_' + CURRENT_PROFILE_ID : ''); }
         function workspaceMemberRole(project) { return 'owner'; }
@@ -1625,6 +1639,7 @@
       const role = workspaceMemberRole(project);
       return project._bdShareRestricted ? 'security' : role;
     }
+    function canManageProject(project) { return !!project && projectRole(project) === 'owner'; }
     function canEditProject(project) { return projectRole(project) !== 'security'; }
     function isReadOnlyProject(project) { return !!project && !isProjectOwner(project); }
     function projectFingerprint(project) {
@@ -3727,6 +3742,8 @@ host.innerHTML = (readonly ? '<div class="readonly-banner">المشروع للع
   });
   on(document, '#signOutBtn', 'click', async () => {
     CURRENT_PROFILE_ID = null;
+    AUTH_USER = null;
+    AUTH_ACCOUNT_TYPE = 'owner';
     lsDel('bd_selected_profile_v1');
     $('.app').style.display = 'none';
     S = defaultState();
@@ -3824,6 +3841,8 @@ host.innerHTML = (readonly ? '<div class="readonly-banner">المشروع للع
     }
     async function enterLocalApp(profile) {
       CURRENT_PROFILE_ID = profile.email;
+      AUTH_USER = { email: profile.email, user_metadata: {} };
+      AUTH_ACCOUNT_TYPE = 'owner';
       $('#authHost').style.display = 'none';
       if ($('.app')) $('.app').style.display = '';
       $('#accountEmail').textContent = profile.email || '';
@@ -3862,7 +3881,7 @@ async function localEntryScreen(message) {
         const name = ($('#localProfileName').value || '').trim();
         const email = ($('#localProfileEmail').value || '').trim().toLowerCase();
         if (!name) { toast('أدخل الاسم', 'warn'); return; }
-        if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) { toast('أدخل بريدًا صحيحًا (معرّف محلي)', 'warn'); return; }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast('أدخل بريدًا صحيحًا (معرّف محلي)', 'warn'); return; }
         const existing = await BD_STORAGE.profileGet(email);
         const profile = existing || { email: email, name: name, createdAt: nowISO() };
         profile.name = name;
@@ -3930,7 +3949,7 @@ async function init() {
 
     function safeInit() {
       try {
-        init().catch(e => { console.error('Init failed:', e); authScreen(e.message || 'فشل تشغيل التطبيق'); });
+        init().catch(e => { console.error('Init failed:', e); (function(m){const h=document.querySelector('#authHost')||document.querySelector('#view');if(h)h.textContent='Initialization failed: '+m;})(e.message || 'Startup failed'); });
       } catch (e) {
         console.error('Init failed:', e);
         const host = $('#view');
