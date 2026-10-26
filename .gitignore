@@ -1,7 +1,12 @@
-node_modules/
+﻿node_modules/
 .test-tmp/
 *.log
 .env
 .env.*
+!.env.example
 .DS_Store
 Thumbs.db
+
+# MongoDB Atlas onboarding credentials (never commit)
+help/atlas-credentials.env
+

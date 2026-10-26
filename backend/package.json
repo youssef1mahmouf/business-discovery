@@ -1,10 +1,12 @@
-{
-  "name": "business-discovery-backend",
-  "version": "1.0.0",
-  "main": "src/server.js",
-  "scripts": {
-    "start": "node src/server.js",
-    "test": "node --check src/server.js"
-  },
-  "dependencies": {}
+﻿{
+    "name":  "business-discovery-backend",
+    "version":  "1.0.0",
+    "main":  "src/server.js",
+    "scripts":  {
+                    "start":  "node src/server.js",
+                    "test":  "node --check src/server.js \u0026\u0026 node --test"
+                },
+    "dependencies":  {
+                         "mongodb":  "^7.7.0"
+                     }
 }
