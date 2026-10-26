@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npm run lint:syntax",
+    "lint:syntax": "node -e \"const fs=require('fs');const html=fs.readFileSync('frontend/index.html','utf8');const m=html.match(/<script>([\\s\\S]*?)<\\/script>/);fs.writeFileSync('_script_check.js',m[1]);\" && node --check _script_check.js && del _script_check.js"
   },
   "repository": {
     "type": "git",

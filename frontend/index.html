@@ -1339,6 +1339,7 @@
         <span class="pill" id="tbParticipant">لا يوجد مشارك</span>
         <span class="spacer"></span>
         <span class="tiny muted" id="accountEmail"></span>
+        <button class="btn sm" id="accountSettingsBtn" style="display:none">إعدادات الحساب</button>
         <button class="btn sm" id="signOutBtn" style="display:none">تسجيل الخروج</button>
         <button class="btn sm" id="saveNowBtn">حفظ الآن</button>
         <span class="tiny muted" id="saveState" role="status" aria-live="polite"></span>
@@ -1353,24 +1354,6 @@
   <input type="file" id="csvInput" accept="text/csv,.csv" style="display:none">
   <div id="authHost" style="display:none"></div>
   <script>
-    window.supabaseReady = new Promise((resolve) => {
-      const sources = [
-        'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
-        'https://unpkg.com/@supabase/supabase-js@2'
-      ];
-      let index = 0;
-      const loadNext = () => {
-        if (index >= sources.length) { resolve(false); return; }
-        const script = document.createElement('script');
-        script.src = sources[index++];
-        script.onload = () => resolve(!!window.supabase);
-        script.onerror = loadNext;
-        document.head.appendChild(script);
-      };
-      loadNext();
-    });
-  </script>
-  <script>
     /* =====================================================================
        مستكشف المشاريع — Business Discovery & Co-Founder Decision System
        Single-file, offline, no external dependencies.
@@ -1382,29 +1365,11 @@
       dataKey: 'bd_state_v1',
       prefKey: 'bd_prefs_v1'
     };
-    const CLOUD_CONFIG_KEY = 'bd_supabase_config_v1';
-    const CLOUD_DEFAULT_CONFIG = {
-      url: 'https://jrixboeunlsxcpssujgn.supabase.co',
-      key: 'sb_publishable_s5ezD58wMx14fQsLvd0YAw_PCU-6s6C'
-    };
-    const PENDING_INVITE_KEY = 'bd_pending_invite_v1';
-    const PENDING_INVITE_KIND_KEY = 'bd_pending_invite_kind_v1';
-    const PENDING_INVITE_FROM_KEY = 'bd_pending_invite_from_v1';
-
-    let SUPA = null, AUTH_USER = null, AUTH_ROLE = null, AUTH_ACCOUNT_TYPE = 'owner', ROLE_PICKER_OPEN = false, AUTH_SITE_ROLE = 'member', CLOUD_BUSY = false, CLOUD_SYNC_PROMISE = null, SYNC_QUEUED = false, CLOUD_LOAD_WARNING = '', CLOUD_SCHEMA_MISSING = false;
-    let WORKSPACE_ROLES = Object.create(null);
-    let PROJECT_SYNC_FINGERPRINTS = Object.create(null);
-    let PARTNERSHIP_STATE = { accepted: [], incoming: [], outgoing: [], results: [] };
-    let PARTICIPANT_FILTER = 'all';
+            
+    let SELECTED_PROFILE_ID = null;
+                let PARTICIPANT_FILTER = 'all';
     let PARTICIPANT_SEARCH = '';
-    let FRIENDS_STATE = { accepted: [], outgoing: [] };
-    let PENDING_INVITE_CODE = '';
-    let PENDING_INVITE_KIND = 'project';
-    let PENDING_INVITE_FROM = '';
-    let INCOMING_INVITES = [];
-    let INVITE_INBOX_TIMER = null;
-    const SENDING_FRIEND_REQUESTS = new Set();
-    const READ_ONLY_ACTIONS = new Set(['export-json', 'export-csv', 'print-report', 'open-project', 'search-partners', 'request-partnership', 'refresh-partnerships', 'accept-workspace-invite', 'accept-inbox-invite', 'decline-inbox-invite', 'dismiss-workspace-invite', 'pick-cat', 'prev-cat', 'next-cat', 'refresh-project']);
+                                const READ_ONLY_ACTIONS = new Set(['export-json', 'export-csv', 'print-report', 'open-project', 'search-partners', 'request-partnership', 'refresh-partnerships', 'accept-workspace-invite', 'accept-inbox-invite', 'decline-inbox-invite', 'dismiss-workspace-invite', 'pick-cat', 'prev-cat', 'next-cat', 'refresh-project']);
 
     /* ---------- tiny helpers ---------- */
     const $ = (s, r) => (r || document).querySelector(s);
@@ -1445,18 +1410,172 @@
     function lsGet(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
     function lsSet(key, val) { try { localStorage.setItem(key, val); return true; } catch (e) { return false; } }
     function lsDel(key) { try { localStorage.removeItem(key); } catch (e) { } }
+    /* ---------- offline storage foundation (Phase 1, isolated, unused) ---------- */
+    const BD_OFFLINE_DB_NAME = "bd_offline_foundation_v1";
+    const BD_OFFLINE_DB_VERSION = 1;
+    const BD_STORAGE = (function () {
+      let dbPromise = null;
+      function supported() {
+        try { return !!window.indexedDB; } catch (e) { return false; }
+      }
+      function openDb() {
+        if (!supported()) return Promise.resolve(null);
+        if (dbPromise) return dbPromise;
+        dbPromise = new Promise((resolve) => {
+          try {
+            const req = window.indexedDB.open(BD_OFFLINE_DB_NAME, BD_OFFLINE_DB_VERSION);
+            req.onupgradeneeded = function () {
+              try {
+                const db = req.result;
+                if (!db.objectStoreNames.contains("profiles")) db.createObjectStore("profiles", { keyPath: "email" });
+                if (!db.objectStoreNames.contains("state")) db.createObjectStore("state", { keyPath: "profileEmail" });
+                if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "key" });
+                if (!db.objectStoreNames.contains("kv")) db.createObjectStore("kv", { keyPath: "key" });
+              } catch (e) { console.warn("IndexedDB upgrade failed:", e); }
+            };
+            req.onsuccess = function () { resolve(req.result); };
+            req.onerror = function () { console.warn("IndexedDB open failed:", req.error); resolve(null); };
+            req.onblocked = function () { console.warn("IndexedDB open blocked"); resolve(null); };
+          } catch (e) { console.warn("IndexedDB init error:", e); resolve(null); }
+        });
+        return dbPromise;
+      }
+      function idbRequest(storeName, mode, operation) {
+        return openDb().then(function (db) {
+          if (!db) return null;
+          return new Promise((resolve) => {
+            let settled = false;
+            function settle(value) { if (!settled) { settled = true; resolve(value); } }
+            try {
+              const tx = db.transaction(storeName, mode);
+              const store = tx.objectStore(storeName);
+              const req = operation(store);
+              req.onsuccess = function () { settle(req.result); };
+              req.onerror = function () { console.warn("IndexedDB request failed:", req.error); settle(null); };
+              tx.onerror = function () { console.warn("IndexedDB tx failed:", tx.error); settle(null); };
+              tx.onabort = function () { console.warn("IndexedDB tx aborted:", tx.error); settle(null); };
+            } catch (e) { console.warn("IndexedDB operation error:", e); settle(null); }
+          });
+        }).catch(function (e) { console.warn("IndexedDB promise error:", e); return null; });
+      }
+      function lsGetSafe(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+      function lsSetSafe(key, val) { try { localStorage.setItem(key, val); return true; } catch (e) { return false; } }
+      function lsDelSafe(key) { try { localStorage.removeItem(key); } catch (e) { } }
+      return {
+        supported: supported,
+        init: openDb,
+        async kvGet(key) {
+          const res = await idbRequest("kv", "readonly", (s) => s.get(key));
+          let idbValue = undefined, idbTime = null;
+          if (res && res.value !== undefined) { idbValue = res.value; idbTime = res.updatedAt || null; }
+          const raw = lsGetSafe("bd_offline_kv_" + key);
+          let lsValue = undefined, lsTime = null;
+          if (raw != null) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (parsed && typeof parsed === "object" && parsed.__bd_offline_envelope === true) { lsValue = parsed.value; lsTime = parsed.updatedAt || null; }
+              else { lsValue = parsed; lsTime = null; }
+            } catch (e) { lsValue = raw; lsTime = null; }
+          }
+          if (idbValue !== undefined && lsValue !== undefined) {
+            if (lsTime && (!idbTime || String(lsTime) > String(idbTime))) return lsValue;
+            return idbValue;
+          }
+          if (idbValue !== undefined) return idbValue;
+          if (lsValue !== undefined) return lsValue;
+          return null;
+        },
+        async kvSet(key, value) {
+          const ts = new Date().toISOString();
+          const idbRes = await idbRequest("kv", "readwrite", (s) => s.put({ key: key, value: value, updatedAt: ts }));
+          const idbOk = idbRes !== null;
+          let lsOk = false;
+          try { lsOk = lsSetSafe("bd_offline_kv_" + key, JSON.stringify({ __bd_offline_envelope: true, value: value, updatedAt: ts })); } catch (e) { lsOk = false; }
+          return idbOk || lsOk;
+        },
+        async kvDelete(key) {
+          await idbRequest("kv", "readwrite", (s) => s.delete(key));
+          lsDelSafe("bd_offline_kv_" + key);
+          return true;
+        },
+        async metaGet(key) {
+          const res = await idbRequest("meta", "readonly", (s) => s.get(key));
+          let idbValue = undefined, idbTime = null;
+          if (res && res.value !== undefined) { idbValue = res.value; idbTime = res.updatedAt || null; }
+          const raw = lsGetSafe("bd_offline_meta_" + key);
+          let lsValue = undefined, lsTime = null;
+          if (raw != null) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (parsed && typeof parsed === "object" && parsed.__bd_offline_envelope === true) { lsValue = parsed.value; lsTime = parsed.updatedAt || null; }
+              else { lsValue = parsed; lsTime = null; }
+            } catch (e) { lsValue = raw; lsTime = null; }
+          }
+          if (idbValue !== undefined && lsValue !== undefined) {
+            if (lsTime && (!idbTime || String(lsTime) > String(idbTime))) return lsValue;
+            return idbValue;
+          }
+          if (idbValue !== undefined) return idbValue;
+          if (lsValue !== undefined) return lsValue;
+          return null;
+        },
+        async metaSet(key, value) {
+          const ts = new Date().toISOString();
+          const idbRes = await idbRequest("meta", "readwrite", (s) => s.put({ key: key, value: value, updatedAt: ts }));
+          const idbOk = idbRes !== null;
+          let lsOk = false;
+          try { lsOk = lsSetSafe("bd_offline_meta_" + key, JSON.stringify({ __bd_offline_envelope: true, value: value, updatedAt: ts })); } catch (e) { lsOk = false; }
+          return idbOk || lsOk;
+        },
+        async profileGet(email) {
+          if (!email) return null;
+          return await idbRequest("profiles", "readonly", (s) => s.get(String(email).toLowerCase()));
+        },
+        // Profiles and state are IndexedDB-only in Phase 1 (no localStorage fallback); returns false on failure.
+        async profileSet(profile) {
+          if (!profile || !profile.email) return false;
+          const rec = Object.assign({}, profile, { email: String(profile.email).toLowerCase(), updatedAt: new Date().toISOString() });
+          const res = await idbRequest("profiles", "readwrite", (s) => s.put(rec));
+          return res !== null;
+        },
+        async stateGet(profileEmail) {
+          if (!profileEmail) return null;
+          const res = await idbRequest("state", "readonly", (s) => s.get(String(profileEmail).toLowerCase()));
+          return res ? res.data : null;
+        },
+        async stateSet(profileEmail, data) {
+          if (!profileEmail) return false;
+          const res = await idbRequest("state", "readwrite", (s) => s.put({ profileEmail: String(profileEmail).toLowerCase(), data: data, revision: (data && data._rev) || 0, updatedAt: new Date().toISOString() }));
+          return res !== null;
+        },
+        async profileAll() {
+          const res = await idbRequest("profiles", "readonly", (s) => s.getAll());
+          return Array.isArray(res) ? res : (res ? [res] : []);
+        },
+        async profileDelete(email) {
+          if (!email) return false;
+          const res = await idbRequest("profiles", "readwrite", (s) => s.delete(String(email).toLowerCase()));
+          return res !== null;
+        },
+        async stateDelete(profileEmail) {
+          if (!profileEmail) return false;
+          await idbRequest("state", "readwrite", (s) => s.delete(String(profileEmail).toLowerCase()));
+          return true;
+        }
+      };
+    })();
+    window.BD_STORAGE = BD_STORAGE;
+    try { BD_STORAGE.init().catch(function (e) { console.warn("BD_STORAGE init failed:", e); }); } catch (e) { console.warn("BD_STORAGE init threw:", e); }
+
     /* ---------- default state ---------- */
     function defaultState() {
       return { schema: APP.schema, createdAt: nowISO(), activeProjectId: null, activeParticipantId: null, projects: [] };
     }
     let S = defaultState();
-    let SAVE_TIMER = null, STATE_REVISION = 0, CLOUD_SYNCED_REVISION = 0;
+    let SAVE_TIMER = null, STATE_REVISION = 0, CURRENT_PROFILE_ID = null, AUTH_USER = null, AUTH_ACCOUNT_TYPE = 'owner', AUTH_SITE_ROLE = 'member', AUTH_ROLE = null;
 
-    function accountDataKey() { return APP.dataKey + (AUTH_USER ? '_' + AUTH_USER.id : ''); }
-    function cloudReady() { return !!(SUPA && AUTH_USER); }
-    function workspaceMemberRole(project) {
-      return project && project._bdWorkspaceId ? (WORKSPACE_ROLES[project._bdWorkspaceId] || 'assistant') : 'owner';
-    }
+    function accountDataKey() { return APP.dataKey + (CURRENT_PROFILE_ID ? '_' + CURRENT_PROFILE_ID : ''); }
+        function workspaceMemberRole(project) { return 'owner'; }
     function isProjectOwner(project) { return !!project && (!project._bdWorkspaceId || workspaceMemberRole(project) === 'owner'); }
     const DEFAULT_SHARE_ACCESS = {
       projects: { view: true, edit: false },
@@ -1521,6 +1640,7 @@
       const role = workspaceMemberRole(project);
       return project._bdShareRestricted ? 'security' : role;
     }
+    function canManageProject(project) { return !!project && projectRole(project) === 'owner'; }
     function canEditProject(project) { return projectRole(project) !== 'security'; }
     function isReadOnlyProject(project) { return !!project && !isProjectOwner(project); }
     function projectFingerprint(project) {
@@ -1552,21 +1672,33 @@
       STATE_REVISION++;
       clearTimeout(SAVE_TIMER);
       const doIt = () => {
-        const ok = lsSet(accountDataKey(), JSON.stringify(S));
+        const serialized = JSON.stringify(S);
+        const ok = lsSet(accountDataKey(), serialized);
         const el = $('#saveState');
         if (!ok) {
           if (el) { el.textContent = 'تعذّر الحفظ المحلي — استخدم التصدير'; el.style.color = 'var(--danger)'; }
           toast('تعذّر الحفظ في التخزين المحلي. صدّر نسخة احتياطية الآن.', 'bad');
-        } else if (el) { el.textContent = (cloudReady() ? 'تم الحفظ على هذا الجهاز ' : 'تم الحفظ محلياً — ربط Supabase للمزامنة ') + new Date().toLocaleTimeString('ar-EG'); el.style.color = ''; }
-        if (cloudReady()) {
-          if (CLOUD_BUSY) SYNC_QUEUED = true;
-          else syncCloudState().catch(e => { console.error('cloud sync failed', e); toast('تعذرت المزامنة مع السحابة: ' + (e.message || ''), 'bad'); });
+        } else if (el) { el.textContent = 'تم الحفظ محلياً ' + new Date().toLocaleTimeString('ar-EG'); el.style.color = ''; }
+        if (CURRENT_PROFILE_ID) {
+          let snapshot = null;
+          try { snapshot = JSON.parse(serialized); } catch (_) { snapshot = S; }
+          BD_STORAGE.stateSet(CURRENT_PROFILE_ID, snapshot).then((idbOk) => {
+            if (!idbOk) console.warn('IndexedDB state save failed; localStorage fallback used');
+          }).catch((e) => { console.warn('IndexedDB state save error', e); });
         }
       };
       if (immediate) doIt(); else SAVE_TIMER = setTimeout(doIt, 350);
     }
-    function loadState() {
-      const raw = lsGet(accountDataKey()) || (!AUTH_USER ? lsGet(APP.dataKey) : null);
+    async function loadState() {
+      const profileKey = CURRENT_PROFILE_ID;
+      let raw = null;
+      if (profileKey) {
+        try {
+          const idbState = await BD_STORAGE.stateGet(profileKey);
+          if (idbState && typeof idbState === 'object') raw = JSON.stringify(idbState);
+        } catch (e) { console.warn('IndexedDB state load failed', e); }
+      }
+      if (!raw) raw = lsGet(accountDataKey());
       if (!raw) { S = defaultState(); return false; }
       try {
         const p = JSON.parse(raw);
@@ -1584,466 +1716,6 @@
       }
     }
 
-    /* ---------- Supabase accounts and shared projects ---------- */
-    function readCloudConfig() {
-      // The project connection is part of this published app. Never gate sign-in
-      // on a browser-local setup value that disappears on another device.
-      return CLOUD_DEFAULT_CONFIG;
-    }
-    function isSafeBrowserKey(key) {
-      if (/^sb_publishable_[A-Za-z0-9_-]+$/.test(key)) return true;
-      try {
-        let payload = key.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-        payload += '='.repeat((4 - payload.length % 4) % 4);
-        return JSON.parse(atob(payload)).role === 'anon';
-      } catch (_) { return false; }
-    }
-    function makeCloudClient() {
-      const cfg = readCloudConfig();
-      if (!cfg || !cfg.url || !cfg.key || !window.supabase) return false;
-      SUPA = window.supabase.createClient(cfg.url.replace(/\/$/, ''), cfg.key, {
-        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
-      });
-      return true;
-    }
-    function authScreen(message, mode) {
-      const host = $('#authHost'), app = $('.app');
-      const authCredit = '<footer class="auth-credit"><div>© مستكشف المشاريع · <strong>Credited by Youssef Mahmoud</strong></div>' +
-        '<div class="row"><a href="mailto:youssef1mahmouf24@gmail.com">youssef1mahmouf24@gmail.com</a><a href="tel:+201141030264">01141030264</a></div></footer>';
-      if (app) app.style.display = 'none';
-      host.style.display = 'block';
-      const cfg = readCloudConfig();
-      mode = mode || 'login';
-      const cloudReady = !!(cfg && SUPA);
-      const hasPendingInvite = !!(new URLSearchParams(location.search).get('invite') || lsGet(PENDING_INVITE_KEY));
-      if (!AUTH_ROLE) AUTH_ROLE = hasPendingInvite ? 'partner' : 'owner';
-      if (mode === 'recovery' && !cloudReady) mode = 'login';
-      if (mode === 'recovery') {
-        host.innerHTML = '<main class="auth-screen"><div class="card"><h2>تعيين كلمة مرور جديدة</h2>' +
-          '<label for="newPassword">كلمة المرور الجديدة</label><input id="newPassword" type="password" minlength="8" autocomplete="new-password">' +
-          '<button class="btn primary" id="updatePassword">حفظ كلمة المرور</button>' +
-          (message ? '<div class="hint" style="margin-top:12px">' + esc(message) + '</div>' : '') + '</div>' + authCredit + '</main>';
-        on(host, '#updatePassword', 'click', async () => {
-          const password = $('#newPassword').value;
-          if (password.length < 8) { toast('كلمة المرور يجب ألا تقل عن 8 أحرف', 'warn'); return; }
-          const { data, error } = await SUPA.auth.updateUser({ password });
-          if (error) { authScreen('تعذر تحديث كلمة المرور: ' + error.message, 'recovery'); return; }
-          history.replaceState(null, '', location.pathname);
-          await enterApp(data.user);
-        });
-        return;
-      }
-      const signup = mode === 'signup';
-      host.innerHTML = '<main class="auth-screen"><div class="brand"><div class="logo">م</div><div><h1>مستكشف المشاريع</h1><small>بياناتك ومشاريعك محفوظة في حسابك</small></div></div>' +
-          '<div class="card"><h2>' + (signup ? 'إنشاء حساب' : 'تسجيل الدخول') + '</h2>' +
-        (signup ? '<label for="authAccountType">نوع الحساب</label><select id="authAccountType"><option value="owner">صاحب مشروع</option><option value="partner">شريك في البيانات</option></select>' +
-          '<label for="authName">الاسم الكامل</label><input id="authName" type="text" autocomplete="name" minlength="2" required>' +
-          '<label for="authUsername">اسم المستخدم</label><input id="authUsername" type="text" autocomplete="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" placeholder="حروف إنجليزية وأرقام و _ فقط" required>' +
-          '<label for="authPhone">رقم الهاتف</label><input id="authPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="+2010… أو 010…" required>' : '') +
-        (signup ? '<label for="authEmail">البريد الإلكتروني</label><input id="authEmail" type="email" autocomplete="email" required>' : '<label for="authIdentifier">البريد الإلكتروني أو رقم الهاتف</label><input id="authIdentifier" type="text" autocomplete="username" placeholder="name@example.com أو +2010…" required>') +
-        '<div class="row" style="align-items:end;gap:8px"><div style="flex:1;min-width:200px"><label for="authPassword">كلمة المرور</label><input id="authPassword" type="password" autocomplete="' + (signup ? 'new-password' : 'current-password') + '" minlength="8" required></div><button class="btn" type="button" id="togglePassword" aria-pressed="false" style="margin-bottom:2px">إظهار</button></div>' +
-        '<div class="row"><button class="btn primary" id="authSubmit">' + (signup ? 'إنشاء الحساب' : 'دخول') + '</button>' +
-        '<button class="btn" id="authMode">' + (signup ? 'لدي حساب بالفعل' : 'إنشاء حساب جديد') + '</button></div>' +
-        (!signup ? '<button class="btn link" id="forgotPassword" style="margin-top:8px">نسيت كلمة المرور؟</button>' : '') +
-        '<div class="hint" style="margin-top:12px">' + esc(message || 'بياناتك تحفظ تلقائياً في حسابك. تظل مسجلاً على هذا الجهاز ما دامت بيانات المتصفح محفوظة.') + '</div>' +
-        (AUTH_ROLE === 'owner' ? '<button class="btn link" id="downloadSchema" style="margin-top:8px">تنزيل ملف تحديث قاعدة البيانات</button>' : '') + '</div>' + authCredit + '</main>';
-      on(host, '#authMode', 'click', () => authScreen('', signup ? 'login' : 'signup'));
-      on(host, '#togglePassword', 'click', (event) => {
-        const input = $('#authPassword', host), button = event.currentTarget;
-        if (!input) return;
-        const visible = input.type === 'password';
-        input.type = visible ? 'text' : 'password';
-        button.textContent = visible ? 'إخفاء' : 'إظهار';
-        button.setAttribute('aria-pressed', String(visible));
-      });
-      on(host, '#authSubmit', 'click', async () => {
-        if (!SUPA) { authScreen('تعذر الاتصال بخدمة الحسابات. حدّث الصفحة وتأكد من اتصال الإنترنت.', mode); return; }
-        const email = signup ? $('#authEmail').value.trim().toLowerCase() : '';
-        const identifier = signup ? email : $('#authIdentifier').value.trim();
-        const password = $('#authPassword').value;
-        const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
-        let loginPhone = identifier.replace(/[\s()-]/g, '');
-        if (loginPhone.startsWith('01')) loginPhone = '+20' + loginPhone.slice(1);
-        else if (/^20\d{8,13}$/.test(loginPhone)) loginPhone = '+' + loginPhone;
-        const isPhone = /^\+[1-9]\d{7,14}$/.test(loginPhone);
-        if ((signup ? !isEmail : !(isEmail || isPhone)) || password.length < 8) { toast(signup ? 'اكتب بريداً إلكترونياً صحيحاً وكلمة مرور من 8 أحرف على الأقل' : 'اكتب بريداً إلكترونياً صحيحاً أو رقم هاتف بصيغة دولية، مع كلمة مرور من 8 أحرف على الأقل', 'warn'); return; }
-        let metadata = {};
-        if (signup) {
-          const isMainAdmin = email === 'youssef1mahmouf24@gmail.com';
-          const fullName = isMainAdmin ? 'Youssef Mahmoud' : $('#authName').value.trim();
-          const username = isMainAdmin ? 'youssef' : $('#authUsername').value.trim().toLowerCase();
-          let phone = isMainAdmin ? '+201141030264' : $('#authPhone').value.trim().replace(/[\s()-]/g, '');
-          if (phone.startsWith('01')) phone = '+20' + phone.slice(1);
-          else if (/^20\d{8,13}$/.test(phone)) phone = '+' + phone;
-          if (fullName.length < 2) { toast('اكتب اسمك بالكامل', 'warn'); return; }
-          if (!/^[a-zA-Z0-9_]{3,24}$/.test(username)) { toast('اسم المستخدم من 3 إلى 24 حرفاً إنجليزياً أو رقماً أو _', 'warn'); return; }
-          if (!/^\+[1-9]\d{7,14}$/.test(phone)) { toast('اكتب رقم الهاتف مع مفتاح الدولة أو رقماً مصرياً صحيحاً', 'warn'); return; }
-          metadata = { full_name: fullName, username, phone, account_type: $('#authAccountType').value === 'partner' ? 'partner' : 'owner' };
-        }
-        const b = $('#authSubmit'); b.disabled = true;
-        try {
-          const result = signup
-            ? await SUPA.auth.signUp({ email, password, options: { data: metadata } })
-            : await SUPA.auth.signInWithPassword(isEmail ? { email: identifier.toLowerCase(), password } : { phone: loginPhone, password });
-          if (result.error) throw result.error;
-          if (!result.data.session) {
-            authScreen('الحساب أُنشئ، ولتسجيل الدخول يلزم اعتماد البريد مرة واحدة من لوحة Supabase. لا نرسل رسالة من هذه الصفحة.', 'login');
-            const loginEmail = $('#authIdentifier'); if (loginEmail) loginEmail.value = email;
-            return;
-          }
-          await enterApp(result.data.user);
-        } catch (e) {
-          const raw = e.message || '';
-          let friendly = raw || 'راجع بيانات الدخول وإعداد قاعدة البيانات.';
-          if (/bd_profiles_username_unique/i.test(raw)) friendly = 'اسم المستخدم مستخدم بالفعل. اختَر اسماً آخر.';
-          else if (/bd_profiles_phone_unique/i.test(raw)) friendly = 'رقم الهاتف مسجل بالفعل. استخدم رقماً آخر أو سجّل الدخول إلى حسابك.';
-          else if (/email not confirmed/i.test(raw)) friendly = 'هذا البريد مرتبط بحساب موجود، لكن اعتماد البريد لم يتم بعد. في Supabase افتح Authentication → Users، اختر هذا الحساب، ثم استخدم Confirm email / تأكيد البريد مرة واحدة. لن نرسل رسالة تأكيد، وبعدها ارجع إلى الموقع وسجّل الدخول بالبريد وكلمة المرور.';
-          else if (/already registered|user already exists/i.test(raw)) friendly = 'هذا البريد مسجل بالفعل. استخدم تسجيل الدخول أو استعادة كلمة المرور.';
-          else if (/invalid login credentials/i.test(raw)) friendly = 'البريد أو كلمة المرور غير صحيحة. إذا لم تنشئ الحساب من قبل، اختر «إنشاء حساب جديد». ';
-          else if (/bd_profiles|bd_account_data|relation .* does not exist|schema cache|could not find the table/i.test(raw)) friendly = 'تحتاج قاعدة بيانات الموقع إلى تحديث. نزّل ملف التحديث من صفحة الدخول وشغّله في Supabase → SQL Editor → Run، ثم أعد المحاولة.';
-          authScreen('تعذر إكمال الطلب: ' + friendly, mode);
-          const retryIdentifier = $('#authIdentifier');
-          if (!signup && retryIdentifier) retryIdentifier.value = identifier;
-        }
-      });
-      on(host, '#forgotPassword', 'click', async () => {
-        const emailField = $('#authEmail') || $('#authIdentifier');
-        const email = emailField ? emailField.value.trim().toLowerCase() : '';
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast('اكتب بريدك الإلكتروني الصحيح لإرسال رابط الاستعادة', 'warn'); return; }
-        const { error } = await SUPA.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
-        toast(error ? 'تعذر إرسال رابط الاستعادة: ' + error.message : 'تم إرسال رابط استعادة كلمة المرور', error ? 'bad' : 'ok');
-      });
-    }
-    async function enterApp(user) {
-      AUTH_USER = user;
-      AUTH_ACCOUNT_TYPE = user && user.user_metadata && user.user_metadata.account_type === 'partner' ? 'partner' : 'owner';
-      CLOUD_LOAD_WARNING = '';
-      CLOUD_SCHEMA_MISSING = false;
-      WORKSPACE_ROLES = Object.create(null);
-      STATE_REVISION = 0; CLOUD_SYNCED_REVISION = 0;
-      $('#authHost').style.display = 'none'; $('.app').style.display = '';
-      $('#accountEmail').textContent = user.email || '';
-      $('#signOutBtn').style.display = '';
-      loadState();
-      try { await loadCloudState(); } catch (e) {
-        console.error(e);
-        const detail = e.message || 'تعذر تحميل الجداول';
-        CLOUD_SCHEMA_MISSING = /could not find (?:the )?(?:function|table)|schema cache|does not exist|relation .* does not exist/i.test(detail);
-        CLOUD_LOAD_WARNING = 'Could not load data: ' + detail;
-        toast('تم الدخول، لكن المزامنة تحتاج إعداد قاعدة البيانات.', 'bad');
-      }
-      render();
-      if (!INVITE_INBOX_TIMER) INVITE_INBOX_TIMER = setInterval(async () => {
-        if (!cloudReady() || VIEW !== 'partners' || document.hidden) return;
-        try {
-          const before = JSON.stringify(INCOMING_INVITES);
-          await refreshIncomingInvites();
-          if (before !== JSON.stringify(INCOMING_INVITES)) render();
-        } catch (e) { console.warn('Could not refresh incoming invitations:', e); }
-      }, 20000);
-    }
-    async function refreshIncomingInvites() {
-      if (!cloudReady()) { INCOMING_INVITES = []; return; }
-      const { data, error } = await SUPA.rpc('bd_list_my_pending_invites');
-      if (error) throw error;
-      const invites = arr(data).filter(invite => invite && invite.invite_code);
-      const friendRequests = new Map();
-      INCOMING_INVITES = [];
-      invites.forEach(invite => {
-        if (invite.request_kind !== 'friend' || !invite.sender_email) {
-          INCOMING_INVITES.push(invite);
-          return;
-        }
-        const key = String(invite.sender_email).trim().toLowerCase();
-        const existing = friendRequests.get(key);
-        if (!existing) {
-          invite.duplicate_codes = [invite.invite_code];
-          friendRequests.set(key, invite);
-          INCOMING_INVITES.push(invite);
-        } else {
-          existing.duplicate_codes.push(invite.invite_code);
-        }
-      });
-      INCOMING_INVITES.forEach(invite => {
-        if (invite.request_kind === 'friend' && invite.duplicate_codes) invite.duplicate_count = invite.duplicate_codes.length;
-      });
-      return INCOMING_INVITES;
-    }
-    async function loadCloudState() {
-      let migratedLegacy = false;
-      AUTH_ACCOUNT_TYPE = AUTH_USER && AUTH_USER.user_metadata && AUTH_USER.user_metadata.account_type === 'partner' ? 'partner' : 'owner';
-      const { data: siteRole, error: siteRoleError } = await SUPA.rpc('bd_get_my_site_role');
-      if (siteRoleError) throw siteRoleError;
-      AUTH_SITE_ROLE = siteRole || 'member';
-      const { data: roleRows, error: roleError } = await SUPA.rpc('bd_my_workspace_roles');
-      if (roleError) throw roleError;
-      WORKSPACE_ROLES = Object.create(null);
-      (roleRows || []).forEach(row => { WORKSPACE_ROLES[row.workspace_id] = row.role; });
-      PARTNERSHIP_STATE = { accepted: [], incoming: [], outgoing: [], results: [] };
-      FRIENDS_STATE = { accepted: [], outgoing: [] };
-      const { data: account, error: accountErr } = await SUPA.from('bd_account_data').select('data').eq('user_id', AUTH_USER.id).maybeSingle();
-      if (accountErr) throw accountErr;
-      if (account && account.data) S = Object.assign(defaultState(), account.data);
-      else {
-        const old = lsGet(APP.dataKey);
-        if (old) { try { S = Object.assign(defaultState(), JSON.parse(old)); migratedLegacy = true; } catch (_) { } }
-      }
-      const { data: shared, error } = await SUPA.from('bd_workspaces').select('id, project, owner_id, partner_id, invite_email');
-      if (error) throw error;
-      (shared || []).forEach(row => {
-        if (row.owner_id === AUTH_USER.id) WORKSPACE_ROLES[row.id] = 'owner';
-        else if (!WORKSPACE_ROLES[row.id]) WORKSPACE_ROLES[row.id] = 'assistant';
-        if (row.project && row.project.__bdFriendRequest === true) {
-          const request = row.project.__bdFriendRequestData || {};
-          const friendEmail = row.owner_id === AUTH_USER.id ? row.invite_email : (request.requesterEmail || '');
-          if (row.partner_id) {
-            if (!FRIENDS_STATE.accepted.some(friend => friend.email.toLowerCase() === String(friendEmail || '').toLowerCase())) {
-              FRIENDS_STATE.accepted.push({
-                workspaceId: row.id,
-                email: friendEmail,
-                name: row.owner_id === AUTH_USER.id ? (request.invitedName || friendEmail) : (request.requesterName || 'صديق')
-              });
-            }
-          }
-          else if (row.owner_id === AUTH_USER.id && !FRIENDS_STATE.outgoing.some(friend => friend.email.toLowerCase() === String(row.invite_email || '').toLowerCase())) {
-            FRIENDS_STATE.outgoing.push({ email: row.invite_email, name: request.invitedName || row.invite_email });
-          }
-          return;
-        }
-        PROJECT_SYNC_FINGERPRINTS[row.id] = projectFingerprint(row.project);
-        let p = Object.assign({}, row.project, { _bdWorkspaceId: row.id });
-        if (row.owner_id === AUTH_USER.id) {
-          const privateOwnerProject = S.projects.find(x => x.id === row.project.id);
-          if (privateOwnerProject) { p = privateOwnerProject; p._bdWorkspaceId = row.id; }
-        }
-        const i = S.projects.findIndex(x => x._bdWorkspaceId === row.id);
-        if (i >= 0) S.projects[i] = p; else S.projects.push(p);
-      });
-      S = Object.assign(defaultState(), S);
-      S.projects = arr(S.projects).map(normProject).filter(Boolean);
-      if (!byId(S.projects, S.activeProjectId)) S.activeProjectId = S.projects[0] && S.projects[0].id || null;
-      saveState(false);
-      if (!account || migratedLegacy) {
-        await syncCloudState();
-        if (migratedLegacy) lsDel(APP.dataKey);
-      }
-      await refreshIncomingInvites();
-      const inviteParams = new URLSearchParams(location.search);
-      const code = inviteParams.get('invite') || lsGet(PENDING_INVITE_KEY);
-      if (code) {
-        PENDING_INVITE_CODE = code;
-        PENDING_INVITE_KIND = inviteParams.get('friend') === '1' || lsGet(PENDING_INVITE_KIND_KEY) === 'friend' ? 'friend' : 'project';
-        PENDING_INVITE_FROM = inviteParams.get('from') || lsGet(PENDING_INVITE_FROM_KEY) || '';
-        lsSet(PENDING_INVITE_KEY, code);
-        lsSet(PENDING_INVITE_KIND_KEY, PENDING_INVITE_KIND);
-        if (PENDING_INVITE_FROM) lsSet(PENDING_INVITE_FROM_KEY, PENDING_INVITE_FROM);
-        go('partners');
-      } else {
-        PENDING_INVITE_CODE = '';
-        PENDING_INVITE_KIND = 'project';
-        PENDING_INVITE_FROM = '';
-      }
-    }
-    async function syncCloudState() {
-      if (!cloudReady()) return;
-      if (CLOUD_BUSY) { SYNC_QUEUED = true; return CLOUD_SYNC_PROMISE; }
-      CLOUD_BUSY = true;
-      const syncingRevision = STATE_REVISION;
-      const sync = (async () => { try {
-        for (const project of S.projects.filter(p => p._bdWorkspaceId && canSyncWorkspaceProject(p))) {
-          if (canManageProject(project)) {
-            const fingerprint = projectFingerprint(sharedProjectSnapshot(project));
-            if (PROJECT_SYNC_FINGERPRINTS[project._bdWorkspaceId] !== fingerprint) recordProjectActivity(project);
-          }
-        }
-        const privateState = Object.assign({}, S, { projects: S.projects.filter(p => !p._bdWorkspaceId || canManageProject(p)) });
-        const { error } = await SUPA.from('bd_account_data').upsert({ user_id: AUTH_USER.id, data: privateState, updated_at: nowISO() }, { onConflict: 'user_id' });
-        if (error) throw error;
-        for (const project of S.projects.filter(p => p._bdWorkspaceId && canSyncWorkspaceProject(p))) {
-          const data = canManageProject(project) ? sharedProjectSnapshot(project) : JSON.parse(JSON.stringify(project));
-          delete data._bdWorkspaceId;
-          const result = await SUPA.rpc('bd_save_workspace_project', { p_id: project._bdWorkspaceId, p_project: data });
-          if (result.error) throw result.error;
-          PROJECT_SYNC_FINGERPRINTS[project._bdWorkspaceId] = projectFingerprint(data);
-        }
-        CLOUD_SYNCED_REVISION = Math.max(CLOUD_SYNCED_REVISION, syncingRevision);
-        const status = $('#saveState');
-        if (status && syncingRevision === STATE_REVISION) {
-          status.textContent = 'تم الحفظ على هذا الجهاز والسحابة ' + new Date().toLocaleTimeString('ar-EG');
-          status.style.color = '';
-        }
-      } finally {
-        CLOUD_BUSY = false;
-        if (SYNC_QUEUED) {
-          SYNC_QUEUED = false;
-          try { await syncCloudState(); }
-          catch (e) { console.error('queued cloud sync failed', e); throw e; }
-        }
-      }
-      })();
-      CLOUD_SYNC_PROMISE = sync;
-      try { return await sync; }
-      finally { if (CLOUD_SYNC_PROMISE === sync) CLOUD_SYNC_PROMISE = null; }
-    }
-    const ACCEPTING_INVITES = new Set();
-    async function acceptWorkspaceInvite(code) {
-      if (!code || ACCEPTING_INVITES.has(String(code))) return;
-      ACCEPTING_INVITES.add(String(code));
-      try {
-        const duplicateCodes = INCOMING_INVITES
-          .filter(invite => invite.request_kind === 'friend' && arr(invite.duplicate_codes).some(item => String(item) === String(code)))
-          .flatMap(invite => arr(invite.duplicate_codes))
-          .filter(item => String(item) !== String(code));
-        const { error } = await SUPA.rpc('bd_accept_workspace_invite', { p_code: code });
-        if (error) throw error;
-        for (const duplicateCode of duplicateCodes) {
-          const { error: cleanupError } = await SUPA.rpc('bd_decline_workspace_invite', { p_code: duplicateCode });
-          if (cleanupError) console.warn('Could not remove duplicate friend request:', cleanupError);
-        }
-        if (String(PENDING_INVITE_CODE) === String(code)) {
-          lsDel(PENDING_INVITE_KEY);
-          lsDel(PENDING_INVITE_KIND_KEY);
-          lsDel(PENDING_INVITE_FROM_KEY);
-          PENDING_INVITE_CODE = '';
-          PENDING_INVITE_KIND = 'project';
-          PENDING_INVITE_FROM = '';
-          history.replaceState(null, '', location.pathname + location.hash);
-        }
-        await loadCloudState(); render(); toast('تم قبول الطلب. أصبحتما أصدقاء ويمكنكما مشاركة المشاريع بموافقة كل صاحب مشروع.', 'ok');
-      } catch (e) { toast('تعذر قبول الدعوة: ' + e.message, 'bad'); }
-      finally { ACCEPTING_INVITES.delete(String(code)); }
-    }
-    async function declineWorkspaceInvite(code) {
-      if (!code) return;
-      try {
-        const duplicateCodes = INCOMING_INVITES
-          .filter(invite => invite.request_kind === 'friend' && arr(invite.duplicate_codes).some(item => String(item) === String(code)))
-          .flatMap(invite => arr(invite.duplicate_codes));
-        const codesToDecline = duplicateCodes.length ? duplicateCodes : [code];
-        for (const inviteCode of codesToDecline) {
-          const { error } = await SUPA.rpc('bd_decline_workspace_invite', { p_code: inviteCode });
-          if (error) throw error;
-        }
-        if (String(PENDING_INVITE_CODE) === String(code)) {
-          lsDel(PENDING_INVITE_KEY);
-          lsDel(PENDING_INVITE_KIND_KEY);
-          lsDel(PENDING_INVITE_FROM_KEY);
-          PENDING_INVITE_CODE = '';
-          PENDING_INVITE_KIND = 'project';
-          PENDING_INVITE_FROM = '';
-          history.replaceState(null, '', location.pathname + location.hash);
-        }
-        await loadCloudState(); render(); toast('تم رفض الطلب وإلغاء الدعوة.', 'ok');
-      } catch (e) { toast('تعذر رفض الطلب: ' + (e.message || ''), 'bad'); }
-    }
-    function dismissPendingInvite() {
-      PENDING_INVITE_CODE = '';
-      PENDING_INVITE_KIND = 'project';
-      PENDING_INVITE_FROM = '';
-      lsDel(PENDING_INVITE_KEY);
-      lsDel(PENDING_INVITE_KIND_KEY);
-      lsDel(PENDING_INVITE_FROM_KEY);
-      history.replaceState(null, '', location.pathname + location.hash);
-      render();
-    }
-    async function searchPartnerProfiles() {
-      const query = ($('#partnerExactQuery') ? $('#partnerExactQuery').value : '').trim();
-      if (query.length < 2) { toast('اكتب الاسم الكامل أو البريد أو اسم المستخدم كاملاً.', 'warn'); return; }
-      if (AUTH_SITE_ROLE === 'site_admin') {
-        const { data, error } = await SUPA.rpc('bd_admin_list_accounts');
-        if (error) throw error;
-        const exact = query.toLowerCase();
-        PARTNERSHIP_STATE.results = (data || []).filter(account => account.user_id !== AUTH_USER.id &&
-          [account.full_name, account.username, account.email].some(value => String(value || '').trim().toLowerCase() === exact)
-        ).map(account => ({ user_id: account.user_id, full_name: account.full_name, username: account.username, email: account.email, account_type: account.account_type || 'owner' }));
-        render();
-        if (!PARTNERSHIP_STATE.results.length) toast('لم يتم العثور على حساب مطابق تماماً.', 'info');
-        return;
-      }
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(query)) {
-        toast('دليل الأسماء متاح لمدير الموقع فقط. اكتب البريد الإلكتروني كاملاً لإرسال دعوة آمنة.', 'warn');
-        return;
-      }
-      await createFriendInvite(query.toLowerCase());
-    }
-    async function requestPartnership(userId) {
-      const result = PARTNERSHIP_STATE.results.find(item => item.user_id === userId);
-      if (!result || !result.email) { toast('تعذر قراءة بريد الحساب المطابق.', 'bad'); return; }
-      await createFriendInvite(result.email, result.full_name || result.username || result.email);
-    }
-    async function createFriendInvite(email, invitedName) {
-      const normalizedEmail = String(email || '').trim().toLowerCase();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) { toast('اكتب البريد الإلكتروني الكامل للشريك.', 'warn'); return; }
-      if (normalizedEmail === String(AUTH_USER.email || '').toLowerCase()) { toast('لا يمكنك إرسال طلب صداقة إلى حسابك نفسه.', 'warn'); return; }
-      if (FRIENDS_STATE.accepted.some(friend => friend.email.toLowerCase() === normalizedEmail)) { toast('هذا الحساب صديقك بالفعل.', 'info'); return; }
-      if (FRIENDS_STATE.outgoing.some(friend => friend.email.toLowerCase() === normalizedEmail)) { toast('طلب الصداقة مُرسل بالفعل وما زال ينتظر القبول. لم نرسل طلباً مكرراً.', 'info'); return; }
-      if (SENDING_FRIEND_REQUESTS.has(normalizedEmail)) { toast('جارٍ إرسال الطلب إلى هذا البريد؛ تجاهلنا ضغطة الإرسال المكررة.', 'info'); return; }
-      SENDING_FRIEND_REQUESTS.add(normalizedEmail);
-      try {
-      const metadata = AUTH_USER.user_metadata || {};
-      const requestProject = {
-        id: uid('friend'), name: 'طلب صداقة', __bdFriendRequest: true,
-        __bdFriendRequestData: {
-          requesterName: String(metadata.full_name || metadata.name || AUTH_USER.email || 'مستخدم'),
-          requesterEmail: String(AUTH_USER.email || '').toLowerCase(),
-          invitedEmail: normalizedEmail,
-          invitedName: String(invitedName || normalizedEmail)
-        }, participants: [], customQuestions: [], actionItems: []
-      };
-      const { data, error } = await SUPA.rpc('bd_create_workspace_invite', {
-        p_project: requestProject, p_email: normalizedEmail, p_role: 'security', p_workspace_id: null
-      });
-      if (error) throw error;
-      const label = encodeURIComponent(String(metadata.full_name || metadata.name || AUTH_USER.email || 'مستخدم'));
-      const link = location.origin + location.pathname + '?invite=' + encodeURIComponent(data.invite_code) + '&friend=1&from=' + label;
-      const safeName = esc(metadata.full_name || metadata.name || AUTH_USER.email || 'مستخدم');
-      openModal('طلب صداقة', '<p>أُرسل الطلب إلى <strong>' + esc(normalizedEmail) + '</strong> وسيظهر تلقائياً في صندوق الطلبات لديه عند تسجيل الدخول. قبول الصداقة لا يشارك أي مشروع؛ لكل صاحب مشروع موافقة مستقلة.</p><label>رابط احتياطي عند الحاجة</label><input id="inviteLink" type="text" readonly value="' + esc(link) + '"><div class="hint" style="margin-top:8px">الطلب من: ' + safeName + '. لا يلزم إرسال الرابط عادةً؛ استخدمه فقط إذا لم يظهر الطلب بعد التحديث.</div>', () => {
-        const input = $('#inviteLink'); input.select();
-        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(() => toast('تم نسخ الرابط الاحتياطي', 'ok')).catch(() => document.execCommand('copy'));
-        else document.execCommand('copy');
-        return true;
-      }, 'نسخ الرابط الاحتياطي');
-      PARTNERSHIP_STATE.results = [];
-      await loadCloudState();
-      render();
-      } finally {
-        SENDING_FRIEND_REQUESTS.delete(normalizedEmail);
-      }
-    }
-    async function createWorkspaceInvite(email, role) {
-      const project = currentProject();
-      if (!project) { toast('اختر مشروعاً أولاً', 'warn'); return; }
-      if (!canManageProject(project)) { toast('إرسال الدعوات متاح للمالك فقط', 'warn'); return; }
-      if (email.toLowerCase() === String(AUTH_USER.email || '').toLowerCase()) { toast('أدخل بريد شريك آخر', 'warn'); return; }
-      const access = project._bdSharing || { participants: true, answers: true };
-      if ((!access.participants || !access.answers) && role === 'assistant') role = 'security';
-      const snapshot = sharedProjectSnapshot(project);
-      const { data, error } = await SUPA.rpc('bd_create_workspace_invite', {
-        p_project: snapshot, p_email: email.toLowerCase(), p_role: role,
-        p_workspace_id: project._bdWorkspaceId || null
-      });
-      if (error) throw error;
-      project._bdWorkspaceId = data.workspace_id;
-      WORKSPACE_ROLES[data.workspace_id] = 'owner';
-      recordProjectActivity(project, 'أرسل دعوة مشاركة إلى ' + email.toLowerCase());
-      saveState(true);
-      const link = location.origin + location.pathname + '?invite=' + encodeURIComponent(data.invite_code);
-      const roleLabel = role === 'security' ? 'شريك عادي — مشاهدة فقط' : 'مساعد — مشاهدة وتعديل';
-      openModal('طلب مشاركة مشروع', '<p>أُرسلت الدعوة إلى <strong>' + esc(email) + '</strong> وستظهر تلقائياً في صندوق الطلبات لديه. بعد القبول، يرى المشروع وفق الصلاحية <strong>' + roleLabel + '</strong>.</p><label>رابط احتياطي عند الحاجة</label><input id="inviteLink" type="text" readonly value="' + esc(link) + '"><div class="hint" style="margin-top:8px">لا يلزم إرسال الرابط عادةً؛ استخدمه فقط إذا لم تظهر الدعوة بعد التحديث.</div>', () => {
-        const input = $('#inviteLink'); input.select();
-        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(() => toast('تم نسخ الرابط الاحتياطي', 'ok')).catch(() => document.execCommand('copy'));
-        else document.execCommand('copy');
-        return true;
-      }, 'نسخ الرابط الاحتياطي');
-      render();
-    }
-    function canManageProject(project) { return !!project && projectRole(project) === 'owner'; }
-    function sharedProjectSnapshot(project) {
-      const snapshot = JSON.parse(JSON.stringify(project));
-      delete snapshot._bdWorkspaceId;
-      snapshot._bdSharing = shareAccessFor(project);
-      return snapshot;
-    }
     function normProject(p) {
       if (!p || typeof p !== 'object') return null;
       p.id = p.id || uid('prj');
@@ -2669,16 +2341,14 @@
        ===================================================================== */
     const VIEWS = [
       { id: 'projects', name: 'المشاريع', icon: '📁', grp: 'ابدأ هنا' },
-      { id: 'partners', name: 'الشراكات والدعوات', icon: '🤝' },
-      { id: 'participants', name: 'المشاركون', icon: '👤' },
+            { id: 'participants', name: 'المشاركون', icon: '👤' },
       { id: 'questionnaire', name: 'الاستبيان', icon: '📝', grp: 'التقييم' },
       { id: 'compare', name: 'المقارنة', icon: '⚖️' },
       { id: 'insights', name: 'الرؤى والأفكار', icon: '💡' },
       { id: 'decision', name: 'قرار الشراكة', icon: '🎯', grp: 'القرار' },
       { id: 'actions', name: 'المهام والملفات', icon: '✅' },
       { id: 'data', name: 'البيانات', icon: '💾', grp: 'النظام' },
-      { id: 'site-admin', name: 'إدارة الموقع', icon: '🛡️', grp: 'الإدارة' }
-    ];
+          ];
     let VIEW = 'projects';
     let CAT_VIEW = 'goals';
 
@@ -2697,9 +2367,9 @@
     function go(v, cat) {
       if (cat) CAT_VIEW = cat;
       setView(v);
-      if (v === 'partners' && cloudReady()) refreshIncomingInvites()
-        .then(() => { if (VIEW === 'partners') render(); })
-        .catch(e => console.warn('Could not load incoming invitations:', e));
+      
+        
+        
     }
 
     function renderNav() {
@@ -2759,16 +2429,14 @@
       const pr = currentProject();
       let html = '';
       try {
-        if (!pr && VIEW !== 'projects' && VIEW !== 'data' && VIEW !== 'site-admin' && VIEW !== 'partners') {
+        if (!pr && VIEW !== 'projects' && VIEW !== 'data') {
           html = AUTH_ACCOUNT_TYPE === 'partner'
             ? emptyState('لا توجد مشاريع مشتركة بعد', 'أرسل أو اقبل دعوة مشاركة من صفحة الشركاء.', '🤝')
             : emptyState('لا يوجد مشروع بعد', 'ابدأ مشروعاً جديداً لتتمكن من استخدام هذه الشاشة.', '📁', 'مشروع جديد', 'new-project');
         } else {
           switch (VIEW) {
             case 'projects': html = canViewSection(pr, 'projects') ? viewProjects() : '<div class="msg warn">صاحب المشروع لم يشارك ملخص المشروع معك.</div>'; break;
-            case 'partners': html = viewPartners(); break;
-            case 'site-admin': html = AUTH_SITE_ROLE === 'site_admin' ? viewSiteAdmin() : '<div class="msg warn">لوحة إدارة الموقع متاحة لمدير الموقع فقط.</div>'; break;
-            case 'participants': html = canViewSection(pr, 'participants') ? viewParticipants() : '<div class="msg warn">أسماء المشاركين غير متاحة لهذا الحساب.</div>'; break;
+                                    case 'participants': html = canViewSection(pr, 'participants') ? viewParticipants() : '<div class="msg warn">أسماء المشاركين غير متاحة لهذا الحساب.</div>'; break;
             case 'questionnaire': html = canViewSection(pr, 'answers') ? viewQuestionnaire() : '<div class="msg warn">الإجابات غير متاحة لهذا الحساب.</div>'; break;
             case 'compare': html = canViewSection(pr, 'compare') ? viewCompare() : '<div class="msg warn">المقارنة غير متاحة لهذا الحساب.</div>'; break;
             case 'insights': html = canViewSection(pr, 'insights') ? viewInsights() : '<div class="msg warn">الرؤى غير متاحة لهذا الحساب.</div>'; break;
@@ -2786,29 +2454,9 @@
           '<div style="margin-top:12px"><button class="btn primary" onclick="location.reload()">إعادة تحميل الصفحة</button></div>' +
           '</div>';
       }
-      const readonly = isReadOnlyProject(pr) && VIEW !== 'partners' && !canWriteSection(pr, currentSection());
+      const readonly = isReadOnlyProject(pr) && !canWriteSection(pr, currentSection());
       host.classList.toggle('read-only', readonly);
-      host.innerHTML = (CLOUD_LOAD_WARNING ? '<div class="msg warn" role="status" style="margin-bottom:12px">' + esc(CLOUD_LOAD_WARNING) +
-        (CLOUD_SCHEMA_MISSING ? '<div class="row" style="margin-top:10px;gap:8px"><button class="btn primary" id="retryCloudSchema">تحقق الآن</button></div>' : '') + '</div>' : '') +
-        (readonly ? '<div class="readonly-banner">المشروع للعرض في هذا الجزء. عدّل فقط الأجزاء التي أتاحها لك صاحب المشروع.</div>' : '') + html;
-      on(host, '#retryCloudSchema', 'click', async (event) => {
-        const button = event.currentTarget;
-        button.disabled = true;
-        button.textContent = 'جارٍ التحقق…';
-        try {
-          await loadCloudState();
-          CLOUD_LOAD_WARNING = '';
-          CLOUD_SCHEMA_MISSING = false;
-          render();
-          toast('تم الاتصال بقاعدة البيانات وتحميل البيانات بنجاح.', 'ok');
-        } catch (e) {
-          const detail = e.message || 'تعذر تحميل الجداول';
-          CLOUD_SCHEMA_MISSING = /could not find (?:the )?(?:function|table)|schema cache|does not exist|relation .* does not exist/i.test(detail);
-          CLOUD_LOAD_WARNING = 'لم يكتمل التحقق من قاعدة البيانات. تأكد من تشغيل أحدث ملف SQL في Supabase → SQL Editor → Run. التفاصيل: ' + detail;
-          render();
-          toast('قاعدة البيانات ما زالت تحتاج إلى تحديث.', 'bad');
-        }
-      });
+host.innerHTML = (readonly ? '<div class="readonly-banner">المشروع للعرض في هذا الجزء. عدّل فقط الأجزاء التي أتاحها لك صاحب المشروع.</div>' : '') + html;
       if (readonly) {
         $$('#view input, #view textarea, #view select').forEach(el => {
           if (el.id === 'partnerExactQuery') return;
@@ -3304,174 +2952,6 @@
       return html;
     }
 
-    function viewPartners() {
-      const sharedProjects = S.projects.filter(p => p._bdWorkspaceId);
-      const receivedProjects = sharedProjects.filter(p => !canManageProject(p));
-      const ownSharedProjects = sharedProjects.filter(p => canManageProject(p));
-      const inboxInvites = INCOMING_INVITES.filter(invite =>
-        String(invite.invite_code) !== String(PENDING_INVITE_CODE) &&
-        !arr(invite.duplicate_codes).some(code => String(code) === String(PENDING_INVITE_CODE)));
-      let html = pageHead('إدارة الشراكات والدعوات', 'أرسل الدعوات من هنا، وتابع الطلبات الواردة والمرسلة، ثم اقبلها أو ارفضها من المكان نفسه.');
-      const pr = currentProject();
-      const owner = canManageProject(pr);
-      const shareAccess = shareAccessFor(pr);
-      html += card('طلبات واردة (' + inboxInvites.length + ')', inboxInvites.length
-        ? '<ul>' + inboxInvites.map(invite => {
-          const isFriend = invite.request_kind === 'friend';
-          const roleLabel = invite.role === 'assistant' ? 'مساعد — مشاهدة وتعديل' : 'شريك عادي — مشاهدة فقط';
-          return '<li style="margin:10px 0"><strong>' + esc(isFriend ? 'طلب صداقة' : 'دعوة مشروع: ' + (invite.project_name || 'مشروع مشترك')) + '</strong>' +
-            ' · من ' + esc(invite.sender_name || invite.sender_email || 'حساب') +
-            (invite.sender_email ? ' · ' + esc(invite.sender_email) : '') +
-            (isFriend ? '' : ' · ' + esc(roleLabel)) +
-            (isFriend && Number(invite.duplicate_count) > 1 ? '<div class="msg warn" style="margin:6px 0">تنبيه: أرسل هذا الحساب طلب الصداقة أكثر من مرة (' + (Number(invite.duplicate_count) - 1) + ' طلب مكرر). جمعناها في طلب واحد.</div>' : '') +
-            ' <button class="btn sm primary" data-act="accept-inbox-invite" data-id="' + esc(invite.invite_code) + '">' + (isFriend ? 'قبول الصداقة' : 'قبول دعوة المشروع') + '</button>' +
-            ' <button class="btn sm" data-act="decline-inbox-invite" data-id="' + esc(invite.invite_code) + '">رفض</button></li>';
-        }).join('') + '</ul><div class="tiny muted">تُحدّث هذه القائمة تلقائياً كل 20 ثانية أثناء فتح صفحة الشركاء.</div>'
-        : '<div class="tiny muted">لا توجد طلبات واردة الآن. تُحدّث القائمة تلقائياً كل 20 ثانية أثناء فتح هذه الصفحة.</div>');
-      if (PENDING_INVITE_CODE) html += card(PENDING_INVITE_KIND === 'friend' ? 'طلب صداقة وارد' : 'طلب مشاركة مشروع وارد',
-        '<div class="hint">' + (PENDING_INVITE_KIND === 'friend'
-          ? 'قبول هذا الطلب يضيف الحساب إلى قائمة أصدقائك فقط. لا يفتح أي مشروع تلقائياً؛ مشاركة كل مشروع تحتاج موافقة صاحبه.'
-          : 'قبول هذا الطلب يضيف المشروع المشترك إلى حسابك وفق صلاحية المشاهدة أو التعديل التي اختارها صاحبه.') + (PENDING_INVITE_FROM ? '<br>المرسل: <strong>' + esc(PENDING_INVITE_FROM) + '</strong>' : '') + '</div>' +
-        '<div class="row" style="margin-top:10px"><button class="btn primary" data-act="accept-workspace-invite">' + (PENDING_INVITE_KIND === 'friend' ? 'قبول طلب الصداقة' : 'قبول دعوة المشروع') + '</button><button class="btn" data-act="decline-inbox-invite" data-id="' + esc(PENDING_INVITE_CODE) + '">رفض</button><button class="btn" data-act="dismiss-workspace-invite">لاحقاً</button></div>');
-      html += card(AUTH_SITE_ROLE === 'site_admin' ? 'ابحث عن حساب في دليل الموقع' : 'طلب صداقة بالبريد الإلكتروني',
-        '<div class="row" style="align-items:end"><label style="flex:1;min-width:220px">' + (AUTH_SITE_ROLE === 'site_admin' ? 'الاسم الكامل أو البريد أو اسم المستخدم' : 'البريد الإلكتروني الكامل') +
-          '<input id="partnerExactQuery" type="search" autocomplete="off" placeholder="' + (AUTH_SITE_ROLE === 'site_admin' ? 'اكتب القيمة كاملة كما سُجلت' : 'name@example.com') + '" style="display:block;margin-top:6px;width:100%"></label>' +
-          '<button class="btn primary" data-act="search-partners">' + (AUTH_SITE_ROLE === 'site_admin' ? 'بحث مطابق' : 'إرسال طلب صداقة') + '</button><button class="btn" data-act="refresh-partnerships">تحديث</button></div>' +
-          '<div class="hint" style="margin-top:10px">' + (AUTH_SITE_ROLE === 'site_admin'
-            ? 'ابحث بمطابقة كاملة، ثم أرسل طلب صداقة. قبول الطلب لا يشارك أي مشروع تلقائياً.'
-            : 'اكتب البريد الإلكتروني كاملاً. يظهر الطلب تلقائياً في صندوق الطلبات لدى الطرف الآخر؛ الرابط متاح كحل احتياطي. وبعد القبول يختار كل صاحب مشروع ما يشاركه.') + '</div>' +
-          (PARTNERSHIP_STATE.results.length ? '<div style="margin-top:12px"><strong>نتائج مطابقة</strong><ul>' + PARTNERSHIP_STATE.results.map(result => {
-            return '<li><strong>' + esc(result.full_name || 'حساب بدون اسم') + '</strong> · ' + esc(result.email || '') +
-              (result.username ? ' · @' + esc(result.username) : '') +
-              ' <button class="btn sm" data-act="request-partnership" data-id="' + esc(result.user_id) + '">إرسال طلب صداقة</button></li>';
-          }).join('') + '</ul></div>' : ''));
-      html += card('طلبات الصداقة المرسلة (' + FRIENDS_STATE.outgoing.length + ')', FRIENDS_STATE.outgoing.length
-        ? '<ul>' + FRIENDS_STATE.outgoing.map(friend => '<li>' + esc(friend.name || friend.email) + ' · ' + esc(friend.email) + ' — بانتظار القبول.</li>').join('') + '</ul>'
-        : '<div class="tiny muted">لا توجد طلبات صداقة معلقة.</div>');
-      html += card('الأصدقاء المقبولون (' + FRIENDS_STATE.accepted.length + ')', FRIENDS_STATE.accepted.length
-        ? '<ul>' + FRIENDS_STATE.accepted.map(friend => {
-          const shareControls = pr && owner && friend.email
-            ? ' <label class="tiny">الدور <select class="sel" data-friend-role="' + esc(friend.workspaceId) + '"><option value="security">شريك</option><option value="assistant">مساعد</option></select></label> <button class="btn sm" data-act="share-project-friend" data-id="' + esc(friend.workspaceId) + '">مشاركة المشروع المحدد</button>'
-            : '';
-          return '<li><strong>' + esc(friend.name || friend.email) + '</strong> · ' + esc(friend.email || '') + shareControls + ' <button class=\"btn sm danger\" data-act=\"remove-friend\" data-id=\"' + esc(friend.workspaceId) + '\">Remove Friend / إزالة من الأصدقاء</button></li>';
-        }).join('') + '</ul>'
-        : '<div class="tiny muted">بعد قبول طلب صداقة، سيظهر الحساب هنا. الصداقة وحدها لا تكشف بيانات المشاريع.</div>');
-      if (pr && owner) {
-        const sharingSections = Object.keys(SHARE_ACCESS_LABELS).map(section => {
-          const access = shareAccess[section];
-          const editLabel = section === 'answers' ? 'تعديل إجابات حسابه فقط' : section === 'actions' ? 'رفع ملفات المهام المسندة وإرسالها' : 'التعديل لصاحب المشروع فقط';
-          const canCollaboratorEdit = ['answers', 'actions'].includes(section);
-          return '<div class="idea"><strong>' + esc(SHARE_ACCESS_LABELS[section]) + '</strong>' +
-            '<div class="row" style="margin-top:6px">' +
-            '<label class="tiny"><input type="checkbox" data-sharing-option="' + section + '.view"' + (access.view ? ' checked' : '') + '> مشاهدة</label>' +
-            (canCollaboratorEdit ? '<label class="tiny"><input type="checkbox" data-sharing-option="' + section + '.edit"' + (access.edit ? ' checked' : '') + '> ' + esc(editLabel) + '</label>' : '<span class="tiny muted">' + esc(editLabel) + '</span>') +
-            '</div></div>';
-        }).join('');
-        html += card('صلاحيات المشروع المحدد', '<div class="grid g2">' + sharingSections + '</div>' +
-          '<div class="hint" style="margin-top:10px">تُطبّق الصلاحيات على أعضاء المشروع. إجابات الشريك قابلة للتعديل لحسابه فقط؛ لا يمكنه تعديل أسماء المشاركين أو بيانات غيره أو حذف المشروع والمهام. الحفظ يُحدّث الصلاحيات على المشروع.</div>' +
-          '<button class="btn primary" style="margin-top:10px" data-act="save-sharing-settings">حفظ الصلاحيات</button>');
-      }
-      html += card('مشاريع شاركها معك أصحابها (' + receivedProjects.length + ')', receivedProjects.length
-        ? '<ul>' + receivedProjects.map(p => '<li>' + esc(p.name) + ' — يمكنك فتح المشروع وفق الصلاحية الممنوحة لك.</li>').join('') + '</ul>'
-        : '<div class="tiny muted">لا توجد مشاريع مشتركة معك الآن. بعد قبول دعوة المشروع، يظهر المشروع المشترك عند الطرفين.</div>');
-      if (pr && pr._bdWorkspaceId && owner) html += card('أعضاء المشروع والدعوات الإضافية', '<div id="teamRoster" class="hint">جارٍ تحميل أعضاء الفريق…</div>');
-      if (ownSharedProjects.length) html += card('مشاريع تشاركها أنت (' + ownSharedProjects.length + ')', '<ul>' + ownSharedProjects.map(p => '<li>' + esc(p.name) + ' — لن يراها المدعو إلا بعد قبول الدعوة.</li>').join('') + '</ul>');
-      if (pr && pr._bdWorkspaceId) {
-        const activity = arr(pr.activityLog).slice(-20).reverse();
-        html += card('سجل نشاط المشروع', activity.length
-          ? '<ul>' + activity.map(item => '<li>' + esc(item.name || item.email || 'حساب') + ' — ' + esc(item.action || 'نشاط') + ' · ' + esc(item.at ? new Date(item.at).toLocaleString('ar-EG') : '') + '</li>').join('') + '</ul>'
-          : '<div class="tiny muted">ستظهر التحديثات هنا بعد أن يعدّل أحد أعضاء المشروع بياناته.</div>');
-      }
-      html += card('الدور الحالي', '<div class="hint">' + esc(AUTH_ACCOUNT_TYPE === 'partner'
-        ? 'شريك في البيانات — لا يظهر لك زر إنشاء مشروع. المشاريع التي يقبل صاحبها دعوتك تظهر هنا.'
-        : (pr && owner ? 'صاحب المشروع المحدد — الدعوة تنشئ المشاركة، ولا تظهر بيانات المشروع للشريك إلا بعد قبوله.' : 'صاحب مشروع — اختر مشروعاً لإرسال دعوة مشاركة.')) + '</div>');
-      return html;
-    }
-    async function refreshWorkspaceRoster(workspaceId) {
-      const host = $('#teamRoster');
-      if (!host) return;
-      try {
-        const { data, error } = await SUPA.rpc('bd_list_workspace_members', { p_workspace_id: workspaceId });
-        if (error) throw error;
-        const entries = data || [];
-          host.innerHTML = '<strong>أعضاء ودعوات المشروع</strong>' + (entries.length
-          ? '<ul style="margin-bottom:0">' + entries.map(m => '<li>' + esc(m.invite_email) + ' — ' + (m.role === 'security' ? 'شريك عادي، مشاهدة فقط' : 'مساعد، مشاهدة وتعديل') + ' — ' + (m.accepted ? 'قبل الدعوة' : 'بانتظار القبول') + '</li>').join('') + '</ul>'
-          : '<div style="margin-top:6px">لا يوجد أعضاء مدعوون بعد.</div>');
-      } catch (e) { host.textContent = 'تعذر تحميل أعضاء الفريق: ' + (e.message || ''); }
-    }
-
-    function viewSiteAdmin() {
-      return pageHead('لوحة مدير الموقع', 'إدارة الحسابات والصلاحيات، ومراجعة صلاحيات المشاريع وآخر التحديثات المسجلة.') +
-        card('حالة الموقع', '<div id="siteAdminStats" class="hint">جارٍ تحميل ملخص الموقع…</div>') +
-        card('حسابات الموقع وبياناتها', '<div id="siteAdminAccounts" class="tiny muted">جارٍ تحميل الحسابات والبيانات…</div>');
-    }
-    async function refreshSiteAdminDashboard() {
-      const stats = $('#siteAdminStats'), host = $('#siteAdminAccounts');
-      if (!host || AUTH_SITE_ROLE !== 'site_admin') return;
-      try {
-        const { data, error } = await SUPA.rpc('bd_admin_list_accounts');
-        if (error) throw error;
-        const accounts = Array.isArray(data) ? data : [];
-        const projectsCount = accounts.reduce((total, account) => total + arr(account.private_data && account.private_data.projects).length + arr(account.shared_projects).filter(entry => !(entry.project && entry.project.__bdFriendRequest)).length, 0);
-        if (stats) stats.innerHTML = '<strong>' + accounts.length + '</strong> حساب · <strong>' + projectsCount + '</strong> مشروع خاص أو مشترك';
-        if (!accounts.length) { host.textContent = 'لا توجد حسابات مسجلة بعد.'; return; }
-        host.innerHTML = accounts.map(account => {
-          const isSelf = account.user_id === AUTH_USER.id;
-          const privateProjects = arr(account.private_data && account.private_data.projects);
-          const allSharedProjects = arr(account.shared_projects);
-          const friendRequests = allSharedProjects.filter(entry => entry.project && entry.project.__bdFriendRequest);
-          const sharedProjects = allSharedProjects.filter(entry => !(entry.project && entry.project.__bdFriendRequest));
-          const roleLabel = account.site_role === 'site_admin' ? 'مدير الموقع' : 'مستخدم';
-          const accessItems = sharedProjects.map(entry => {
-            const project = entry.project || {};
-            const access = entry.role === 'owner' ? 'مالك المشروع' : entry.role === 'security' ? 'شريك عادي — مشاهدة فقط' : 'مساعد — مشاهدة وتعديل';
-            return '<li><strong>' + esc(project.name || 'مشروع بدون اسم') + '</strong> — ' + access + '</li>';
-          });
-          const recentActivity = privateProjects.concat(sharedProjects.map(entry => entry.project || {}))
-            .flatMap(project => arr(project.activityLog).map(item => Object.assign({ project_name: project.name || 'مشروع بدون اسم' }, item)))
-            .sort((a, b) => String(b.at || '').localeCompare(String(a.at || ''))).slice(0, 20);
-          const accessHtml = accessItems.length ? '<ul>' + accessItems.join('') + '</ul>' : '<div class="tiny muted">لا توجد صلاحيات مشاركة على مشاريع حالياً.</div>';
-          const friendRequestsHtml = friendRequests.length
-            ? '<ul>' + friendRequests.map(entry => {
-              const data = entry.project.__bdFriendRequestData || {};
-              const status = entry.role === 'owner' ? 'طلب مرسل — بانتظار القبول' : 'صداقة مقبولة';
-              const otherParty = entry.role === 'owner' ? (data.invitedEmail || data.invitedName || 'حساب') : (data.requesterEmail || data.requesterName || 'حساب');
-              return '<li>' + esc(status) + ' · الطرف الآخر: ' + esc(otherParty) + '</li>';
-            }).join('') + '</ul>'
-            : '<div class="tiny muted">لا توجد طلبات صداقة أو صداقات مسجلة.</div>';
-          const activityHtml = recentActivity.length
-            ? '<ul>' + recentActivity.map(item => '<li>' + esc(item.name || item.email || 'حساب') + ' — ' + esc(item.action || 'نشاط') + ' في «' + esc(item.project_name) + '» · ' + esc(item.at ? new Date(item.at).toLocaleString('ar-EG') : '') + '</li>').join('') + '</ul>'
-            : '<div class="tiny muted">ستظهر التغييرات بعد تسجيلها من الحسابات المشاركة.</div>';
-          return '<details class="card" style="margin-bottom:10px"><summary style="cursor:pointer"><strong>' + esc(account.full_name || account.email || 'حساب بدون اسم') + '</strong> · ' + esc(account.email || '') + ' · ' + roleLabel + '</summary>' +
-            '<div class="tiny muted" style="margin-top:10px">اسم المستخدم: ' + esc(account.username || '—') + ' · الهاتف: ' + esc(account.phone || '—') + ' · تاريخ التسجيل: ' + esc(account.created_at ? new Date(account.created_at).toLocaleDateString('ar-EG') : '—') + '</div>' +
-            '<div class="row" style="margin-top:10px"><select class="sel" data-site-admin-role="' + esc(account.user_id) + '"' + (isSelf ? ' disabled' : '') + '><option value="member"' + (account.site_role !== 'site_admin' ? ' selected' : '') + '>مستخدم</option><option value="site_admin"' + (account.site_role === 'site_admin' ? ' selected' : '') + '>مدير الموقع</option></select>' +
-            '<button class="btn xs" data-site-admin-save="' + esc(account.user_id) + '"' + (isSelf ? ' disabled' : '') + '>حفظ الصلاحية</button></div>' +
-            '<details style="margin-top:8px"><summary>طلبات الصداقة والقبول (' + friendRequests.length + ')</summary>' + friendRequestsHtml + '</details>' +
-            '<details style="margin-top:12px"><summary>من يملك صلاحية على مشاريعه وماذا يستطيع أن يفعل</summary>' + accessHtml + '</details>' +
-            '<details style="margin-top:8px"><summary>آخر الأنشطة المسجلة</summary>' + activityHtml + '</details>' +
-            '<details style="margin-top:12px"><summary>البيانات والمشاريع الخاصة (' + privateProjects.length + ')</summary><pre style="white-space:pre-wrap;overflow:auto;max-height:360px;direction:ltr;text-align:left">' + esc(JSON.stringify(account.private_data || {}, null, 2)) + '</pre></details>' +
-            '<details style="margin-top:8px"><summary>المشاريع المشتركة (' + sharedProjects.length + ')</summary><pre style="white-space:pre-wrap;overflow:auto;max-height:360px;direction:ltr;text-align:left">' + esc(JSON.stringify(sharedProjects, null, 2)) + '</pre></details></details>';
-        }).join('');
-        $$('[data-site-admin-save]', host).forEach(button => button.addEventListener('click', async () => {
-          const userId = button.getAttribute('data-site-admin-save');
-          const select = $('[data-site-admin-role="' + userId + '"]', host);
-          if (!select) return;
-          button.disabled = true;
-          const { error } = await SUPA.rpc('bd_admin_set_site_role', { p_user_id: userId, p_role: select.value });
-          button.disabled = false;
-          if (error) { toast('تعذر تحديث الصلاحية: ' + error.message, 'bad'); return; }
-          toast('تم تحديث صلاحية الحساب', 'ok');
-          refreshSiteAdminDashboard();
-        }));
-      } catch (e) {
-        if (stats) stats.textContent = 'تعذر تحميل لوحة الإدارة: ' + (e.message || '');
-        if (host) host.textContent = 'تأكد من تشغيل إعداد قاعدة البيانات المحدّث في Supabase.';
-      }
-    }
-
-    /* =====================================================================
-       MODAL + PROMPTS
-       ===================================================================== */
     function openModal(title, bodyHtml, onOk, okLabel) {
       const host = $('#modalHost');
       host.innerHTML = '<div class="modal-back" data-modal-back>' +
@@ -3671,7 +3151,6 @@
         S = Object.assign(defaultState(), data);
         saveState(true);
         try {
-          if (cloudReady()) await (CLOUD_SYNC_PROMISE || syncCloudState());
           toast('تم استرداد JSON وحفظه. نُزّلت نسخة من البيانات السابقة ويمكنك تنزيلها مجدداً من صفحة البيانات.', 'ok');
         } catch (e) {
           toast('تم استرداد JSON على هذا الجهاز؛ تعذرت المزامنة السحابية: ' + (e.message || ''), 'warn');
@@ -3976,51 +3455,6 @@
         return;
       }
       switch (act) {
-        case 'search-partners':
-          if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
-          searchPartnerProfiles().catch(e => toast('تعذر البحث عن الحساب: ' + (e.message || ''), 'bad'));
-          break;
-        case 'refresh-partnerships':
-          if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
-          loadCloudState().then(() => { render(); toast('تم تحديث طلبات الشراكة والمشاريع المشتركة.', 'ok'); })
-            .catch(e => toast('تعذر تحديث الطلبات: ' + (e.message || ''), 'bad'));
-          break;
-        case 'request-partnership':
-          if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
-          requestPartnership(id).catch(e => toast('تعذر إرسال طلب الشراكة: ' + (e.message || ''), 'bad'));
-          break;
-        case 'share-project-friend': {
-          if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
-          const friend = FRIENDS_STATE.accepted.find(item => item.workspaceId === id);
-          if (!friend || !friend.email) { toast('تعذر العثور على بريد الصديق المقبول.', 'bad'); break; }
-          const roleSelect = $('[data-friend-role="' + id + '"]');
-          createWorkspaceInvite(friend.email, roleSelect ? roleSelect.value : 'security')
-            .catch(e => toast('تعذر مشاركة المشروع: ' + (e.message || ''), 'bad'));
-          break;
-        }
-        case 'remove-friend': {
-          if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
-          const rfriend = FRIENDS_STATE.accepted.find(item => item.workspaceId === id);
-          if (!rfriend) { toast('تعذر العثور على الصديق.', 'bad'); break; }
-          if (String(rfriend.email || '').toLowerCase() === String(AUTH_USER && AUTH_USER.email || '').toLowerCase()) { toast('لا يمكنك إزالة نفسك.', 'warn'); break; }
-          confirmBox('Remove Friend / إزالة من الأصدقاء', 'سيتم إنهاء الصداقة فقط. لن يتم حذف أي مشروع أو بيانات، ولن يتم إلغاء الوصول إلى المشاريع المشتركة بشكل مستقل. متابعة؟', () => {
-            (async () => {
-              try {
-                if (rfriend.workspaceId) {
-                  const { error } = await SUPA.rpc('bd_remove_friendship', { p_id: rfriend.workspaceId });
-                  if (error) { toast(error.message, 'bad'); return; }
-                }
-                FRIENDS_STATE.accepted = FRIENDS_STATE.accepted.filter(f => f.workspaceId !== id);
-                await loadCloudState();
-                toast('تم إزالة الصديق.', 'ok');
-                render();
-              } catch (e) {
-                toast('تعذر إزالة الصديق: ' + (e.message || ''), 'bad');
-              }
-            })();
-          });
-          break;
-        }
         case 'save-sharing-settings': {
           const project = currentProject();
           if (!project || !canManageProject(project)) { toast('تعديل إعدادات المشاركة متاح لصاحب المشروع فقط.', 'warn'); break; }
@@ -4038,32 +3472,6 @@
           render();
           break;
         }
-        case 'refresh-project':
-          if (!cloudReady()) { toast('يلزم الاتصال بحسابك لتحديث المهام.', 'warn'); break; }
-          loadCloudState().then(() => { render(); toast('تم تحديث المشروع والمهام.', 'ok'); })
-            .catch(e => toast('تعذر تحديث المشروع: ' + (e.message || ''), 'bad'));
-          break;
-        case 'accept-workspace-invite':
-          if (cloudReady() && PENDING_INVITE_CODE) acceptWorkspaceInvite(PENDING_INVITE_CODE);
-          break;
-        case 'accept-inbox-invite':
-          if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
-          if (id) acceptWorkspaceInvite(id);
-          break;
-        case 'decline-inbox-invite':
-          if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
-          if (id || PENDING_INVITE_CODE) declineWorkspaceInvite(id || PENDING_INVITE_CODE);
-          break;
-        case 'dismiss-workspace-invite':
-          dismissPendingInvite();
-          break;
-        case 'invite-partner':
-          if (!cloudReady()) { toast('سجّل الدخول أولاً', 'warn'); break; }
-          promptText('طلب صداقة', 'البريد الإلكتروني للصديق', '', (email) => {
-            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast('اكتب بريداً إلكترونياً صحيحاً', 'warn'); return; }
-            createFriendInvite(email).catch(e => toast('تعذر إرسال طلب الصداقة: ' + e.message, 'bad'));
-          });
-          break;
         case 'new-project': newProject(); break;
         case 'add-participant': addParticipant(); break;
         case 'import-json': { const f = $('#fileInput'); if (f) { f.value = ''; f.click(); } break; }
@@ -4095,10 +3503,6 @@
           confirmBox('حذف المشروع', 'سيتم حذف المشروع وجميع المشاركين وإجاباتهم. متابعة؟', () => {
             (async () => {
               const target = byId(S.projects, id);
-              if (target && target._bdWorkspaceId) {
-                const { error } = await SUPA.rpc('bd_delete_workspace', { p_id: target._bdWorkspaceId });
-                if (error) { toast(error.message, 'bad'); return; }
-              }
               S.projects = S.projects.filter(p => p.id !== id);
               if (S.activeProjectId === id) { S.activeProjectId = null; S.activeParticipantId = null; }
               saveState(true); toast('تم الحذف', 'ok'); render();
@@ -4333,28 +3737,23 @@
     }
     function initShell() {
       on(document, '#themeBtn', 'click', toggleTheme);
-      on(document, '#saveNowBtn', 'click', async () => {
-        saveState(true);
-        if (!cloudReady()) { toast('تم الحفظ على هذا الجهاز فقط', 'ok'); return; }
-        try { await syncCloudState(); toast('تم حفظ البيانات في حسابك والسحابة', 'ok'); }
-        catch (e) { toast('حُفظت البيانات على هذا الجهاز، لكن تعذّر حفظها في السحابة: ' + (e.message || ''), 'bad'); }
-      });
-      on(document, '#signOutBtn', 'click', async () => {
-        // Finish the current cloud write before clearing the auth token. Starting
-        // a write and immediately signing out can leave the last edit only local.
-        saveState(true);
-        if (cloudReady()) {
-          try { await syncCloudState(); }
-          catch (e) {
-            toast('لم يتم تسجيل الخروج لأن آخر التغييرات لم تصل إلى السحابة. تحقق من الاتصال ثم حاول مجدداً. ' + (e.message || ''), 'bad');
-            return;
-          }
-        }
-        const { error } = await SUPA.auth.signOut();
-        if (error) { toast('تعذر تسجيل الخروج: ' + error.message, 'bad'); return; }
-        AUTH_USER = null; AUTH_ROLE = null; AUTH_ACCOUNT_TYPE = 'owner'; AUTH_SITE_ROLE = 'member'; WORKSPACE_ROLES = Object.create(null); PROJECT_SYNC_FINGERPRINTS = Object.create(null); PARTNERSHIP_STATE = { accepted: [], incoming: [], outgoing: [], results: [] }; FRIENDS_STATE = { accepted: [], outgoing: [] }; PENDING_INVITE_CODE = ''; PENDING_INVITE_KIND = 'project'; PENDING_INVITE_FROM = ''; $('#accountEmail').textContent = ''; $('#signOutBtn').style.display = 'none';
-        $('.app').style.display = 'none'; S = defaultState(); authScreen('تم تسجيل الخروج.', 'login');
-      });
+  on(document, '#saveNowBtn', 'click', () => {
+    saveState(true);
+    toast('?? ????? ??? ??? ??????', 'ok');
+  });
+on(document, '#accountSettingsBtn', 'click', async () => { await accountSettingsScreen(); });
+  on(document, '#signOutBtn', 'click', async () => {
+    CURRENT_PROFILE_ID = null;
+    AUTH_USER = null;
+    AUTH_ACCOUNT_TYPE = 'owner';
+    lsDel('bd_selected_profile_v1');
+    if ($('#signOutBtn')) $('#signOutBtn').style.display = 'none';
+    if ($('#accountSettingsBtn')) $('#accountSettingsBtn').style.display = 'none';
+    $('#accountEmail').textContent = '';
+    $('.app').style.display = 'none';
+    S = defaultState();
+    await localEntryScreen('');
+  });
       const isMobileViewport = () => window.matchMedia('(max-width:900px)').matches;
       const setSidebarVisible = (visible) => {
         const sb = $('#sidebar');
@@ -4433,15 +3832,8 @@
           const el = $('#saveState');
           if (el) { el.textContent = 'تعذّر الحفظ المحلي — استخدم التصدير'; el.style.color = 'var(--danger)'; }
         }
-        if (cloudReady() && STATE_REVISION > CLOUD_SYNCED_REVISION) {
-          syncCloudState().catch(e => console.error('exit cloud sync failed', e));
-        }
-      };
-      window.addEventListener('beforeunload', saveBeforePageExit);
-      window.addEventListener('pagehide', saveBeforePageExit);
-      document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') saveBeforePageExit();
-      });
+      };
       window.setInterval(() => {
         if (!AUTH_USER) return;
         const ok = lsSet(accountDataKey(), JSON.stringify(S));
@@ -4450,16 +3842,68 @@
           if (el) { el.textContent = 'تعذّر الحفظ المحلي — استخدم التصدير'; el.style.color = 'var(--danger)'; }
           return;
         }
-        if (cloudReady() && STATE_REVISION > CLOUD_SYNCED_REVISION) {
-          syncCloudState().catch(e => {
-            console.error('automatic cloud save failed', e);
-            const el = $('#saveState');
-            if (el) { el.textContent = 'الحفظ المحلي يعمل؛ تعذرت المزامنة السحابية'; el.style.color = 'var(--danger)'; }
-          });
-        }
       }, 60000);
     }
-    async function init() {
+    async function enterLocalApp(profile) {
+      CURRENT_PROFILE_ID = profile.email;
+      AUTH_USER = { email: profile.email, user_metadata: {} };
+      AUTH_ACCOUNT_TYPE = 'owner';
+      $('#authHost').style.display = 'none';
+      if ($('.app')) $('.app').style.display = '';
+      $('#accountEmail').textContent = profile.email || '';
+      if ($('#signOutBtn')) $('#signOutBtn').style.display = '';
+      if ($('#accountSettingsBtn')) $('#accountSettingsBtn').style.display = '';
+      await loadState();
+      render();
+    }
+
+async function localEntryScreen(message) {
+      const host = $('#authHost'), app = $('.app');
+      if (app) app.style.display = 'none';
+      if (host) host.style.display = 'block';
+      let profiles = [];
+      try { profiles = JSON.parse(lsGet('bd_local_profiles_v1') || '[]') || []; } catch (_) { profiles = []; }
+      const opts = profiles.map(p => '<button class="btn" data-local-profile="' + esc(p.email) + '" style="width:100%;margin:4px 0">' + esc(p.name || p.email) + ' <span class="tiny muted">(' + esc(p.email) + ')</span></button>').join('');
+      host.innerHTML = '<div class="card" style="max-width:460px;margin:40px auto;padding:24px">' +
+        '<h2 style="margin-top:0">ملف محلي / Local profile</h2>' +
+        (message ? '<div class="tiny" style="color:var(--danger);margin-bottom:8px">' + esc(message) + '</div>' : '') +
+        '<div class="tiny muted" style="margin-bottom:12px">البريد الإلكتروني هنا معرّف محلي فقط — غير مُتحقَّق منه ولا يُعدّ تسجيل دخول. البيانات تُحفظ في هذا المتصفح فقط.</div>' +
+        '<div id="localProfileList">' + (opts || '<div class="tiny muted">لا توجد ملفات بعد.</div>') + '</div>' +
+        '<hr style="margin:12px 0">' +
+        '<div class="field"><label>الاسم / Name</label><input id="localProfileName" type="text" placeholder="اسمك"></div>' +
+        '<div class="field"><label>البريد / Email (identifier only)</label><input id="localProfileEmail" type="email" placeholder="name@example.com"></div>' +
+        '<button class="btn primary" id="createLocalProfileBtn" style="width:100%">إنشاء / استخدام ملف</button>' +
+        '</div>';
+      host.querySelectorAll('[data-local-profile]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const email = btn.getAttribute('data-local-profile');
+          const prof = await BD_STORAGE.profileGet(email);
+          if (prof) { lsSet('bd_selected_profile_v1', email); await enterLocalApp(prof); }
+          else toast('تعذر تحميل الملف', 'bad');
+        });
+      });
+      const createBtn = $('#createLocalProfileBtn');
+      if (createBtn) createBtn.addEventListener('click', async () => {
+        const name = ($('#localProfileName').value || '').trim();
+        const email = ($('#localProfileEmail').value || '').trim().toLowerCase();
+        if (!name) { toast('أدخل الاسم', 'warn'); return; }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast('أدخل بريدًا صحيحًا (معرّف محلي)', 'warn'); return; }
+        const existing = await BD_STORAGE.profileGet(email);
+        const profile = existing || { email: email, name: name, createdAt: nowISO() };
+        profile.name = name;
+        profile.updatedAt = nowISO();
+        const ok = await BD_STORAGE.profileSet(profile);
+        if (!ok) { toast('تعذر حفظ الملف محليًا', 'bad'); return; }
+        let list = [];
+        try { list = JSON.parse(lsGet('bd_local_profiles_v1') || '[]') || []; } catch (_) { list = []; }
+        if (!list.some(p => p.email === email)) list.push({ email: email, name: name });
+        lsSet('bd_local_profiles_v1', JSON.stringify(list));
+        lsSet('bd_selected_profile_v1', email);
+        await enterLocalApp(profile);
+      });
+    }
+    
+async function init() {
       const prefs = loadPrefs();
       applyTheme(prefs.theme || 'light');
       initShell();
@@ -4477,20 +3921,13 @@
       if (!storeAvailable()) {
         toast('التخزين المحلي غير متاح — لن تُحفظ بياناتك. استخدم التصدير.', 'warn');
       }
-      if (window.supabaseReady) await window.supabaseReady;
-      if (!makeCloudClient()) {
-        authScreen(window.supabase ? '' : 'تعذر تحميل مكتبة Supabase. تحقق من اتصال الإنترنت ثم أعد تحميل الصفحة.');
-        return;
+      const selectedProfile = lsGet('bd_selected_profile_v1');
+      if (selectedProfile) {
+        const prof = await BD_STORAGE.profileGet(selectedProfile);
+        if (prof && prof.passwordHash) { await enterLocalApp(prof); return; }
+        if (prof) { await localEntryScreen('Legacy account without password'); return; }
       }
-      try {
-        const { data, error } = await SUPA.auth.getSession();
-        if (error) throw error;
-        if (data.session) {
-          if (location.hash.includes('type=recovery')) { authScreen('', 'recovery'); return; }
-          await enterApp(data.session.user); return;
-        }
-      } catch (e) { authScreen('تعذر الاتصال بـ Supabase: ' + e.message, 'login'); return; }
-      authScreen('', 'login');
+      await localEntryScreen('');
     }
     /* ---------- global error handler ---------- */
     window.addEventListener('error', (e) => {
@@ -4519,7 +3956,7 @@
 
     function safeInit() {
       try {
-        init().catch(e => { console.error('Init failed:', e); authScreen(e.message || 'فشل تشغيل التطبيق'); });
+        init().catch(e => { console.error('Init failed:', e); (function(m){const h=document.querySelector('#authHost')||document.querySelector('#view');if(h)h.textContent='Initialization failed: '+m;})(e.message || 'Startup failed'); });
       } catch (e) {
         console.error('Init failed:', e);
         const host = $('#view');
@@ -4538,6 +3975,182 @@
     } else {
       safeInit();
     }
+
+/* appended offline auth */
+async function localEntryScreen(message) {
+  const host = $('#authHost'), app = $('.app');
+  if (app) app.style.display = 'none';
+  if (host) host.style.display = 'block';
+  const L = (ar, en) => (document.documentElement.lang === 'en' ? en : ar);
+  host.innerHTML = '<div class="card" style="max-width:460px;margin:40px auto;padding:24px">' +
+    '<h2 style="margin-top:0">' + L('حساب محلي','Local account') + '</h2>' +
+    (message ? '<div class="tiny" style="color:var(--danger);margin-bottom:8px">' + esc(message) + '</div>' : '') +
+    '<div class="tiny muted" style="margin-bottom:12px">' + L('حسابات محلية على هذا المتصفح فقط — غير مُتحقَّق منها.','Local accounts on this browser only — not verified.') + '</div>' +
+    '<div style="display:flex;gap:8px;margin-bottom:12px"><button class="btn" id="tabLogin" style="flex:1">' + L('تسجيل دخول','Sign in') + '</button><button class="btn" id="tabRegister" style="flex:1">' + L('إنشاء حساب','Register') + '</button></div>' +
+    '<div id="authForm"></div></div>';
+  const form = $('#authForm');
+  function renderLogin() {
+    form.innerHTML = '<div class="field"><label>' + L('البريد أو اسم المستخدم','Email or username') + '</label><input id="liId" type="text"></div>' +
+      '<div class="field"><label>' + L('كلمة المرور','Password') + '</label><div style="display:flex;gap:6px"><input id="liPw" type="password" style="flex:1"><button class="btn xs" id="togglePw" type="button">' + L('إظهار','Show') + '</button></div></div>' +
+      '<button class="btn primary" id="loginBtn" style="width:100%">' + L('دخول','Sign in') + '</button><div id="authErr" class="tiny" style="color:var(--danger);margin-top:8px"></div>';
+    $('#togglePw').addEventListener('click', () => { const i = $('#liPw'); i.type = i.type === 'password' ? 'text' : 'password'; });
+    $('#loginBtn').addEventListener('click', doLogin);
+  }
+  function renderRegister() {
+    form.innerHTML = '<div class="field"><label>' + L('اسم المستخدم','Username') + '</label><input id="rgUser" type="text"></div>' +
+      '<div class="field"><label>' + L('البريد الإلكتروني','Email') + '</label><input id="rgEmail" type="email"></div>' +
+      '<div class="field"><label>' + L('رقم الهاتف (اختياري)','Phone (optional)') + '</label><input id="rgPhone" type="text"></div>' +
+      '<div class="field"><label>' + L('كلمة المرور','Password') + '</label><div style="display:flex;gap:6px"><input id="rgPw" type="password" style="flex:1"><button class="btn xs" id="togglePw2" type="button">' + L('إظهار','Show') + '</button></div></div>' +
+      '<div class="field"><label>' + L('تأكيد كلمة المرور','Confirm password') + '</label><input id="rgPw2" type="password"></div>' +
+      '<button class="btn primary" id="registerBtn" style="width:100%">' + L('إنشاء حساب','Register') + '</button><div id="authErr" class="tiny" style="color:var(--danger);margin-top:8px"></div>';
+    $('#togglePw2').addEventListener('click', () => { const i = $('#rgPw'); i.type = i.type === 'password' ? 'text' : 'password'; });
+    $('#registerBtn').addEventListener('click', doRegister);
+  }
+  $('#tabLogin').addEventListener('click', renderLogin);
+  $('#tabRegister').addEventListener('click', renderRegister);
+  renderLogin();
+
+  async function doLogin() {
+    const err = $('#authErr');
+    const id = ($('#liId').value || '').trim();
+    const pw = $('#liPw').value || '';
+    if (!id || !pw) { err.textContent = L('أدخل المعرّف وكلمة المرور','Enter identifier and password'); return; }
+    const accounts = await BD_STORAGE.profileAll();
+    const acct = accounts.find(a => (a.email === id.toLowerCase()) || (a.username && a.username.toLowerCase() === id.toLowerCase()));
+    if (!acct) { err.textContent = L('بيانات الدخول غير صحيحة','Invalid credentials'); return; }
+    if (!acct.passwordHash || !acct.salt) { err.textContent = L('حساب قديم بدون كلمة مرور','Legacy account without password'); return; }
+    const ok = await verifyPassword(pw, acct);
+    if (!ok) { err.textContent = L('بيانات الدخول غير صحيحة','Invalid credentials'); return; }
+    lsSet('bd_selected_profile_v1', acct.email);
+    await enterLocalApp(acct);
+  }
+
+  async function doRegister() {
+    const err = $('#authErr');
+    const username = ($('#rgUser').value || '').trim();
+    const email = ($('#rgEmail').value || '').trim().toLowerCase();
+    const phone = ($('#rgPhone').value || '').trim();
+    const pw = $('#rgPw').value || '';
+    const pw2 = $('#rgPw2').value || '';
+    if (!username) { err.textContent = L('اسم المستخدم مطلوب','Username required'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { err.textContent = L('بريد إلكتروني غير صحيح','Invalid email'); return; }
+    if (pw.length < 8) { err.textContent = L('كلمة المرور 8 أحرف على الأقل','Password at least 8 chars'); return; }
+    if (pw !== pw2) { err.textContent = L('كلمتا المرور غير متطابقتين','Passwords do not match'); return; }
+    const accounts = await BD_STORAGE.profileAll();
+    if (accounts.some(a => a.email === email)) { err.textContent = L('البريد مسجل بالفعل','Email already registered'); return; }
+    if (accounts.some(a => a.username && a.username.toLowerCase() === username.toLowerCase())) { err.textContent = L('اسم المستخدم مسجل بالفعل','Username already taken'); return; }
+    const hp = await hashPassword(pw);
+    const profile = { email: email, username: username, phone: phone || null, name: username, passwordHash: hp.hash, salt: hp.salt, iterations: hp.iterations, createdAt: nowISO(), updatedAt: nowISO() };
+    const ok = await BD_STORAGE.profileSet(profile);
+    if (!ok) { err.textContent = L('تعذّر حفظ الحساب','Failed to save account'); return; }
+    let list = [];
+    try { list = JSON.parse(lsGet('bd_local_profiles_v1') || '[]') || []; } catch (_) { list = []; }
+    if (!list.some(p => p.email === email)) list.push({ email: email, name: username });
+    lsSet('bd_local_profiles_v1', JSON.stringify(list));
+    lsSet('bd_selected_profile_v1', email);
+    await enterLocalApp(profile);
+  }
+}
+
+
+async function accountSettingsScreen() {
+  const prof = await BD_STORAGE.profileGet(CURRENT_PROFILE_ID);
+  if (!prof) { toast('تعذّر تحميل الحساب','bad'); return; }
+  const L = (ar, en) => (document.documentElement.lang === 'en' ? en : ar);
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  overlay.innerHTML = '<div class="card" style="max-width:520px;width:100%;padding:20px;max-height:90vh;overflow:auto">' +
+    '<h2 style="margin-top:0">' + L('إعدادات الحساب','Account settings') + '</h2>' +
+    '<div class="field"><label>' + L('اسم المستخدم','Username') + '</label><input id="asUser" type="text" value="' + esc(prof.username || '') + '"></div>' +
+    '<div class="field"><label>' + L('البريد الإلكتروني','Email') + '</label><input id="asEmail" type="email" value="' + esc(prof.email || '') + '"></div>' +
+    '<div class="field"><label>' + L('رقم الهاتف','Phone') + '</label><input id="asPhone" type="text" value="' + esc(prof.phone || '') + '"></div>' +
+    '<button class="btn primary" id="asSave" style="width:100%">' + L('حفظ','Save') + '</button>' +
+    '<hr><h3>' + L('تغيير كلمة المرور','Change password') + '</h3>' +
+    '<div class="field"><label>' + L('كلمة المرور الحالية','Current password') + '</label><input id="asCur" type="password"></div>' +
+    '<div class="field"><label>' + L('كلمة المرور الجديدة','New password') + '</label><input id="asNew" type="password"></div>' +
+    '<div class="field"><label>' + L('تأكيد','Confirm') + '</label><input id="asNew2" type="password"></div>' +
+    '<button class="btn" id="asPw" style="width:100%">' + L('تغيير كلمة المرور','Change password') + '</button>' +
+    '<hr><button class="btn danger" id="asDelete" style="width:100%">' + L('حذف الحساب','Delete account') + '</button>' +
+    '<button class="btn" id="asClose" style="width:100%;margin-top:8px">' + L('إغلاق','Close') + '</button>' +
+    '<div id="asErr" class="tiny" style="color:var(--danger);margin-top:8px"></div></div>';
+  document.body.appendChild(overlay);
+  const q = (sel) => overlay.querySelector(sel);
+  q('#asClose').addEventListener('click', () => overlay.remove());
+  q('#asSave').addEventListener('click', async () => {
+    const err = q('#asErr');
+    const newUsername = (q('#asUser').value || '').trim();
+    const newEmail = (q('#asEmail').value || '').trim().toLowerCase();
+    const newPhone = (q('#asPhone').value || '').trim();
+    if (!newUsername) { err.textContent = L('اسم المستخدم مطلوب','Username required'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) { err.textContent = L('بريد غير صحيح','Invalid email'); return; }
+    const accounts = await BD_STORAGE.profileAll();
+    if (accounts.some(a => a.email !== prof.email && a.email === newEmail)) { err.textContent = L('البريد مستخدم','Email in use'); return; }
+    if (accounts.some(a => a.email !== prof.email && a.username && a.username.toLowerCase() === newUsername.toLowerCase())) { err.textContent = L('اسم المستخدم مستخدم','Username in use'); return; }
+    const updated = Object.assign({}, prof, { username: newUsername, email: newEmail, phone: newPhone || null, name: newUsername, updatedAt: nowISO() });
+    if (newEmail !== prof.email) {
+      const st = await BD_STORAGE.stateGet(prof.email);
+      await BD_STORAGE.profileDelete(prof.email);
+      await BD_STORAGE.stateDelete(prof.email);
+      if (st) await BD_STORAGE.stateSet(newEmail, st);
+    }
+    const ok = await BD_STORAGE.profileSet(updated);
+    if (!ok) { err.textContent = L('تعذّر الحفظ','Save failed'); return; }
+    if (newEmail !== CURRENT_PROFILE_ID) {
+      lsDel('bd_selected_profile_v1');
+      lsSet('bd_selected_profile_v1', newEmail);
+      CURRENT_PROFILE_ID = newEmail;
+      AUTH_USER = { email: newEmail, user_metadata: {} };
+      $('#accountEmail').textContent = newEmail;
+    }
+    Object.assign(prof, updated);
+    toast(L('تم الحفظ','Saved'), 'ok');
+  });
+  q('#asPw').addEventListener('click', async () => {
+    const err = q('#asErr');
+    const cur = q('#asCur').value || '';
+    const nw = q('#asNew').value || '';
+    const nw2 = q('#asNew2').value || '';
+    if (nw.length < 8) { err.textContent = L('كلمة المرور 8 أحرف على الأقل','At least 8 chars'); return; }
+    if (nw !== nw2) { err.textContent = L('غير متطابقتين','Mismatch'); return; }
+    if (!prof.passwordHash || !(await verifyPassword(cur, prof))) { err.textContent = L('كلمة المرور الحالية غير صحيحة','Current password incorrect'); return; }
+    const hp = await hashPassword(nw);
+    const updated = Object.assign({}, prof, { passwordHash: hp.hash, salt: hp.salt, iterations: hp.iterations, updatedAt: nowISO() });
+    const ok = await BD_STORAGE.profileSet(updated);
+    if (!ok) { err.textContent = L('تعذّر الحفظ','Save failed'); return; }
+    Object.assign(prof, updated);
+    toast(L('تم تغيير كلمة المرور','Password changed'), 'ok');
+  });
+  q('#asDelete').addEventListener('click', async () => {
+    if (!confirm(L('سيتم حذف الحساب وبياناته المحلية. هل أنت متأكد؟','Account and its local data will be deleted. Are you sure?'))) return;
+    await BD_STORAGE.profileDelete(CURRENT_PROFILE_ID);
+    await BD_STORAGE.stateDelete(CURRENT_PROFILE_ID);
+    let list = [];
+    try { list = JSON.parse(lsGet('bd_local_profiles_v1') || '[]') || []; } catch (_) { list = []; }
+    list = list.filter(p => p.email !== CURRENT_PROFILE_ID);
+    lsSet('bd_local_profiles_v1', JSON.stringify(list));
+    lsDel('bd_selected_profile_v1');
+    CURRENT_PROFILE_ID = null;
+    AUTH_USER = null;
+    $('.app').style.display = 'none';
+    overlay.remove();
+    await localEntryScreen('');
+  });
+}
+
+async function hashPassword(password, saltBytes, iterations) {
+  const enc = new TextEncoder();
+  const it = iterations || 200000;
+  const salt = saltBytes || crypto.getRandomValues(new Uint8Array(16));
+  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: salt, iterations: it, hash: 'SHA-256' }, keyMaterial, 256);
+  return { salt: btoa(String.fromCharCode.apply(null, salt)), hash: btoa(String.fromCharCode.apply(null, new Uint8Array(bits))), iterations: it };
+}
+async function verifyPassword(password, rec) {
+  const salt = Uint8Array.from(atob(rec.salt), c => c.charCodeAt(0));
+  const r = await hashPassword(password, salt, rec.iterations || 200000);
+  return r.hash === rec.passwordHash;
+}
+try { document.addEventListener('click', function(e){ if (e.target && e.target.id === 'accountEmail') accountSettingsScreen(); }); } catch(_){}
 
   </script>
 </body>
