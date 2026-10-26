@@ -7,6 +7,7 @@ window.BD_API_BASE = 'http://localhost:3000';
 ```
 
 Endpoints:
+
 - POST /api/auth/register { email, password }
 - POST /api/auth/login { email, password }
 - GET /api/auth/me (Bearer token)
