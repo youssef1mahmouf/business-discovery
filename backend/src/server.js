@@ -2,6 +2,8 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { exec } = require('child_process');
+const { pathToFileURL } = require('url');
 const { MongoClient } = require('mongodb');
 
 const BACKEND_ROOT = path.join(__dirname, '..');
@@ -130,9 +132,19 @@ function verifyToken(token, secret) {
   }
 }
 
+function normalizeRole(userOrRole) {
+  const role = typeof userOrRole === 'string'
+    ? userOrRole
+    : (userOrRole && typeof userOrRole === 'object' ? userOrRole.role : null);
+  return role === 'site_admin' ? 'site_admin' : 'user';
+}
+
+function isSiteAdminRole(roleOrUser) {
+  return normalizeRole(roleOrUser) === 'site_admin';
+}
+
 function send(res, statusCode, body) {
   res.writeHead(statusCode, {
-    'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': config.frontendOrigin,
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS'
@@ -192,6 +204,7 @@ async function handleRequest(req, res) {
         _id: Date.now(),
         email: normalizedEmail,
         passwordHash: hashPassword(password),
+        role: 'user',
         createdAt: new Date().toISOString()
       };
 
@@ -205,8 +218,8 @@ async function handleRequest(req, res) {
         throw error;
       }
 
-      const token = signToken({ sub: user._id, email: user.email }, config.tokenSecret);
-      send(res, 200, { token, user: { id: user._id, email: user.email } });
+      const token = signToken({ sub: user._id, email: user.email, role: normalizeRole(user) }, config.tokenSecret);
+      send(res, 200, { token, user: { id: user._id, email: user.email, role: normalizeRole(user) } });
       return;
     }
 
@@ -217,8 +230,8 @@ async function handleRequest(req, res) {
         send(res, 401, { error: 'invalid_credentials' });
         return;
       }
-      const token = signToken({ sub: user._id, email: user.email }, config.tokenSecret);
-      send(res, 200, { token, user: { id: user._id, email: user.email } });
+      const token = signToken({ sub: user._id, email: user.email, role: normalizeRole(user) }, config.tokenSecret);
+      send(res, 200, { token, user: { id: user._id, email: user.email, role: normalizeRole(user) } });
       return;
     }
 
@@ -228,7 +241,8 @@ async function handleRequest(req, res) {
         send(res, 401, { error: 'unauthorized' });
         return;
       }
-      send(res, 200, { user: { id: payload.sub, email: payload.email } });
+      const user = await usersCollection.findOne({ _id: payload.sub });
+      send(res, 200, { user: { id: payload.sub, email: payload.email, role: user ? normalizeRole(user) : normalizeRole(payload.role) } });
       return;
     }
 
@@ -294,6 +308,21 @@ async function handleRequest(req, res) {
       return;
     }
 
+    if (req.method === 'GET' && url === '/api/admin/site') {
+      const payload = verifyToken(getToken(req), config.tokenSecret);
+      if (!payload) {
+        send(res, 401, { error: 'unauthorized' });
+        return;
+      }
+      const user = await usersCollection.findOne({ _id: payload.sub });
+      if (!user || !isSiteAdminRole(user)) {
+        send(res, 403, { error: 'forbidden' });
+        return;
+      }
+      send(res, 200, { ok: true, role: 'site_admin' });
+      return;
+    }
+
     send(res, 404, { error: 'not_found' });
   } catch (error) {
     console.error('Request failed:', error && error.name ? error.name : 'Error');
@@ -332,6 +361,59 @@ async function shutdown(signal) {
   process.exit(0);
 }
 
+function resolveFrontendUrl(databaseConfig) {
+  const origin = String(databaseConfig.frontendOrigin || '').trim();
+  if (origin && origin !== '*' && /^https?:\/\//.test(origin)) {
+    try {
+      const parsed = new URL(origin);
+      if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+        return origin;
+      }
+    } catch (error) {
+      // Fall through to the local frontend file.
+    }
+  }
+  const frontendIndex = path.resolve(BACKEND_ROOT, '..', 'frontend', 'index.html');
+  return pathToFileURL(frontendIndex).href;
+}
+
+function shouldOpenBrowser() {
+  const lockPath = path.join(BACKEND_ROOT, '.browser-open.lock');
+  try {
+    const stat = fs.statSync(lockPath);
+    if (Date.now() - stat.mtimeMs < 15000) return false;
+  } catch (error) {
+    // Lock does not exist yet.
+  }
+  try {
+    fs.writeFileSync(lockPath, String(Date.now()));
+  } catch (error) {
+    // If the lock cannot be written, still allow opening.
+  }
+  return true;
+}
+
+function openBrowser(url) {
+  console.log('Frontend URL: ' + url);
+  if (!shouldOpenBrowser()) {
+    console.log('Browser open skipped to avoid duplicate tabs.');
+    return;
+  }
+
+  const command =
+    process.platform === 'win32'
+      ? 'start "" "' + url + '"'
+      : process.platform === 'darwin'
+        ? 'open "' + url + '"'
+        : 'xdg-open "' + url + '"';
+
+  exec(command, (error) => {
+    if (error) {
+      console.log('Could not open the browser automatically. Open this URL manually: ' + url);
+    }
+  });
+}
+
 async function start() {
   loadEnvFile();
   config = validateConfig();
@@ -348,6 +430,8 @@ async function start() {
   });
 
   httpServer = server;
+  const frontendUrl = resolveFrontendUrl(config);
+  openBrowser(frontendUrl);
   process.on('SIGTERM', () => {
     shutdown('SIGTERM').catch(() => process.exit(1));
   });
@@ -373,5 +457,7 @@ module.exports = {
   hashPassword,
   verifyPassword,
   signToken,
-  verifyToken
+  verifyToken,
+  normalizeRole,
+  isSiteAdminRole
 };

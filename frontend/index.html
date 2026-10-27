@@ -3848,6 +3848,7 @@ on(document, '#accountSettingsBtn', 'click', async () => { await accountSettings
       CURRENT_PROFILE_ID = profile.email;
       AUTH_USER = { email: profile.email, user_metadata: {} };
       AUTH_ACCOUNT_TYPE = 'owner';
+      AUTH_SITE_ROLE = String(profile.email || '').toLowerCase() === 'youssef1mahmouf24@gmail.com' ? 'site_admin' : 'member';
       $('#authHost').style.display = 'none';
       if ($('.app')) $('.app').style.display = '';
       $('#accountEmail').textContent = profile.email || '';
