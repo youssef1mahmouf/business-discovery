@@ -1,12 +1,21 @@
-﻿{
-    "name":  "business-discovery-backend",
-    "version":  "1.0.0",
-    "main":  "src/server.js",
-    "scripts":  {
-                    "start":  "node src/server.js",
-                    "test":  "node --check src/server.js \u0026\u0026 node --test"
-                },
-    "dependencies":  {
-                         "mongodb":  "^7.7.0"
-                     }
+{
+  "name": "business-discovery-backend",
+  "version": "2.0.0",
+  "description": "Business Discovery backend (Express + MongoDB)",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test",
+    "lint:syntax": "node --check src/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "mongodb": "^6.12.0"
+  },
+  "devDependencies": {
+    "supertest": "^7.0.0"
+  }
 }

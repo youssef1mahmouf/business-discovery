@@ -6,7 +6,7 @@
 !.env.example
 .DS_Store
 Thumbs.db
-
-# MongoDB Atlas onboarding credentials (never commit)
-help/atlas-credentials.env
+backend/startup.err
+backend/startup.log
+backend/.browser-open.lock
 
