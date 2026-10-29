@@ -3848,7 +3848,7 @@ on(document, '#accountSettingsBtn', 'click', async () => { await accountSettings
       CURRENT_PROFILE_ID = profile.email;
       AUTH_USER = { email: profile.email, user_metadata: {} };
       AUTH_ACCOUNT_TYPE = 'owner';
-      AUTH_SITE_ROLE = String(profile.email || '').toLowerCase() === 'youssef1mahmouf24@gmail.com' ? 'site_admin' : 'member';
+      AUTH_SITE_ROLE = profile.role === 'site_admin' ? 'site_admin' : 'member';
       $('#authHost').style.display = 'none';
       if ($('.app')) $('.app').style.display = '';
       $('#accountEmail').textContent = profile.email || '';
@@ -4011,19 +4011,67 @@ async function localEntryScreen(message) {
   $('#tabRegister').addEventListener('click', renderRegister);
   renderLogin();
 
+  const BD_API_BASE = (window.BD_API_BASE || 'http://localhost:3000').replace(/\/$/, '');
+
+  async function bdApi(path, options) {
+    const opts = Object.assign({}, options || {});
+    opts.headers = Object.assign({}, opts.headers || {});
+    const token = lsGet('bd_auth_token_v1');
+    if (token) opts.headers.Authorization = 'Bearer ' + token;
+    if (opts.body && typeof opts.body === 'object' && !(opts.body instanceof FormData)) {
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(opts.body);
+    }
+    const response = await fetch(BD_API_BASE + path, opts);
+    let data = null;
+    try { data = await response.json(); } catch (_) { data = null; }
+    return { ok: response.ok, status: response.status, data: data };
+  }
+
   async function doLogin() {
     const err = $('#authErr');
     const id = ($('#liId').value || '').trim();
     const pw = $('#liPw').value || '';
     if (!id || !pw) { err.textContent = L('أدخل المعرّف وكلمة المرور','Enter identifier and password'); return; }
-    const accounts = await BD_STORAGE.profileAll();
-    const acct = accounts.find(a => (a.email === id.toLowerCase()) || (a.username && a.username.toLowerCase() === id.toLowerCase()));
-    if (!acct) { err.textContent = L('بيانات الدخول غير صحيحة','Invalid credentials'); return; }
-    if (!acct.passwordHash || !acct.salt) { err.textContent = L('حساب قديم بدون كلمة مرور','Legacy account without password'); return; }
-    const ok = await verifyPassword(pw, acct);
-    if (!ok) { err.textContent = L('بيانات الدخول غير صحيحة','Invalid credentials'); return; }
-    lsSet('bd_selected_profile_v1', acct.email);
-    await enterLocalApp(acct);
+
+    let backendResult = null;
+    try {
+      backendResult = await bdApi('/api/auth/login', { method: 'POST', body: { email: id, password: pw } });
+    } catch (e) {
+      backendResult = { ok: false, status: 0, data: null, networkError: true };
+    }
+
+    if (backendResult && backendResult.ok && backendResult.data && backendResult.data.token) {
+      lsSet('bd_auth_token_v1', backendResult.data.token);
+      const me = await bdApi('/api/auth/me', { method: 'GET' });
+      const role = (me && me.data && me.data.user && me.data.user.role) ? me.data.user.role : 'user';
+      const email = (backendResult.data.user && backendResult.data.user.email) ? backendResult.data.user.email : id.toLowerCase();
+      let profile = await BD_STORAGE.profileGet(email);
+      if (!profile) profile = { email: email, name: email, createdAt: nowISO() };
+      profile.email = email;
+      profile.role = role;
+      profile.updatedAt = nowISO();
+      await BD_STORAGE.profileSet(profile);
+      lsSet('bd_selected_profile_v1', email);
+      await enterLocalApp(profile);
+      return;
+    }
+
+    if (backendResult && backendResult.networkError) {
+      const accounts = await BD_STORAGE.profileAll();
+      const acct = accounts.find(a => (a.email === id.toLowerCase()) || (a.username && a.username.toLowerCase() === id.toLowerCase()));
+      if (!acct) { err.textContent = L('تعذر الاتصال بالخادم ولا يوجد حساب محلي','Cannot reach server and no local account'); return; }
+      if (!acct.passwordHash || !acct.salt) { err.textContent = L('حساب قديم بدون كلمة مرور','Legacy account without password'); return; }
+      const ok = await verifyPassword(pw, acct);
+      if (!ok) { err.textContent = L('بيانات الدخول غير صحيحة','Invalid credentials'); return; }
+      lsSet('bd_selected_profile_v1', acct.email);
+      await enterLocalApp(acct);
+      toast(L('وضع عدم الاتصال','Offline mode'), 'warn');
+      return;
+    }
+
+    const code = (backendResult && backendResult.data && backendResult.data.error) ? backendResult.data.error : 'invalid_credentials';
+    err.textContent = code === 'invalid_credentials' ? L('بيانات الدخول غير صحيحة','Invalid credentials') : code;
   }
 
   async function doRegister() {
@@ -4037,13 +4085,31 @@ async function localEntryScreen(message) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { err.textContent = L('بريد إلكتروني غير صحيح','Invalid email'); return; }
     if (pw.length < 8) { err.textContent = L('كلمة المرور 8 أحرف على الأقل','Password at least 8 chars'); return; }
     if (pw !== pw2) { err.textContent = L('كلمتا المرور غير متطابقتين','Passwords do not match'); return; }
-    const accounts = await BD_STORAGE.profileAll();
-    if (accounts.some(a => a.email === email)) { err.textContent = L('البريد مسجل بالفعل','Email already registered'); return; }
-    if (accounts.some(a => a.username && a.username.toLowerCase() === username.toLowerCase())) { err.textContent = L('اسم المستخدم مسجل بالفعل','Username already taken'); return; }
-    const hp = await hashPassword(pw);
-    const profile = { email: email, username: username, phone: phone || null, name: username, passwordHash: hp.hash, salt: hp.salt, iterations: hp.iterations, createdAt: nowISO(), updatedAt: nowISO() };
+    let backendResult = null;
+    try {
+      backendResult = await bdApi('/api/auth/register', { method: 'POST', body: { email: email, password: pw } });
+    } catch (e) {
+      backendResult = { ok: false, status: 0, data: null, networkError: true };
+    }
+
+    if (backendResult && backendResult.networkError) {
+      err.textContent = L('تعذر الاتصال بالخادم','Cannot reach server');
+      return;
+    }
+
+    if (!backendResult || !backendResult.ok) {
+      const code = backendResult && backendResult.data && backendResult.data.error ? backendResult.data.error : 'registration_failed';
+      err.textContent = code === 'email_in_use' ? L('البريد مسجل بالفعل','Email already registered') : code;
+      return;
+    }
+
+    if (backendResult.data && backendResult.data.token) {
+      lsSet('bd_auth_token_v1', backendResult.data.token);
+    }
+
+    const profile = { email: email, username: username, phone: phone || null, name: username, createdAt: nowISO(), updatedAt: nowISO(), role: 'user' };
     const ok = await BD_STORAGE.profileSet(profile);
-    if (!ok) { err.textContent = L('تعذّر حفظ الحساب','Failed to save account'); return; }
+    if (!ok) { err.textContent = L('تعذّر حفظ الحساب محليًا','Failed to save local account'); return; }
     let list = [];
     try { list = JSON.parse(lsGet('bd_local_profiles_v1') || '[]') || []; } catch (_) { list = []; }
     if (!list.some(p => p.email === email)) list.push({ email: email, name: username });
