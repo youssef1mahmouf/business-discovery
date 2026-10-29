@@ -1573,6 +1573,7 @@
     }
     let S = defaultState();
     let SAVE_TIMER = null, STATE_REVISION = 0, CURRENT_PROFILE_ID = null, AUTH_USER = null, AUTH_ACCOUNT_TYPE = 'owner', AUTH_SITE_ROLE = 'member', AUTH_ROLE = null;
+let FRIEND_TAB = 'all', FRIEND_SEARCH = '', FRIEND_SEARCH_RESULTS = null, FRIEND_SEARCH_STATUS = '', FRIEND_BUSY = false;
 
     function accountDataKey() { return APP.dataKey + (CURRENT_PROFILE_ID ? '_' + CURRENT_PROFILE_ID : ''); }
         function workspaceMemberRole(project) { return 'owner'; }
@@ -2347,7 +2348,8 @@
       { id: 'insights', name: 'الرؤى والأفكار', icon: '💡' },
       { id: 'decision', name: 'قرار الشراكة', icon: '🎯', grp: 'القرار' },
       { id: 'actions', name: 'المهام والملفات', icon: '✅' },
-      { id: 'data', name: 'البيانات', icon: '💾', grp: 'النظام' },
+      { id: 'friends', name: 'الأصدقاء والشركاء', icon: '🤝', grp: 'الشبكة' },
+{ id: 'data', name: 'البيانات', icon: '💾', grp: 'النظام' },
           ];
     let VIEW = 'projects';
     let CAT_VIEW = 'goals';
@@ -2443,6 +2445,7 @@
             case 'decision': html = canManageProject(pr) ? viewDecision() : canViewSection(pr, 'decision') ? viewSharedDecision(pr) : '<div class="msg warn">قرار الشراكة خاص بصاحب المشروع.</div>'; break;
             case 'actions': html = canViewSection(pr, 'actions') ? viewActions() : '<div class="msg warn">المهام والملفات غير متاحة لهذا الحساب.</div>'; break;
             case 'data': html = viewData(); break;
+case 'friends': html = viewFriends(); break;
             default: html = viewProjects();
           }
         }
@@ -2487,6 +2490,42 @@ host.innerHTML = (readonly ? '<div class="readonly-banner">المشروع للع
         '<div class="tiny muted" style="margin-top:6px">' + esc(msg) + '</div>' +
         (btnLabel ? '<div style="margin-top:12px"><button class="btn primary" data-act="' + act + '">' + esc(btnLabel) + '</button></div>' : '') +
         '</div>';
+function friendsData() { S.friends = S.friends || { requests: [], friendships: [], partnerships: [], invites: [] }; if (!S.friends.friendships) S.friends.friendships = []; if (!S.friends.requests) S.friends.requests = []; if (!S.friends.partnerships) S.friends.partnerships = []; if (!S.friends.invites) S.friends.invites = []; return S.friends; }
+function currentEmail() { return String(AUTH_USER && AUTH_USER.email || CURRENT_PROFILE_ID || '').trim().toLowerCase(); }
+function friendStatus(targetEmail) {
+  const me = currentEmail(); const fd = friendsData(); const t = String(targetEmail||'').toLowerCase();
+  if (fd.friendships.some(x => (x.a===me && x.b===t)||(x.a===t && x.b===me))) return 'friend';
+  const fr = fd.requests.find(x => ((x.from===me && x.to===t)||(x.from===t && x.to===me)) && x.type==='friend');
+  if (fr) return fr.from===me ? 'friend-out' : 'friend-in';
+  const pr = fd.partnerships.some(x => (x.a===me && x.b===t)||(x.a===t && x.b===me));
+  if (pr) return 'partner';
+  const pi = fd.invites.find(x => ((x.from===me && x.to===t)||(x.from===t && x.to===me)) && x.type==='partner');
+  if (pi) return pi.from===me ? 'partner-out' : 'partner-in';
+  return 'none';
+}
+async function friendSearch() {
+  if (FRIEND_BUSY) return; FRIEND_BUSY = true;
+  const input = $('#friendSearch'); const q = String(input && input.value || '').trim();
+  FRIEND_SEARCH = q;
+  if (!q) { FRIEND_SEARCH_STATUS = 'empty'; FRIEND_SEARCH_RESULTS = []; FRIEND_BUSY = false; render(); return; }
+  try {
+    const profiles = await BD_STORAGE.profileAll();
+    let res = [];
+    if (q.includes('@')) {
+      if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(q)) { FRIEND_SEARCH_STATUS='bademail'; FRIEND_SEARCH_RESULTS=[]; FRIEND_BUSY=false; render(); return; }
+      res = (profiles||[]).filter(p => String(p.email||'').toLowerCase() === q.toLowerCase());
+      FRIEND_SEARCH_STATUS = res.length ? 'results' : 'notfound';
+    } else {
+      res = (profiles||[]).filter(p => String(p.name||p.username||'').toLowerCase().includes(q.toLowerCase()));
+      if (!res.length) FRIEND_SEARCH_STATUS='notfound';
+      else if (res.length>1) FRIEND_SEARCH_STATUS='multiple';
+      else FRIEND_SEARCH_STATUS='results';
+    }
+    res = res.filter(p => String(p.email||'').toLowerCase() !== currentEmail());
+    FRIEND_SEARCH_RESULTS = res;
+  } catch (e) { FRIEND_SEARCH_STATUS='error'; FRIEND_SEARCH_RESULTS=[]; }
+  FRIEND_BUSY = false; render();
+}
     }
     function pageHead(title, sub) {
       return '<div class="page-head"><h2>' + esc(title) + '</h2>' +
@@ -3473,6 +3512,64 @@ host.innerHTML = (readonly ? '<div class="readonly-banner">المشروع للع
           break;
         }
         case 'new-project': newProject(); break;
+case 'friend-tab': { FRIEND_TAB = id; render(); break; }
+case 'friend-search': { friendSearch(); break; }
+case 'friend-add': {
+  const me=currentEmail(); const fd=friendsData(); const t=String(id).toLowerCase();
+  if (t===me) { toast('لا يمكن إضافة نفسك','warn'); break; }
+  if (fd.requests.some(x=>((x.from===me&&x.to===t)||(x.from===t&&x.to===me)) && x.type==='friend' && x.status==='pending')) { toast('طلب موجود','warn'); break; }
+  if (fd.friendships.some(x=>(x.a===me&&x.b===t)||(x.a===t&&x.b===me))) { toast('أصدقاء بالفعل','warn'); break; }
+  fd.requests.push({id:Date.now(),from:me,to:t,type:'friend',status:'pending',createdAt:new Date().toISOString()});
+  saveState(true); toast('تم إرسال الطلب','ok'); render(); break;
+}
+case 'friend-accept': {
+  const me=currentEmail(); const fd=friendsData(); const from=String(id).toLowerCase();
+  const req=fd.requests.find(x=>x.from===from && x.to===me && x.type==='friend' && x.status==='pending');
+  if (!req) { toast('طلب غير موجود','warn'); break; }
+  req.status='accepted';
+  if (!fd.friendships.some(x=>(x.a===me&&x.b===from)||(x.a===from&&x.b===me))) fd.friendships.push({id:Date.now(),a:me,b:from,createdAt:new Date().toISOString()});
+  saveState(true); toast('تم قبول الطلب','ok'); render(); break;
+}
+case 'friend-reject': {
+  const me=currentEmail(); const fd=friendsData(); const from=String(id).toLowerCase();
+  const req=fd.requests.find(x=>x.from===from && x.to===me && x.type==='friend' && x.status==='pending');
+  if (req) req.status='rejected';
+  saveState(true); toast('تم التجاهل','ok'); render(); break;
+}
+case 'friend-remove': {
+  if (!confirm('إزالة الصديق؟')) break;
+  const me=currentEmail(); const fd=friendsData(); const t=String(id).toLowerCase();
+  fd.friendships = fd.friendships.filter(x=>!((x.a===me&&x.b===t)||(x.a===t&&x.b===me)));
+  saveState(true); toast('تمت الإزالة','ok'); render(); break;
+}
+case 'partner-invite': {
+  const me=currentEmail(); const fd=friendsData(); const t=String(id).toLowerCase();
+  if (t===me) { toast('لا يمكن دعوة نفسك','warn'); break; }
+  if (fd.invites.some(x=>((x.from===me&&x.to===t)||(x.from===t&&x.to===me)) && x.type==='partner' && x.status==='pending')) { toast('دعوة موجودة','warn'); break; }
+  if (fd.partnerships.some(x=>(x.a===me&&x.b===t)||(x.a===t&&x.b===me))) { toast('شركاء بالفعل','warn'); break; }
+  fd.invites.push({id:Date.now(),from:me,to:t,type:'partner',status:'pending',createdAt:new Date().toISOString()});
+  saveState(true); toast('تم إرسال الدعوة','ok'); render(); break;
+}
+case 'partner-accept': {
+  const me=currentEmail(); const fd=friendsData(); const from=String(id).toLowerCase();
+  const inv=fd.invites.find(x=>x.from===from && x.to===me && x.type==='partner' && x.status==='pending');
+  if (!inv) { toast('دعوة غير موجودة','warn'); break; }
+  inv.status='accepted';
+  if (!fd.partnerships.some(x=>(x.a===me&&x.b===from)||(x.a===from&&x.b===me))) fd.partnerships.push({id:Date.now(),a:me,b:from,createdAt:new Date().toISOString(),role:'partner'});
+  saveState(true); toast('تم قبول الدعوة','ok'); render(); break;
+}
+case 'partner-reject': {
+  const me=currentEmail(); const fd=friendsData(); const from=String(id).toLowerCase();
+  const inv=fd.invites.find(x=>x.from===from && x.to===me && x.type==='partner' && x.status==='pending');
+  if (inv) inv.status='rejected';
+  saveState(true); toast('تم التجاهل','ok'); render(); break;
+}
+case 'partner-remove': {
+  if (!confirm('إزالة الشريك؟')) break;
+  const me=currentEmail(); const fd=friendsData(); const t=String(id).toLowerCase();
+  fd.partnerships = fd.partnerships.filter(x=>!((x.a===me&&x.b===t)||(x.a===t&&x.b===me)));
+  saveState(true); toast('تمت الإزالة','ok'); render(); break;
+}
         case 'add-participant': addParticipant(); break;
         case 'import-json': { const f = $('#fileInput'); if (f) { f.value = ''; f.click(); } break; }
         case 'import-csv': { const f = $('#csvInput'); if (f) { f.value = ''; f.click(); } break; }
@@ -3904,6 +4001,76 @@ async function localEntryScreen(message) {
       });
     }
     
+function viewFriends() {
+  const me = currentEmail(); const fd = friendsData();
+  const tabs = [{id:'all',label:'الكل'},{id:'friends',label:'الأصدقاء'},{id:'friend-in',label:'واردة'},{id:'friend-out',label:'مرسلة'},{id:'partners',label:'الشركاء'},{id:'partner-in',label:'دعوات واردة'},{id:'partner-out',label:'دعوات مرسلة'}];
+  let html = pageHead('الأصدقاء والشركاء','إدارة الأصدقاء والشركاء.');
+  html += '<div class="card" style="margin-bottom:12px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
+  tabs.forEach(t=>{ html += '<button class="btn '+(FRIEND_TAB===t.id?'primary':'')+'" data-act="friend-tab" data-id="'+esc(t.id)+'">'+esc(t.label)+'</button>'; });
+  html += '</div></div><div class="card" style="margin-bottom:12px"><h3>بحث</h3>';
+  html += '<div style="display:flex;gap:8px"><input id="friendSearch" class="input" style="flex:1" placeholder="اسم أو بريد" value="'+esc(FRIEND_SEARCH)+'"><button class="btn primary" data-act="friend-search" '+(FRIEND_BUSY?'disabled':'')+'>بحث</button></div>';
+  if (FRIEND_SEARCH_STATUS==='empty') html += '<div class="tiny muted" style="margin-top:8px">اكتب للبحث.</div>';
+  else if (FRIEND_SEARCH_STATUS==='bademail') html += '<div class="msg warn" style="margin-top:8px">بريد غير صحيح.</div>';
+  else if (FRIEND_SEARCH_STATUS==='notfound') html += '<div class="msg warn" style="margin-top:8px">لم يُعثر على مستخدم.</div>';
+  else if (FRIEND_SEARCH_STATUS==='multiple') html += '<div class="tiny muted" style="margin-top:8px">عدة نتائج.</div>';
+  else if (FRIEND_SEARCH_STATUS==='error') html += '<div class="msg bad" style="margin-top:8px">تعذر الاتصال.</div>';
+  if (FRIEND_SEARCH_RESULTS && FRIEND_SEARCH_RESULTS.length) {
+    html += '<div style="margin-top:10px;display:grid;gap:8px">';
+    FRIEND_SEARCH_RESULTS.forEach(p=>{
+      const email=String(p.email||'').toLowerCase(); const st=friendStatus(email);
+      html += '<div class="card" style="padding:10px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div><strong>'+esc(p.name||p.username||email)+'</strong><div class="tiny muted">'+esc(email)+'</div></div><div style="display:flex;gap:6px;flex-wrap:wrap">';
+      if (st==='none'){ html += '<button class="btn primary" data-act="friend-add" data-id="'+esc(email)+'">إضافة صديق</button><button class="btn" data-act="partner-invite" data-id="'+esc(email)+'">دعوة كشريك</button>'; }
+      else if (st==='friend-out') html += '<button class="btn" disabled>تم إرسال الطلب</button>';
+      else if (st==='friend-in'){ html += '<button class="btn primary" data-act="friend-accept" data-id="'+esc(email)+'">قبول</button><button class="btn" data-act="friend-reject" data-id="'+esc(email)+'">تجاهل</button>'; }
+      else if (st==='friend') html += '<button class="btn" disabled>أصدقاء</button>';
+      else if (st==='partner-out') html += '<button class="btn" disabled>تم إرسال الدعوة</button>';
+      else if (st==='partner-in'){ html += '<button class="btn primary" data-act="partner-accept" data-id="'+esc(email)+'">قبول</button><button class="btn" data-act="partner-reject" data-id="'+esc(email)+'">تجاهل</button>'; }
+      else if (st==='partner') html += '<button class="btn" disabled>شركاء</button>';
+      html += '</div></div></div>';
+    });
+    html += '</div>';
+  }
+  html += '</div><div class="card"><h3>العلاقات</h3>';
+  // lists
+  if (FRIEND_TAB==='all' || FRIEND_TAB==='friends') {
+    const items = fd.friendships.filter(x=>x.a===me||x.b===me);
+    html += '<h4>الأصدقاء</h4>';
+    if (!items.length) html += emptyState('لا يوجد أصدقاء','أرسل طلبات صداقة.','👥');
+    items.forEach(r=>{ const other=r.a===me?r.b:r.a; html += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line)"><span>'+esc(other)+'</span><button class="btn danger" data-act="friend-remove" data-id="'+esc(other)+'">إزالة</button></div>'; });
+  }
+  if (FRIEND_TAB==='all' || FRIEND_TAB==='friend-in') {
+    const items = fd.requests.filter(x=>x.to===me && x.type==='friend' && x.status==='pending');
+    html += '<h4>طلبات واردة</h4>';
+    if (!items.length && FRIEND_TAB!=='all') html += emptyState('لا توجد طلبات','','📥');
+    items.forEach(r=>{ html += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line)"><span>'+esc(r.from)+'</span><span style="display:flex;gap:6px"><button class="btn primary" data-act="friend-accept" data-id="'+esc(r.from)+'">قبول</button><button class="btn" data-act="friend-reject" data-id="'+esc(r.from)+'">تجاهل</button></span></div>'; });
+  }
+  if (FRIEND_TAB==='friend-out') {
+    const items = fd.requests.filter(x=>x.from===me && x.type==='friend' && x.status==='pending');
+    html += '<h4>طلبات مرسلة</h4>';
+    if (!items.length) html += emptyState('لا توجد طلبات','','📤');
+    items.forEach(r=>{ html += '<div style="padding:6px 0;border-bottom:1px solid var(--line)">'+esc(r.to)+'</div>'; });
+  }
+  if (FRIEND_TAB==='all' || FRIEND_TAB==='partners') {
+    const items = fd.partnerships.filter(x=>x.a===me||x.b===me);
+    html += '<h4>الشركاء</h4>';
+    if (!items.length) html += emptyState('لا يوجد شركاء','أرسل دعوات شراكة.','🤝');
+    items.forEach(r=>{ const other=r.a===me?r.b:r.a; html += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line)"><span>'+esc(other)+'</span><button class="btn danger" data-act="partner-remove" data-id="'+esc(other)+'">إزالة</button></div>'; });
+  }
+  if (FRIEND_TAB==='partner-in') {
+    const items = fd.invites.filter(x=>x.to===me && x.type==='partner' && x.status==='pending');
+    html += '<h4>دعوات واردة</h4>';
+    if (!items.length) html += emptyState('لا توجد دعوات','','📥');
+    items.forEach(r=>{ html += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line)"><span>'+esc(r.from)+'</span><span style="display:flex;gap:6px"><button class="btn primary" data-act="partner-accept" data-id="'+esc(r.from)+'">قبول</button><button class="btn" data-act="partner-reject" data-id="'+esc(r.from)+'">تجاهل</button></span></div>'; });
+  }
+  if (FRIEND_TAB==='partner-out') {
+    const items = fd.invites.filter(x=>x.from===me && x.type==='partner' && x.status==='pending');
+    html += '<h4>دعوات مرسلة</h4>';
+    if (!items.length) html += emptyState('لا توجد دعوات','','📤');
+    items.forEach(r=>{ html += '<div style="padding:6px 0;border-bottom:1px solid var(--line)">'+esc(r.to)+'</div>'; });
+  }
+  html += '</div>';
+  return html;
+}
 async function init() {
       const prefs = loadPrefs();
       applyTheme(prefs.theme || 'light');
