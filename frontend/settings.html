@@ -1,0 +1,10 @@
+<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>الإعدادات</title><link rel="stylesheet" href="assets/css/main.css"></head><body>
+<nav class="nav"><a href="index.html">الرئيسية</a><a href="projects.html">المشاريع</a><a href="friends.html">الأصدقاء</a><a href="tasks.html">المهام</a><a href="notifications.html">الإشعارات</a><a href="admin.html">الإدارة</a><a href="settings.html">الإعدادات</a></nav>
+<div class="container"><div class="card"><h2>إعدادات التطبيق</h2><textarea id="val" rows="6"></textarea><button class="btn" onclick="save()">حفظ</button><p id="msg"></p></div></div>
+<script src="assets/js/common.js"></script>
+<script>
+BD.requireAuth();
+async function load(){ try{ const d=await BD.api('/api/settings'); document.getElementById('val').value=JSON.stringify(d.settings,null,2); }catch(e){ document.getElementById('msg').textContent=e.message;} }
+async function save(){ try{ await BD.api('/api/settings',{method:'PUT',body:document.getElementById('val').value}); document.getElementById('msg').textContent='تم الحفظ'; }catch(e){ document.getElementById('msg').textContent=e.message;} }
+load();
+</script></body></html>

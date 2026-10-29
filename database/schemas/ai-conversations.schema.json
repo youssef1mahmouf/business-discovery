@@ -1,0 +1,1 @@
+{"schemaVersion":"1.0.0","collection":"ai_conversations","purpose":"AI assistant conversations (unavailable without provider).","required":["userEmail","createdAt"],"properties":{"userEmail":{"type":"string"},"title":{"type":"string"},"createdAt":{"type":"string","format":"date-time"}}}

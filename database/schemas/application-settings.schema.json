@@ -1,0 +1,1 @@
+{"schemaVersion":"1.0.0","collection":"application_settings","purpose":"Persistent app settings.","required":["key","value"],"properties":{"key":{"type":"string"},"value":{"type":"object"},"updatedAt":{"type":"string","format":"date-time"}},"indexes":[{"keys":{"key":1},"unique":true}]}

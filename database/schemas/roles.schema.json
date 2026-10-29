@@ -1,0 +1,1 @@
+{"schemaVersion":"1.0.0","collection":"roles","purpose":"Global and project-level role definitions.","required":["name","scope"],"properties":{"name":{"type":"string"},"scope":{"type":"string","enum":["global","project"]},"permissions":{"type":"array","items":{"type":"string"}}}}

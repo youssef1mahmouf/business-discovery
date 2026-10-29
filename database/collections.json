@@ -1,0 +1,3 @@
+{
+  "collections": ["users","user_states","friend_requests","friendships","partner_invites","partnerships","app_settings","projects","project_members","participants","tasks","notifications","conversations","messages","ai_conversations"]
+}

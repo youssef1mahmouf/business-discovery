@@ -1,0 +1,45 @@
+﻿<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Business Discovery</title>
+<link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+<nav class="nav"><a href="index.html">الرئيسية</a><a href="login.html">تسجيل الدخول</a><a href="register.html">تسجيل</a><a href="projects.html">المشاريع</a><a href="friends.html">الأصدقاء</a><a href="tasks.html">المهام</a><a href="notifications.html">الإشعارات</a><a href="admin.html">الإدارة</a><a href="settings.html">الإعدادات</a></nav>
+<div class="container">
+<div class="card"><h1>Business Discovery</h1><p>منصة اكتشاف الأعمال والشراكات.</p></div>
+<canvas id="hero3d" width="600" height="300" style="width:100%;max-height:300px;display:block;"></canvas>
+</div>
+<script src="assets/vendor/gsap.js"></script>
+<script src="assets/js/common.js"></script>
+<script>
+if (window.gsap) { try { gsap.from('.card', { opacity:0, y:20, duration:0.6, stagger:0.1 }); } catch(e){} }
+</script>
+<script type="module">
+import * as THREE from './assets/vendor/three.module.js';
+const canvas = document.getElementById('hero3d');
+const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+if (canvas && !reduce && 'WebGLRenderingContext' in window) {
+  try {
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    renderer.setSize(canvas.clientWidth || 600, canvas.clientHeight || 300);
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, (canvas.clientWidth||600)/(canvas.clientHeight||300), 0.1, 100);
+    camera.position.z = 3;
+    const geo = new THREE.IcosahedronGeometry(1, 1);
+    const mat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, wireframe: true });
+    const mesh = new THREE.Mesh(geo, mat);
+    scene.add(mesh);
+    const light = new THREE.DirectionalLight(0xffffff, 1); light.position.set(2,2,2); scene.add(light);
+    function animate(){ requestAnimationFrame(animate); mesh.rotation.x += 0.003; mesh.rotation.y += 0.004; renderer.render(scene,camera); }
+    animate();
+  } catch(e){ console.warn('WebGL unavailable', e); }
+}
+</script>
+<script type="module">
+import Lenis from './assets/vendor/lenis.mjs';
+const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+if (!reduce) { try { const lenis = new Lenis({ duration: 1.2 }); function raf(time){ lenis.raf(time); requestAnimationFrame(raf); } requestAnimationFrame(raf); } catch(e){ console.warn('Lenis unavailable', e); } }
+</script>
+</body></html>

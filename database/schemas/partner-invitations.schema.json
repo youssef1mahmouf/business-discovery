@@ -1,0 +1,1 @@
+{"schemaVersion":"1.0.0","collection":"partner_invitations","purpose":"Partner invitations.","required":["from","to","status","createdAt"],"properties":{"from":{"type":"string"},"to":{"type":"string"},"status":{"type":"string","enum":["pending","accepted","rejected"]},"createdAt":{"type":"string","format":"date-time"}}}

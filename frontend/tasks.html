@@ -1,0 +1,11 @@
+<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>المهام</title><link rel="stylesheet" href="assets/css/main.css"></head><body>
+<nav class="nav"><a href="index.html">الرئيسية</a><a href="projects.html">المشاريع</a><a href="friends.html">الأصدقاء</a><a href="tasks.html">المهام</a><a href="notifications.html">الإشعارات</a><a href="admin.html">الإدارة</a></nav>
+<div class="container"><div class="card"><h2>المهام</h2><div id="list"></div></div>
+<div class="card"><h3>مهمة جديدة</h3><input id="title" placeholder="العنوان"><button class="btn" onclick="create()">إنشاء</button></div></div>
+<script src="assets/js/common.js"></script>
+<script>
+BD.requireAuth();
+async function load(){ try{ const d=await BD.api('/api/tasks'); document.getElementById('list').innerHTML=d.tasks.map(t=>'<div class="card">'+t.title+' - '+t.status+'</div>').join('')||'لا توجد مهام'; }catch(e){ document.getElementById('list').textContent=e.message;} }
+async function create(){ try{ await BD.api('/api/tasks',{method:'POST',body:JSON.stringify({title:document.getElementById('title').value})}); load(); }catch(e){} }
+load();
+</script></body></html>

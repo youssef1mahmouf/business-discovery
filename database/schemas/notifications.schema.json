@@ -1,0 +1,1 @@
+{"schemaVersion":"1.0.0","collection":"notifications","purpose":"User notifications.","required":["userEmail","type","createdAt","read"],"properties":{"userEmail":{"type":"string"},"type":{"type":"string"},"from":{"type":"string"},"createdAt":{"type":"string","format":"date-time"},"read":{"type":"boolean","default":false}},"indexes":[{"keys":{"userEmail":1,"createdAt":-1}}]}

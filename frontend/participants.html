@@ -1,0 +1,9 @@
+<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>المشاركون</title><link rel="stylesheet" href="assets/css/main.css"></head><body>
+<nav class="nav"><a href="index.html">الرئيسية</a><a href="projects.html">المشاريع</a><a href="participants.html">المشاركون</a></nav>
+<div class="container"><div class="card"><h2>المشاركون</h2><div id="list"></div></div></div>
+<script src="assets/js/common.js"></script>
+<script>
+BD.requireAuth();
+async function load(){ try{ const d=await BD.api('/api/participants'); document.getElementById('list').innerHTML=d.participants.map(p=>'<div class="card">'+p.name+' - '+p.email+'</div>').join('')||'لا يوجد'; }catch(e){ document.getElementById('list').textContent=e.message;} }
+load();
+</script></body></html>

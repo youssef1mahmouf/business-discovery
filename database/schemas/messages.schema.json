@@ -1,0 +1,1 @@
+{"schemaVersion":"1.0.0","collection":"messages","purpose":"Chat messages.","required":["conversationId","sender","content","createdAt"],"properties":{"conversationId":{"type":"string"},"sender":{"type":"string"},"content":{"type":"string"},"createdAt":{"type":"string","format":"date-time"}},"indexes":[{"keys":{"conversationId":1,"createdAt":1}}]}

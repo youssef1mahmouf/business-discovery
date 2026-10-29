@@ -1,0 +1,1 @@
+{"schemaVersion":"1.0.0","collection":"participants","purpose":"Project participants.","required":["name","projectId","createdAt"],"properties":{"_id":{"type":"objectId"},"name":{"type":"string"},"email":{"type":"string"},"phone":{"type":"string"},"projectId":{"type":"string"},"createdAt":{"type":"string","format":"date-time"}}}

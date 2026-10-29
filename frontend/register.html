@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Business Discovery - Register</title>
+<link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+<nav class="nav"><a href="index.html">الرئيسية</a><a href="login.html">تسجيل الدخول</a><a href="register.html">تسجيل</a></nav>
+<div class="container"><div class="card">
+<h2>إنشاء حساب</h2>
+<input id="email" type="email" placeholder="البريد الإلكتروني">
+<input id="password" type="password" placeholder="كلمة المرور (8 أحرف على الأقل)">
+<button class="btn" onclick="reg()">تسجيل</button>
+<p id="msg"></p>
+</div></div>
+<script src="assets/js/common.js"></script>
+<script>
+async function reg(){
+  try {
+    const data = await BD.api('/api/auth/register', { method:'POST', body: JSON.stringify({ email: document.getElementById('email').value, password: document.getElementById('password').value }) });
+    BD.setToken(data.token);
+    location.href = 'projects.html';
+  } catch(e){ document.getElementById('msg').textContent = e.message; }
+}
+</script>
+</body></html>

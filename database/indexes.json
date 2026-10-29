@@ -1,0 +1,8 @@
+[
+  { "collection": "users", "keys": { "email": 1 }, "unique": true },
+  { "collection": "project_members", "keys": { "projectId": 1, "email": 1 }, "unique": true },
+  { "collection": "friendships", "keys": { "a": 1, "b": 1 }, "unique": true },
+  { "collection": "partner_invitations", "keys": { "from": 1, "to": 1, "type": 1 }, "unique": true },
+  { "collection": "notifications", "keys": { "userEmail": 1, "createdAt": -1 } },
+  { "collection": "messages", "keys": { "conversationId": 1, "createdAt": 1 } }
+]

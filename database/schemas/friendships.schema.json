@@ -1,0 +1,1 @@
+{"schemaVersion":"1.0.0","collection":"friendships","purpose":"Confirmed friendships.","required":["a","b","createdAt"],"properties":{"a":{"type":"string"},"b":{"type":"string"},"createdAt":{"type":"string","format":"date-time"}},"indexes":[{"keys":{"a":1,"b":1},"unique":true}]}

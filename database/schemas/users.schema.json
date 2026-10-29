@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0.0",
+  "collection": "users",
+  "purpose": "Registered platform accounts and global roles.",
+  "required": ["email", "passwordHash", "role", "createdAt"],
+  "properties": {
+    "_id": { "type": "objectId" },
+    "email": { "type": "string", "format": "email", "unique": true },
+    "passwordHash": { "type": "string", "sensitive": true },
+    "role": { "type": "string", "enum": ["main_super_admin", "site_admin", "regular_user"] },
+    "displayName": { "type": "string" },
+    "status": { "type": "string", "enum": ["active", "disabled"], "default": "active" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "indexes": [{ "keys": { "email": 1 }, "unique": true }]
+}
