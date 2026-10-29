@@ -17,6 +17,7 @@ let friendRequestsCollection = null;
 let friendshipsCollection = null;
 let partnerInvitesCollection = null;
 let partnershipsCollection = null;
+let appSettingsCollection = null;
 let httpServer = null;
 
 function loadEnvFile() {
@@ -501,6 +502,7 @@ async function connectDatabase(databaseConfig) {
   friendshipsCollection = db.collection('friendships');
   partnerInvitesCollection = db.collection('partner_invites');
   partnershipsCollection = db.collection('partnerships');
+  appSettingsCollection = db.collection('app_settings');
   await usersCollection.createIndex({ email: 1 }, { unique: true });
   await friendRequestsCollection.createIndex({ from: 1, to: 1, type: 1 }, { unique: true });
 
