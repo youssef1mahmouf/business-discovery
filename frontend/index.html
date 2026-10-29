@@ -2431,7 +2431,7 @@ let FRIEND_TAB = 'all', FRIEND_SEARCH = '', FRIEND_SEARCH_RESULTS = null, FRIEND
       const pr = currentProject();
       let html = '';
       try {
-        if (!pr && VIEW !== 'projects' && VIEW !== 'data') {
+        if (!pr && VIEW !== 'projects' && VIEW !== 'data' && VIEW !== 'friends') {
           html = AUTH_ACCOUNT_TYPE === 'partner'
             ? emptyState('لا توجد مشاريع مشتركة بعد', 'أرسل أو اقبل دعوة مشاركة من صفحة الشركاء.', '🤝')
             : emptyState('لا يوجد مشروع بعد', 'ابدأ مشروعاً جديداً لتتمكن من استخدام هذه الشاشة.', '📁', 'مشروع جديد', 'new-project');
@@ -2490,6 +2490,7 @@ host.innerHTML = (readonly ? '<div class="readonly-banner">المشروع للع
         '<div class="tiny muted" style="margin-top:6px">' + esc(msg) + '</div>' +
         (btnLabel ? '<div style="margin-top:12px"><button class="btn primary" data-act="' + act + '">' + esc(btnLabel) + '</button></div>' : '') +
         '</div>';
+}
 function friendsData() { S.friends = S.friends || { requests: [], friendships: [], partnerships: [], invites: [] }; if (!S.friends.friendships) S.friends.friendships = []; if (!S.friends.requests) S.friends.requests = []; if (!S.friends.partnerships) S.friends.partnerships = []; if (!S.friends.invites) S.friends.invites = []; return S.friends; }
 function currentEmail() { return String(AUTH_USER && AUTH_USER.email || CURRENT_PROFILE_ID || '').trim().toLowerCase(); }
 function friendStatus(targetEmail) {
@@ -2526,7 +2527,6 @@ async function friendSearch() {
   } catch (e) { FRIEND_SEARCH_STATUS='error'; FRIEND_SEARCH_RESULTS=[]; }
   FRIEND_BUSY = false; render();
 }
-    }
     function pageHead(title, sub) {
       return '<div class="page-head"><h2>' + esc(title) + '</h2>' +
         (sub ? '<p>' + esc(sub) + '</p>' : '') + '</div>';
