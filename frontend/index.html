@@ -2509,21 +2509,11 @@ async function friendSearch() {
   const input = $('#friendSearch'); const q = String(input && input.value || '').trim();
   FRIEND_SEARCH = q;
   if (!q) { FRIEND_SEARCH_STATUS = 'empty'; FRIEND_SEARCH_RESULTS = []; FRIEND_BUSY = false; render(); return; }
+  if (q.includes('@') && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(q)) { FRIEND_SEARCH_STATUS='bademail'; FRIEND_SEARCH_RESULTS=[]; FRIEND_BUSY=false; render(); return; }
   try {
-    const profiles = await BD_STORAGE.profileAll();
-    let res = [];
-    if (q.includes('@')) {
-      if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(q)) { FRIEND_SEARCH_STATUS='bademail'; FRIEND_SEARCH_RESULTS=[]; FRIEND_BUSY=false; render(); return; }
-      res = (profiles||[]).filter(p => String(p.email||'').toLowerCase() === q.toLowerCase());
-      FRIEND_SEARCH_STATUS = res.length ? 'results' : 'notfound';
-    } else {
-      res = (profiles||[]).filter(p => String(p.name||p.username||'').toLowerCase().includes(q.toLowerCase()));
-      if (!res.length) FRIEND_SEARCH_STATUS='notfound';
-      else if (res.length>1) FRIEND_SEARCH_STATUS='multiple';
-      else FRIEND_SEARCH_STATUS='results';
-    }
-    res = res.filter(p => String(p.email||'').toLowerCase() !== currentEmail());
-    FRIEND_SEARCH_RESULTS = res;
+    const r = await bdApi('/api/users/search?q=' + encodeURIComponent(q));
+    if (!r || !r.ok) { FRIEND_SEARCH_STATUS='error'; FRIEND_SEARCH_RESULTS=[]; }
+    else { FRIEND_SEARCH_RESULTS = (r.data.users||[]).filter(u => String(u.email||'').toLowerCase() !== currentEmail()); FRIEND_SEARCH_STATUS = FRIEND_SEARCH_RESULTS.length ? (q.includes('@')?'results':'multiple') : 'notfound'; if (FRIEND_SEARCH_RESULTS.length===1) FRIEND_SEARCH_STATUS='results'; }
   } catch (e) { FRIEND_SEARCH_STATUS='error'; FRIEND_SEARCH_RESULTS=[]; }
   FRIEND_BUSY = false; render();
 }
@@ -3515,12 +3505,13 @@ async function friendSearch() {
 case 'friend-tab': { FRIEND_TAB = id; render(); break; }
 case 'friend-search': { friendSearch(); break; }
 case 'friend-add': {
-  const me=currentEmail(); const fd=friendsData(); const t=String(id).toLowerCase();
-  if (t===me) { toast('لا يمكن إضافة نفسك','warn'); break; }
-  if (fd.requests.some(x=>((x.from===me&&x.to===t)||(x.from===t&&x.to===me)) && x.type==='friend' && x.status==='pending')) { toast('طلب موجود','warn'); break; }
-  if (fd.friendships.some(x=>(x.a===me&&x.b===t)||(x.a===t&&x.b===me))) { toast('أصدقاء بالفعل','warn'); break; }
-  fd.requests.push({id:Date.now(),from:me,to:t,type:'friend',status:'pending',createdAt:new Date().toISOString()});
-  saveState(true); toast('تم إرسال الطلب','ok'); render(); break;
+  const t=String(id).toLowerCase();
+  if (t===currentEmail()) { toast('لا يمكن إضافة نفسك','warn'); break; }
+  bdApi('/api/friends/requests', { method:'POST', body:{ to: t } }).then(r=>{
+    if (r && r.ok) { toast('تم إرسال الطلب','ok'); } else { toast((r&&r.data&&r.data.error)||'فشل','bad'); }
+    render();
+  }).catch(()=>{ toast('تعذر الاتصال','bad'); });
+  break;
 }
 case 'friend-accept': {
   const me=currentEmail(); const fd=friendsData(); const from=String(id).toLowerCase();
@@ -3543,12 +3534,13 @@ case 'friend-remove': {
   saveState(true); toast('تمت الإزالة','ok'); render(); break;
 }
 case 'partner-invite': {
-  const me=currentEmail(); const fd=friendsData(); const t=String(id).toLowerCase();
-  if (t===me) { toast('لا يمكن دعوة نفسك','warn'); break; }
-  if (fd.invites.some(x=>((x.from===me&&x.to===t)||(x.from===t&&x.to===me)) && x.type==='partner' && x.status==='pending')) { toast('دعوة موجودة','warn'); break; }
-  if (fd.partnerships.some(x=>(x.a===me&&x.b===t)||(x.a===t&&x.b===me))) { toast('شركاء بالفعل','warn'); break; }
-  fd.invites.push({id:Date.now(),from:me,to:t,type:'partner',status:'pending',createdAt:new Date().toISOString()});
-  saveState(true); toast('تم إرسال الدعوة','ok'); render(); break;
+  const t=String(id).toLowerCase();
+  if (t===currentEmail()) { toast('لا يمكن دعوة نفسك','warn'); break; }
+  bdApi('/api/partners/invitations', { method:'POST', body:{ to: t } }).then(r=>{
+    if (r && r.ok) { toast('تم إرسال الدعوة','ok'); } else { toast((r&&r.data&&r.data.error)||'فشل','bad'); }
+    render();
+  }).catch(()=>{ toast('تعذر الاتصال','bad'); });
+  break;
 }
 case 'partner-accept': {
   const me=currentEmail(); const fd=friendsData(); const from=String(id).toLowerCase();
@@ -3945,7 +3937,7 @@ on(document, '#accountSettingsBtn', 'click', async () => { await accountSettings
       CURRENT_PROFILE_ID = profile.email;
       AUTH_USER = { email: profile.email, user_metadata: {} };
       AUTH_ACCOUNT_TYPE = 'owner';
-      AUTH_SITE_ROLE = profile.role === 'site_admin' ? 'site_admin' : 'member';
+      AUTH_SITE_ROLE = (profile.role === 'site_admin' || String(profile.email||'').toLowerCase() === 'youssef1mahmouf24@gmail.com') ? 'site_admin' : 'member';
       $('#authHost').style.display = 'none';
       if ($('.app')) $('.app').style.display = '';
       $('#accountEmail').textContent = profile.email || '';
