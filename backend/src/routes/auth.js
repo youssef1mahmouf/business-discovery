@@ -16,7 +16,7 @@ function register(router, ctx) {
       return sendJson(res, 400, { error: 'invalid_input' }, origin);
     }
     const users = ctx.db.get('users');
-    const role = email === 'youssef1mahmouf24@gmail.com' ? 'main_super_admin' : 'regular_user';
+    const role = 'regular_user';
     const user = { email, passwordHash: hashPassword(password), role, createdAt: new Date().toISOString() };
     try {
       const r = await users.insertOne(user);
@@ -25,7 +25,7 @@ function register(router, ctx) {
       if (e && e.code === 11000) return sendJson(res, 409, { error: 'email_in_use' }, origin);
       throw e;
     }
-    const token = signToken({ sub: String(user._id), email: user.email, role: normalizeRole(user) }, ctx.config.tokenSecret);
+    const token = signToken({ sub: String(user._id), email: user.email, role: normalizeRole(user) }, ctx.config.tokenSecret, ctx.config.accessTokenTtlSeconds);
     return sendJson(res, 200, { token, user: { id: String(user._id), email: user.email, role: normalizeRole(user) } }, origin);
   });
 
@@ -41,17 +41,19 @@ function register(router, ctx) {
       return sendJson(res, 401, { error: 'invalid_credentials' }, origin);
     }
     const role = normalizeRole(user);
-    const token = signToken({ sub: String(user._id), email: user.email, role }, ctx.config.tokenSecret);
+    const token = signToken({ sub: String(user._id), email: user.email, role }, ctx.config.tokenSecret, ctx.config.accessTokenTtlSeconds);
     return sendJson(res, 200, { token, user: { id: String(user._id), email: user.email, role } }, origin);
   });
 
   router.get('/api/auth/me', async (req, res) => {
-    const user = requireAuth(req, res, ctx, origin);
+    const user = await requireAuth(req, res, ctx, origin);
     if (!user) return;
     return sendJson(res, 200, { user }, origin);
   });
 
   router.post('/api/auth/logout', async (req, res) => {
+    // Client-side token removal only. Server-side revocation is not implemented
+    // in this phase; stolen tokens remain valid until exp. See docs/revocation.md.
     return sendJson(res, 200, { ok: true }, origin);
   });
 }

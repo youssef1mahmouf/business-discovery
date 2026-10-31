@@ -44,6 +44,17 @@ function validateConfig(env = process.env) {
     tokenSecret = 'dev-only-change-me';
   }
 
+  const ttlRaw = env.ACCESS_TOKEN_TTL_SECONDS;
+  let accessTokenTtlSeconds = 900;
+  if (ttlRaw !== undefined && String(ttlRaw).trim() !== '') {
+    const n = Number(ttlRaw);
+    if (!Number.isInteger(n) || n < 60 || n > 86400) {
+      errors.push('ACCESS_TOKEN_TTL_SECONDS must be an integer between 60 and 86400');
+    } else {
+      accessTokenTtlSeconds = n;
+    }
+  }
+
   let frontendOrigin = env.FRONTEND_ORIGIN;
   if (production) {
     if (!frontendOrigin || frontendOrigin === '*') errors.push('FRONTEND_ORIGIN must be explicitly configured in production');
@@ -64,7 +75,7 @@ function validateConfig(env = process.env) {
     e.name = 'ConfigValidationError';
     throw e;
   }
-  return { port, mongoUri, tokenSecret: String(tokenSecret), frontendOrigin: String(frontendOrigin), dbName, production };
+  return { port, mongoUri, tokenSecret: String(tokenSecret), frontendOrigin: String(frontendOrigin), dbName, production, accessTokenTtlSeconds };
 }
 
 module.exports = { loadEnvFile, validateConfig, ROOT, REPO_ROOT };

@@ -8,7 +8,7 @@ function register(router, ctx) {
 
   router.get('/api/tasks', async (req,res) => {
 
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const url = new URL('http://x'+req.url);
     const page = Math.max(1, Number(url.searchParams.get('page')||1));
     const limit = Math.min(50, Number(url.searchParams.get('limit')||20));
@@ -19,7 +19,7 @@ function register(router, ctx) {
   });
 
   router.post('/api/tasks', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     let body; try { body=await parseBody(req);} catch { return sendJson(res,400,{error:'invalid_json'},origin);}
     const title = String(body.title||'').trim();
     if (!title) return sendJson(res,400,{error:'invalid_input'},origin);
@@ -29,7 +29,7 @@ function register(router, ctx) {
   });
 
   router.put('/api/tasks/:id', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     let body; try { body=await parseBody(req);} catch { return sendJson(res,400,{error:'invalid_json'},origin);}
     const { ObjectId } = require('mongodb');
     let o; try { o = new ObjectId(req.params.id);} catch { return sendJson(res,400,{error:'invalid_id'},origin);}
@@ -43,7 +43,7 @@ function register(router, ctx) {
   });
 
   router.get('/api/notifications', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const url = new URL('http://x'+req.url);
     const page = Math.max(1, Number(url.searchParams.get('page')||1));
     const limit = Math.min(50, Number(url.searchParams.get('limit')||20));
@@ -54,14 +54,14 @@ function register(router, ctx) {
   });
 
   router.post('/api/notifications/:id/read', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const { ObjectId } = require('mongodb');
     let o; try { o = new ObjectId(req.params.id);} catch { return sendJson(res,400,{error:'invalid_id'},origin);}
     await notifs.updateOne({ _id: o, userEmail: u.email }, { $set: { read: true } });
     return sendJson(res,200,{ ok: true },origin);
   });
   router.delete('/api/tasks/:id', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const { ObjectId } = require('mongodb');
     let o; try { o=new ObjectId(req.params.id);} catch { return sendJson(res,400,{error:'invalid_id'},origin);}
     const t = await tasks.findOne({ _id: o });
@@ -71,7 +71,7 @@ function register(router, ctx) {
   });
 
   router.post('/api/notifications/read-all', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     await notifs.updateMany({ userEmail: u.email, read: false }, { $set: { read: true } });
     return sendJson(res,200,{ ok:true },origin);
   });

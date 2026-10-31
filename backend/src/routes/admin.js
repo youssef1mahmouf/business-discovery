@@ -7,7 +7,7 @@ function register(router, ctx) {
   const settings = ctx.db.get('app_settings');
 
   router.get('/api/admin/stats', async (req,res) => {
-    const u = requireAdmin(req,res,ctx,origin); if(!u) return;
+    const u = await requireAdmin(req,res,ctx,origin); if(!u) return;
     const userCount = await users.countDocuments();
     const projectCount = await ctx.db.get('projects').countDocuments();
     const taskCount = await ctx.db.get('tasks').countDocuments();
@@ -15,7 +15,7 @@ function register(router, ctx) {
   });
 
   router.get('/api/admin/users', async (req,res) => {
-    const u = requireAdmin(req,res,ctx,origin); if(!u) return;
+    const u = await requireAdmin(req,res,ctx,origin); if(!u) return;
     const url = new URL('http://x'+req.url);
     const q = String(url.searchParams.get('q')||'').trim().toLowerCase();
     const page = Math.max(1, Number(url.searchParams.get('page')||1));
@@ -27,13 +27,13 @@ function register(router, ctx) {
   });
 
   router.get('/api/settings', async (req,res) => {
-    const u = requireAdmin(req,res,ctx,origin); if(!u) return;
+    const u = await requireAdmin(req,res,ctx,origin); if(!u) return;
     const doc = await settings.findOne({ key: 'app' });
     return sendJson(res,200,{ settings: doc ? doc.value : {} },origin);
   });
 
   router.put('/api/settings', async (req,res) => {
-    const u = requireAdmin(req,res,ctx,origin); if(!u) return;
+    const u = await requireAdmin(req,res,ctx,origin); if(!u) return;
     let body; try { body=await parseBody(req);} catch { return sendJson(res,400,{error:'invalid_json'},origin);}
     if (body === null || typeof body !== 'object' || Array.isArray(body)) return sendJson(res,400,{error:'invalid_input'},origin);
     await settings.updateOne({ key: 'app' }, { $set: { key: 'app', value: body, updatedAt: new Date().toISOString() } }, { upsert: true });

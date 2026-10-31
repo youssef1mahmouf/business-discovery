@@ -11,7 +11,7 @@ function register(router, ctx) {
   const ps = ctx.db.get('partnerships');
 
   router.get('/api/friends', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const items = await fs_.find({ $or: [{ a: u.email },{ b: u.email }] }).toArray();
     const friends = items.map(x => x.a === u.email ? x.b : x.a);
     const pending = await fr.find({ to: u.email, type: 'friend', status: 'pending' }).toArray();
@@ -19,7 +19,7 @@ function register(router, ctx) {
   });
 
   router.post('/api/friends/requests', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     let body; try { body=await parseBody(req);} catch { return sendJson(res,400,{error:'invalid_json'},origin);}
     const to = String(body.to||'').trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to) || to === u.email) return sendJson(res,400,{error:'invalid_input'},origin);
@@ -30,7 +30,7 @@ function register(router, ctx) {
   });
 
   router.post('/api/friends/requests/:id/accept', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const o = oid(req.params.id);
     if (!o) return sendJson(res, 400, { error: 'invalid_id' }, origin);
     const r = await fr.findOne({ _id: o });
@@ -42,7 +42,7 @@ function register(router, ctx) {
   });
 
   router.delete('/api/friends/requests/:id', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const { ObjectId } = require('mongodb');
     let o; try { o=new ObjectId(req.params.id);} catch { return sendJson(res,400,{error:'invalid_id'},origin);}
     const r = await fr.findOne({ _id: o });
@@ -52,13 +52,13 @@ function register(router, ctx) {
   });
 
   router.delete('/api/friends/:email', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const target = decodeURIComponent(req.params.email).toLowerCase();
     await fs_.deleteMany({ $or: [{ a: u.email, b: target }, { a: target, b: u.email }] });
     return sendJson(res,200,{ ok:true },origin);
   });
   router.post('/api/friends/requests/:id/reject', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const o = oid(req.params.id);
     if (!o) return sendJson(res, 400, { error: 'invalid_id' }, origin);
     const r = await fr.findOne({ _id: o });
@@ -68,7 +68,7 @@ function register(router, ctx) {
   });
 
   router.get('/api/partners', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const items = await ps.find({ $or: [{ a: u.email },{ b: u.email }] }).toArray();
     const partners = items.map(x => x.a === u.email ? x.b : x.a);
     const pending = await pi.find({ to: u.email, type: 'partner', status: 'pending' }).toArray();
@@ -76,7 +76,7 @@ function register(router, ctx) {
   });
 
   router.post('/api/partners/invitations', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     let body; try { body=await parseBody(req);} catch { return sendJson(res,400,{error:'invalid_json'},origin);}
     const to = String(body.to||'').trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to) || to === u.email) return sendJson(res,400,{error:'invalid_input'},origin);
@@ -87,7 +87,7 @@ function register(router, ctx) {
   });
 
   router.post('/api/partners/invitations/:id/accept', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const o = oid(req.params.id);
     if (!o) return sendJson(res, 400, { error: 'invalid_id' }, origin);
     const r = await pi.findOne({ _id: o });
@@ -99,7 +99,7 @@ function register(router, ctx) {
   });
 
   router.post('/api/partners/invitations/:id/reject', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const o = oid(req.params.id);
     if (!o) return sendJson(res, 400, { error: 'invalid_id' }, origin);
     const r = await pi.findOne({ _id: o });

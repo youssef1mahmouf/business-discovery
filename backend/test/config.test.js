@@ -22,3 +22,9 @@ test('development uses safe local defaults', () => {
   assert.equal(config.frontendOrigin, '*');
   assert.equal(config.dbName, 'business_discovery');
 });
+
+test('access token ttl must be valid integer', () => {
+  assert.throws(() => validateConfig({ MONGODB_URI: 'mongodb://127.0.0.1:27017/test', ACCESS_TOKEN_TTL_SECONDS: 'abc' }), /ACCESS_TOKEN_TTL_SECONDS/);
+  const c = validateConfig({ MONGODB_URI: 'mongodb://127.0.0.1:27017/test', ACCESS_TOKEN_TTL_SECONDS: '120' });
+  assert.equal(c.accessTokenTtlSeconds, 120);
+});

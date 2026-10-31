@@ -11,7 +11,7 @@ function register(router, ctx) {
   const participants = ctx.db.get('participants');
 
   router.get('/api/projects', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const url = new URL('http://x'+req.url);
     const page = Math.max(1, Number(url.searchParams.get('page')||1));
     const limit = Math.min(50, Number(url.searchParams.get('limit')||20));
@@ -25,7 +25,7 @@ function register(router, ctx) {
   });
 
   router.post('/api/projects', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     let body; try { body=await parseBody(req);} catch { return sendJson(res,400,{error:'invalid_json'},origin);}
     const name = String(body.name||'').trim();
     if (!name) return sendJson(res,400,{error:'invalid_input'},origin);
@@ -35,7 +35,7 @@ function register(router, ctx) {
   });
 
   router.put('/api/projects/:id', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const id = req.params.id;
     const m = await members.findOne({ projectId: id, email: u.email });
     if (!m || m.role !== 'owner') return sendJson(res,403,{error:'forbidden'},origin);
@@ -50,7 +50,7 @@ function register(router, ctx) {
   });
 
   router.delete('/api/projects/:id', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const id = req.params.id;
     const m = await members.findOne({ projectId: id, email: u.email });
     if (!m || m.role !== 'owner') return sendJson(res,403,{error:'forbidden'},origin);
@@ -59,7 +59,7 @@ function register(router, ctx) {
   });
 
   router.delete('/api/projects/:id/members/:email', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const id = req.params.id;
     const m = await members.findOne({ projectId: id, email: u.email });
     if (!m || m.role !== 'owner') return sendJson(res,403,{error:'forbidden'},origin);
@@ -69,7 +69,7 @@ function register(router, ctx) {
     return sendJson(res,200,{ ok:true },origin);
   });
   router.get('/api/projects/:id', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const id = req.params.id;
     const p = await projects.findOne({ _id: oid(id) });
     if (!p) return sendJson(res,404,{error:'not_found'},origin);
@@ -81,7 +81,7 @@ function register(router, ctx) {
   });
 
   router.put('/api/projects/:id/members/:email/role', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const id = req.params.id;
     const m = await members.findOne({ projectId: id, email: u.email });
     if (!m || m.role !== 'owner') return sendJson(res,403,{error:'forbidden'},origin);
@@ -94,7 +94,7 @@ function register(router, ctx) {
     return sendJson(res,200,{ ok:true },origin);
   });
   router.post('/api/projects/:id/members', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const id = req.params.id;
     const m = await members.findOne({ projectId: id, email: u.email });
     if (!m || m.role !== 'owner') return sendJson(res,403,{error:'forbidden'},origin);
@@ -108,7 +108,7 @@ function register(router, ctx) {
   });
 
   router.get('/api/participants', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const url = new URL('http://x'+req.url);
     const page = Math.max(1, Number(url.searchParams.get('page')||1));
     const limit = Math.min(50, Number(url.searchParams.get('limit')||20));
@@ -120,7 +120,7 @@ function register(router, ctx) {
   });
 
   router.put('/api/participants/:id', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     let body; try { body=await parseBody(req);} catch { return sendJson(res,400,{error:'invalid_json'},origin);}
     const { ObjectId } = require('mongodb');
     let o; try { o=new ObjectId(req.params.id);} catch { return sendJson(res,400,{error:'invalid_id'},origin);}
@@ -133,14 +133,14 @@ function register(router, ctx) {
     return sendJson(res,200,{ ok:true },origin);
   });
   router.delete('/api/participants/:id', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const { ObjectId } = require('mongodb');
     let o; try { o=new ObjectId(req.params.id);} catch { return sendJson(res,400,{error:'invalid_id'},origin);}
     await participants.deleteOne({ _id: o });
     return sendJson(res,200,{ ok:true },origin);
   });
   router.post('/api/participants', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     let body; try { body=await parseBody(req);} catch { return sendJson(res,400,{error:'invalid_json'},origin);}
     const name = String(body.name||'').trim();
     if (!name) return sendJson(res,400,{error:'invalid_input'},origin);

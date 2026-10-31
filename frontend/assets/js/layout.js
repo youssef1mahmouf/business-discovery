@@ -21,7 +21,6 @@
   }
   function normalizeRole(p){
     if (!p) return 'regular_user';
-    if (String(p.email||'').toLowerCase() === 'youssef1mahmouf24@gmail.com') return 'main_super_admin';
     const r = p.role;
     if (r === 'main_super_admin' || r === 'site_admin') return r;
     return 'regular_user';

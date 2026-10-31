@@ -9,14 +9,14 @@ function register(router, ctx) {
   const msgs = ctx.db.get('messages');
 
   router.get('/api/conversations', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const items = await convs.find({ members: u.email }).toArray();
     const withUnread = items.map(c => ({ ...c, unread: (c.unread && c.unread[u.email]) || 0 }));
     return sendJson(res,200,{ conversations: withUnread },origin);
   });
 
   router.post('/api/conversations', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     let body; try { body=await parseBody(req);} catch { return sendJson(res,400,{error:'invalid_json'},origin);}
     const type = ['general','group','direct'].includes(body.type) ? body.type : 'group';
     const members = Array.isArray(body.members) ? body.members.map(x=>String(x).trim().toLowerCase()) : [];
@@ -32,7 +32,7 @@ function register(router, ctx) {
   });
 
   router.get('/api/conversations/:id/messages', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const _oid = oid(req.params.id);
     if (!_oid) return sendJson(res, 400, { error: 'invalid_id' }, origin);
     const c = await convs.findOne({ _id: _oid });
@@ -45,7 +45,7 @@ function register(router, ctx) {
   });
 
   router.post('/api/conversations/:id/messages', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const _oid = oid(req.params.id);
     if (!_oid) return sendJson(res, 400, { error: 'invalid_id' }, origin);
     const c = await convs.findOne({ _id: _oid });
@@ -62,7 +62,7 @@ function register(router, ctx) {
     return sendJson(res,201,{ message: doc },origin);
   });
   router.post('/api/ai/chat', async (req,res) => {
-    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     const key = process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
     if (!key) return sendJson(res,503,{ error:'ai_unavailable', message:'No AI provider configured' },origin);
     return sendJson(res,503,{ error:'ai_not_implemented' },origin);
