@@ -9,7 +9,8 @@ function register(router, ctx) {
   router.get('/api/conversations', async (req,res) => {
     const u = requireAuth(req,res,ctx,origin); if(!u) return;
     const items = await convs.find({ members: u.email }).toArray();
-    return sendJson(res,200,{ conversations: items },origin);
+    const withUnread = items.map(c => ({ ...c, unread: (c.unread && c.unread[u.email]) || 0 }));
+    return sendJson(res,200,{ conversations: withUnread },origin);
   });
 
   router.post('/api/conversations', async (req,res) => {
@@ -32,6 +33,7 @@ function register(router, ctx) {
     const u = requireAuth(req,res,ctx,origin); if(!u) return;
     const c = await convs.findOne({ _id: require('mongodb').ObjectId(req.params.id) });
     if (!c || !c.members.includes(u.email)) return sendJson(res,403,{error:'forbidden'},origin);
+    await convs.updateOne({ _id: c._id }, { $set: { ['unread.' + u.email]: 0 } });
     const url = new URL('http://x'+req.url);
     const limit = Math.min(50, Number(url.searchParams.get('limit')||20));
     const items = await msgs.find({ conversationId: req.params.id }).sort({ createdAt: -1 }).limit(limit).toArray();
@@ -47,6 +49,10 @@ function register(router, ctx) {
     if (!content || content.length > 2000) return sendJson(res,400,{error:'invalid_input'},origin);
     const doc = { conversationId: req.params.id, sender: u.email, content, createdAt: new Date().toISOString() };
     const r = await msgs.insertOne(doc); doc._id = r.insertedId;
+    // increment unread for other members
+    const inc = {};
+    for (const m of c.members) if (m !== u.email) inc['unread.' + m] = 1;
+    if (Object.keys(inc).length) await convs.updateOne({ _id: c._id }, { $inc: inc });
     return sendJson(res,201,{ message: doc },origin);
   });
   router.post('/api/ai/chat', async (req,res) => {

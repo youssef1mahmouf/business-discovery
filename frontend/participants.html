@@ -1,7 +1,36 @@
 <!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>المشاركون</title><link rel="stylesheet" href="assets/css/main.css"></head><body>
-<nav class="nav"><a href="index.html">الرئيسية</a><a href="projects.html">المشاريع</a><a href="participants.html">المشاركون</a></nav>
-<div class="container"><div class="card"><h2>المشاركون</h2><div id="list"></div></div></div>
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="bdSidebar">
+    <div class="sidebar-brand"><div class="brand-icon">BD</div><span class="brand-text">Business Discovery</span></div>
+    <button class="sidebar-toggle" id="bdCollapseBtn">⇔</button>
+    <nav class="sidebar-nav" id="bdSidebarNav"></nav>
+    <div class="sidebar-footer">© 2026</div>
+  </aside>
+  <div class="sidebar-overlay" id="bdOverlay"></div>
+  <div class="main-area">
+    <header class="topbar" id="bdTopbar">
+      <button class="mobile-menu-btn" id="bdMenuBtn">☰</button>
+      <div class="topbar-left"><h1 class="page-title" id="bdPageTitle"></h1></div>
+      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث..."></div>
+      <div class="topbar-actions">
+        <a href="notifications.html" class="icon-btn">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
+        <div class="profile-menu">
+          <button class="profile-btn" id="bdProfileBtn">👤 <span id="bdUserEmail"></span></button>
+          <div class="profile-dropdown" id="bdProfileDropdown">
+            <a href="settings.html">الإعدادات</a>
+            <a href="#" id="bdLogout">تسجيل الخروج</a>
+          </div>
+        </div>
+      </div>
+    </header>
+    <main class="content" id="bdContent">
+      <div class="container"><div class="card"><h2>المشاركون</h2><div id="list"></div></div></div>
+    </main>
+    <footer class="app-footer" id="bdFooter">Business Discovery © 2026 — جميع الحقوق محفوظة</footer>
+  </div>
+</div>
 <script src="assets/js/common.js"></script>
+<script src="assets/js/layout.js"></script>
 <script>
 BD.requireAuth();
 async function load(){ try{ const d=await BD.api('/api/participants'); document.getElementById('list').innerHTML=d.participants.map(p=>'<div class="card">'+p.name+' - '+p.email+'</div>').join('')||'لا يوجد'; }catch(e){ document.getElementById('list').textContent=e.message;} }
