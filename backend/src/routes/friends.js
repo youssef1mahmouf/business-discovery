@@ -2,6 +2,7 @@ const { sendJson, parseBody } = require('../middleware/http');
 const { requireAuth } = require('../middleware/auth');
 const { ObjectId } = require('mongodb');
 
+function oid(v){ try { return new ObjectId(v); } catch { return null; } }
 function register(router, ctx) {
   const origin = ctx.config.frontendOrigin === '*' ? '*' : ctx.config.frontendOrigin;
   const fr = ctx.db.get('friend_requests');
@@ -30,7 +31,8 @@ function register(router, ctx) {
 
   router.post('/api/friends/requests/:id/accept', async (req,res) => {
     const u = requireAuth(req,res,ctx,origin); if(!u) return;
-    const o = new ObjectId(req.params.id);
+    const o = oid(req.params.id);
+    if (!o) return sendJson(res, 400, { error: 'invalid_id' }, origin);
     const r = await fr.findOne({ _id: o });
     if (!r || r.to !== u.email || r.type !== 'friend' || r.status !== 'pending') return sendJson(res,403,{error:'forbidden'},origin);
     await fr.updateOne({ _id: o }, { $set: { status: 'accepted' } });
@@ -57,7 +59,8 @@ function register(router, ctx) {
   });
   router.post('/api/friends/requests/:id/reject', async (req,res) => {
     const u = requireAuth(req,res,ctx,origin); if(!u) return;
-    const o = new ObjectId(req.params.id);
+    const o = oid(req.params.id);
+    if (!o) return sendJson(res, 400, { error: 'invalid_id' }, origin);
     const r = await fr.findOne({ _id: o });
     if (!r || r.to !== u.email || r.type !== 'friend' || r.status !== 'pending') return sendJson(res,403,{error:'forbidden'},origin);
     await fr.updateOne({ _id: o }, { $set: { status: 'rejected' } });
@@ -85,7 +88,8 @@ function register(router, ctx) {
 
   router.post('/api/partners/invitations/:id/accept', async (req,res) => {
     const u = requireAuth(req,res,ctx,origin); if(!u) return;
-    const o = new ObjectId(req.params.id);
+    const o = oid(req.params.id);
+    if (!o) return sendJson(res, 400, { error: 'invalid_id' }, origin);
     const r = await pi.findOne({ _id: o });
     if (!r || r.to !== u.email || r.type !== 'partner' || r.status !== 'pending') return sendJson(res,403,{error:'forbidden'},origin);
     await pi.updateOne({ _id: o }, { $set: { status: 'accepted' } });
@@ -96,7 +100,8 @@ function register(router, ctx) {
 
   router.post('/api/partners/invitations/:id/reject', async (req,res) => {
     const u = requireAuth(req,res,ctx,origin); if(!u) return;
-    const o = new ObjectId(req.params.id);
+    const o = oid(req.params.id);
+    if (!o) return sendJson(res, 400, { error: 'invalid_id' }, origin);
     const r = await pi.findOne({ _id: o });
     if (!r || r.to !== u.email || r.type !== 'partner' || r.status !== 'pending') return sendJson(res,403,{error:'forbidden'},origin);
     await pi.updateOne({ _id: o }, { $set: { status: 'rejected' } });

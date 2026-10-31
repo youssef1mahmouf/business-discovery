@@ -37,6 +37,6 @@
 <script>
 BD.requireAuth();
 async function loadStats(){ try{ const d=await BD.api('/api/admin/stats'); document.getElementById('stats').textContent=JSON.stringify(d.stats); document.getElementById('badge').innerHTML='<span class="badge">Main Super Admin</span>'; }catch(e){ document.getElementById('stats').textContent=e.message; document.getElementById('badge').textContent=''; } }
-async function search(){ const q=document.getElementById('q').value; try{ const d=await BD.api('/api/admin/users?q='+encodeURIComponent(q)); document.getElementById('users').innerHTML=d.users.map(u=>'<div>'+u.email+' - '+u.role+'</div>').join(''); }catch(e){ document.getElementById('users').textContent=e.message;} }
+async function search(){ const q=document.getElementById('q').value; try{ const d=await BD.api('/api/admin/users?q='+encodeURIComponent(q)); const ul=document.getElementById('users'); ul.textContent=''; (d.users||[]).forEach(u=>{ const div=document.createElement('div'); div.textContent=(u.email||'')+' - '+(u.role||''); ul.appendChild(div); }); }catch(e){ document.getElementById('users').textContent=e.message;} }
 loadStats(); search();
 </script></body></html>

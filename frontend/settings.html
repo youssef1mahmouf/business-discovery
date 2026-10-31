@@ -34,6 +34,6 @@
 <script>
 BD.requireAuth();
 async function load(){ try{ const d=await BD.api('/api/settings'); document.getElementById('val').value=JSON.stringify(d.settings,null,2); }catch(e){ document.getElementById('msg').textContent=e.message;} }
-async function save(){ try{ await BD.api('/api/settings',{method:'PUT',body:document.getElementById('val').value}); document.getElementById('msg').textContent='تم الحفظ'; }catch(e){ document.getElementById('msg').textContent=e.message;} }
+async function save(){ try{ let parsed; try { parsed = JSON.parse(document.getElementById('val').value); } catch(e){ document.getElementById('msg').textContent='JSON غير صالح'; return; } await BD.api('/api/settings',{method:'PUT',body:JSON.stringify(parsed)}); document.getElementById('msg').textContent='تم الحفظ'; }catch(e){ document.getElementById('msg').textContent=e.message;} }
 load();
 </script></body></html>

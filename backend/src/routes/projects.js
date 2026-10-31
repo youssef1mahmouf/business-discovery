@@ -124,7 +124,12 @@ function register(router, ctx) {
     let body; try { body=await parseBody(req);} catch { return sendJson(res,400,{error:'invalid_json'},origin);}
     const { ObjectId } = require('mongodb');
     let o; try { o=new ObjectId(req.params.id);} catch { return sendJson(res,400,{error:'invalid_id'},origin);}
-    await participants.updateOne({ _id: o }, { $set: { name: body.name, email: body.email, phone: body.phone, updatedAt: new Date().toISOString() } });
+    const updates = {};
+    if (body.name !== undefined) updates.name = String(body.name).trim();
+    if (body.email !== undefined) updates.email = String(body.email).trim();
+    if (body.phone !== undefined) updates.phone = String(body.phone).trim();
+    updates.updatedAt = new Date().toISOString();
+    await participants.updateOne({ _id: o }, { $set: updates });
     return sendJson(res,200,{ ok:true },origin);
   });
   router.delete('/api/participants/:id', async (req,res) => {

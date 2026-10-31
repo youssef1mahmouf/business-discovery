@@ -35,6 +35,7 @@ function register(router, ctx) {
   router.put('/api/settings', async (req,res) => {
     const u = requireAdmin(req,res,ctx,origin); if(!u) return;
     let body; try { body=await parseBody(req);} catch { return sendJson(res,400,{error:'invalid_json'},origin);}
+    if (body === null || typeof body !== 'object' || Array.isArray(body)) return sendJson(res,400,{error:'invalid_input'},origin);
     await settings.updateOne({ key: 'app' }, { $set: { key: 'app', value: body, updatedAt: new Date().toISOString() } }, { upsert: true });
     return sendJson(res,200,{ ok: true },origin);
   });

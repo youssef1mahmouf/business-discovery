@@ -1,6 +1,8 @@
+const { ObjectId } = require('mongodb');
 const { sendJson, parseBody } = require('../middleware/http');
 const { requireAuth } = require('../middleware/auth');
 
+function oid(v){ try { return new ObjectId(v); } catch { return null; } }
 function register(router, ctx) {
   const origin = ctx.config.frontendOrigin === '*' ? '*' : ctx.config.frontendOrigin;
   const convs = ctx.db.get('conversations');
@@ -31,7 +33,9 @@ function register(router, ctx) {
 
   router.get('/api/conversations/:id/messages', async (req,res) => {
     const u = requireAuth(req,res,ctx,origin); if(!u) return;
-    const c = await convs.findOne({ _id: require('mongodb').ObjectId(req.params.id) });
+    const _oid = oid(req.params.id);
+    if (!_oid) return sendJson(res, 400, { error: 'invalid_id' }, origin);
+    const c = await convs.findOne({ _id: _oid });
     if (!c || !c.members.includes(u.email)) return sendJson(res,403,{error:'forbidden'},origin);
     await convs.updateOne({ _id: c._id }, { $set: { ['unread.' + u.email]: 0 } });
     const url = new URL('http://x'+req.url);
@@ -42,7 +46,9 @@ function register(router, ctx) {
 
   router.post('/api/conversations/:id/messages', async (req,res) => {
     const u = requireAuth(req,res,ctx,origin); if(!u) return;
-    const c = await convs.findOne({ _id: require('mongodb').ObjectId(req.params.id) });
+    const _oid = oid(req.params.id);
+    if (!_oid) return sendJson(res, 400, { error: 'invalid_id' }, origin);
+    const c = await convs.findOne({ _id: _oid });
     if (!c || !c.members.includes(u.email)) return sendJson(res,403,{error:'forbidden'},origin);
     let body; try { body=await parseBody(req);} catch { return sendJson(res,400,{error:'invalid_json'},origin);}
     const content = String(body.content||'').trim();

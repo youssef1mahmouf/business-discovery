@@ -33,6 +33,6 @@
 <script src="assets/js/layout.js"></script>
 <script>
 BD.requireAuth();
-async function load(){ try{ const d=await BD.api('/api/participants'); document.getElementById('list').innerHTML=d.participants.map(p=>'<div class="card">'+p.name+' - '+p.email+'</div>').join('')||'لا يوجد'; }catch(e){ document.getElementById('list').textContent=e.message;} }
+async function load(){ try{ const d=await BD.api('/api/participants'); const list=document.getElementById('list'); list.textContent=''; if(!d.participants||!d.participants.length){ list.textContent='لا يوجد'; return;} d.participants.forEach(p=>{ const card=document.createElement('div'); card.className='card'; card.textContent=(p.name||'')+' - '+(p.email||''); list.appendChild(card); }); }catch(e){ document.getElementById('list').textContent=e.message;} }
 load();
 </script></body></html>

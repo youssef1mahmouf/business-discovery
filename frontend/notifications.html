@@ -33,6 +33,6 @@
 <script src="assets/js/layout.js"></script>
 <script>
 BD.requireAuth();
-async function load(){ try{ const d=await BD.api('/api/notifications'); document.getElementById('list').innerHTML=d.notifications.map(n=>'<div class="card">'+n.type+' من '+n.from+'</div>').join('')||'لا توجد إشعارات'; }catch(e){ document.getElementById('list').textContent=e.message;} }
+async function load(){ try{ const d=await BD.api('/api/notifications'); const list=document.getElementById('list'); list.textContent=''; if(!d.notifications||!d.notifications.length){ list.textContent='لا توجد إشعارات'; } else d.notifications.forEach(n=>{ const card=document.createElement('div'); card.className='card'; card.textContent=(n.type||'')+' من '+(n.from||''); list.appendChild(card); }); }catch(e){ document.getElementById('list').textContent=e.message;} }
 load();
 </script></body></html>

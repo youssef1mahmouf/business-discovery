@@ -83,7 +83,7 @@
     const countEl = document.getElementById('bdNotifCount');
     if (window.BD && BD.api && countEl) {
       BD.api('/api/notifications').then(function(d){
-        const n = (d.notifications||[]).length;
+        const n = (d.notifications||[]).filter(function(x){ return !x.read; }).length;
         if (n > 0) { countEl.textContent = n; countEl.style.display='inline-block'; }
         else countEl.style.display='none';
       }).catch(function(){ if(countEl) countEl.style.display='none'; });

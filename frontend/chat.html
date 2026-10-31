@@ -35,6 +35,6 @@
 <script src="assets/js/layout.js"></script>
 <script>
 BD.requireAuth();
-async function load(){ try{ const d=await BD.api('/api/conversations'); document.getElementById('list').innerHTML=d.conversations.map(c=>'<div class="card">'+(c.title||c.type)+' - '+c.members.join(', ')+'</div>').join('')||'لا توجد محادثات'; }catch(e){ document.getElementById('list').textContent=e.message;} }
+async function load(){ try{ const d=await BD.api('/api/conversations'); const list=document.getElementById('list'); list.textContent=''; if(!d.conversations||!d.conversations.length){ list.textContent='لا توجد محادثات'; } else d.conversations.forEach(c=>{ const card=document.createElement('div'); card.className='card'; card.textContent=(c.title||c.type||'')+' - '+(c.members||[]).join(', '); list.appendChild(card); }); }catch(e){ document.getElementById('list').textContent=e.message;} }
 load();
 </script></body></html>

@@ -36,7 +36,7 @@
 <script src="assets/js/layout.js"></script>
 <script>
 BD.requireAuth();
-async function load(){ try{ const d=await BD.api('/api/tasks'); document.getElementById('list').innerHTML=d.tasks.map(t=>'<div class="card">'+t.title+' - '+t.status+'</div>').join('')||'لا توجد مهام'; }catch(e){ document.getElementById('list').textContent=e.message;} }
+async function load(){ try{ const d=await BD.api('/api/tasks'); const list=document.getElementById('list'); list.textContent=''; if(!d.tasks||!d.tasks.length){ list.textContent='لا توجد مهام'; } else d.tasks.forEach(t=>{ const card=document.createElement('div'); card.className='card'; card.textContent=(t.title||'')+' - '+(t.status||''); list.appendChild(card); }); }catch(e){ document.getElementById('list').textContent=e.message;} }
 async function create(){ try{ await BD.api('/api/tasks',{method:'POST',body:JSON.stringify({title:document.getElementById('title').value})}); load(); }catch(e){} }
 load();
 </script></body></html>

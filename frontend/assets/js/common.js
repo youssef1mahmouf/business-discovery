@@ -12,5 +12,7 @@ async function api(path, opts={}){
   return data;
 }
 window.BD = { API, getToken, setToken, api };
-function requireAuth(){ if(!getToken()){ location.href='/frontend/login.html'; } }
+function escapeHtml(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function requireAuth(){ if(!getToken()){ location.href='login.html'; } }
 window.BD.requireAuth = requireAuth;
+window.BD.escapeHtml = escapeHtml;

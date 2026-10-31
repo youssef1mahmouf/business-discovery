@@ -45,7 +45,7 @@
 <script src="assets/js/layout.js"></script>
 <script>
 BD.requireAuth();
-async function load(){ try{ const d=await BD.api('/api/projects'); document.getElementById('list').innerHTML = d.projects.map(p=>'<div class="card"><b>'+p.name+'</b><br>'+p.description+'</div>').join('') || 'لا توجد مشاريع'; }catch(e){ document.getElementById('list').textContent=e.message;} }
+async function load(){ try{ const d=await BD.api('/api/projects'); const list=document.getElementById('list'); list.textContent=''; if(!d.projects||!d.projects.length){ list.textContent='لا توجد مشاريع'; } else d.projects.forEach(p=>{ const card=document.createElement('div'); card.className='card'; const b=document.createElement('b'); b.textContent=p.name; card.appendChild(b); card.appendChild(document.createElement('br')); const desc=document.createElement('div'); desc.textContent=p.description||''; card.appendChild(desc); list.appendChild(card); }); }catch(e){ document.getElementById('list').textContent=e.message;} }
 async function create(){ try{ await BD.api('/api/projects',{method:'POST',body:JSON.stringify({name:document.getElementById('name').value,description:document.getElementById('desc').value})}); load(); }catch(e){ document.getElementById('msg').textContent=e.message;} }
 load();
 </script>
