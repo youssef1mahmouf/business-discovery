@@ -8,31 +8,43 @@
 <body>
 <nav class="nav"><a href="index.html">الرئيسية</a><a href="login.html">تسجيل الدخول</a><a href="register.html">تسجيل</a><a href="projects.html">المشاريع</a><a href="friends.html">الأصدقاء</a><a href="tasks.html">المهام</a><a href="notifications.html">الإشعارات</a><a href="admin.html">الإدارة</a><a href="settings.html">الإعدادات</a></nav>
 <div class="container">
-<div class="card"><h1>Business Discovery</h1><p>منصة اكتشاف الأعمال والشراكات.</p></div>
-<canvas id="hero3d" width="600" height="300" style="width:100%;max-height:300px;display:block;"></canvas>
+<section class="hero">
+  <div class="hero-text">
+    <h1>اكتشف أعمالك وشراكاتك بذكاء</h1>
+    <p>منصة متكاملة لإدارة المشاريع، الأصدقاء، المهام، والإشعارات مع لوحة إدارة متقدمة.</p>
+    <button class="btn" onclick="location.href='login.html'">ابدأ الآن</button>
+    <button class="btn secondary" onclick="location.href='projects.html'">المشاريع</button>
+  </div>
+  <div class="canvas-wrap"><canvas id="hero3d" width="600" height="320"></canvas></div>
+</section>
+<div class="grid">
+  <div class="card"><h3>المشاريع</h3><p>إنشاء وإدارة المشاريع والأعضاء.</p></div>
+  <div class="card"><h3>الأصدقاء</h3><p>إرسال وقبول طلبات الصداقة.</p></div>
+  <div class="card"><h3>المهام</h3><p>تتبع المهام والتكليفات.</p></div>
+  <div class="card"><h3>الإشعارات</h3><p>إشعارات فورية للأحداث.</p></div>
 </div>
+</div>
+<footer class="footer">Business Discovery &copy; 2026</footer>
 <script src="assets/vendor/gsap.js"></script>
 <script src="assets/js/common.js"></script>
-<script>
-if (window.gsap) { try { gsap.from('.card', { opacity:0, y:20, duration:0.6, stagger:0.1 }); } catch(e){} }
-</script>
+<script> if (window.gsap) { try { gsap.from('.card', { opacity:0, y:20, duration:0.6, stagger:0.1 }); } catch(e){} } </script>
 <script type="module">
 import * as THREE from './assets/vendor/three.module.js';
 const canvas = document.getElementById('hero3d');
 const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 if (canvas && !reduce && 'WebGLRenderingContext' in window) {
   try {
-    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
-    renderer.setSize(canvas.clientWidth || 600, canvas.clientHeight || 300);
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:true });
+    renderer.setSize(canvas.clientWidth||600, canvas.clientHeight||320);
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(60, (canvas.clientWidth||600)/(canvas.clientHeight||300), 0.1, 100);
+    const camera = new THREE.PerspectiveCamera(60, (canvas.clientWidth||600)/(canvas.clientHeight||320), 0.1, 100);
     camera.position.z = 3;
-    const geo = new THREE.IcosahedronGeometry(1, 1);
-    const mat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, wireframe: true });
+    const geo = new THREE.IcosahedronGeometry(1,1);
+    const mat = new THREE.MeshStandardMaterial({ color:0x5eead4, wireframe:true });
     const mesh = new THREE.Mesh(geo, mat);
     scene.add(mesh);
-    const light = new THREE.DirectionalLight(0xffffff, 1); light.position.set(2,2,2); scene.add(light);
-    function animate(){ requestAnimationFrame(animate); mesh.rotation.x += 0.003; mesh.rotation.y += 0.004; renderer.render(scene,camera); }
+    const light = new THREE.DirectionalLight(0xffffff,1); light.position.set(2,2,2); scene.add(light);
+    function animate(){ requestAnimationFrame(animate); mesh.rotation.x+=0.003; mesh.rotation.y+=0.004; renderer.render(scene,camera); }
     animate();
   } catch(e){ console.warn('WebGL unavailable', e); }
 }
@@ -40,6 +52,6 @@ if (canvas && !reduce && 'WebGLRenderingContext' in window) {
 <script type="module">
 import Lenis from './assets/vendor/lenis.mjs';
 const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-if (!reduce) { try { const lenis = new Lenis({ duration: 1.2 }); function raf(time){ lenis.raf(time); requestAnimationFrame(raf); } requestAnimationFrame(raf); } catch(e){ console.warn('Lenis unavailable', e); } }
+if (!reduce) { try { const lenis = new Lenis({ duration:1.2 }); function raf(t){ lenis.raf(t); requestAnimationFrame(raf); } requestAnimationFrame(raf); } catch(e){ console.warn('Lenis unavailable', e); } }
 </script>
 </body></html>
