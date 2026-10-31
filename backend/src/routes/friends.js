@@ -39,6 +39,22 @@ function register(router, ctx) {
     return sendJson(res,200,{ ok: true },origin);
   });
 
+  router.delete('/api/friends/requests/:id', async (req,res) => {
+    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const { ObjectId } = require('mongodb');
+    let o; try { o=new ObjectId(req.params.id);} catch { return sendJson(res,400,{error:'invalid_id'},origin);}
+    const r = await fr.findOne({ _id: o });
+    if (!r || r.from !== u.email) return sendJson(res,403,{error:'forbidden'},origin);
+    await fr.deleteOne({ _id: o });
+    return sendJson(res,200,{ ok:true },origin);
+  });
+
+  router.delete('/api/friends/:email', async (req,res) => {
+    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const target = decodeURIComponent(req.params.email).toLowerCase();
+    await fs_.deleteMany({ $or: [{ a: u.email, b: target }, { a: target, b: u.email }] });
+    return sendJson(res,200,{ ok:true },origin);
+  });
   router.post('/api/friends/requests/:id/reject', async (req,res) => {
     const u = requireAuth(req,res,ctx,origin); if(!u) return;
     const o = new ObjectId(req.params.id);

@@ -1,11 +1,13 @@
 const { hashPassword, verifyPassword, signToken, normalizeRole } = require('../services/auth');
 const { sendJson, parseBody } = require('../middleware/http');
+const { rateLimit } = require('../middleware/rateLimit');
 const { requireAuth } = require('../middleware/auth');
 
 function register(router, ctx) {
   const origin = ctx.config.frontendOrigin === '*' ? '*' : ctx.config.frontendOrigin;
 
   router.post('/api/auth/register', async (req, res) => {
+    if (!rateLimit(req, res, 60000, 20)) return;
     let body;
     try { body = await parseBody(req); } catch { return sendJson(res, 400, { error: 'invalid_json' }, origin); }
     const email = String(body.email || '').trim().toLowerCase();
@@ -28,6 +30,7 @@ function register(router, ctx) {
   });
 
   router.post('/api/auth/login', async (req, res) => {
+    if (!rateLimit(req, res, 60000, 20)) return;
     let body;
     try { body = await parseBody(req); } catch { return sendJson(res, 400, { error: 'invalid_json' }, origin); }
     const email = String(body.email || '').trim().toLowerCase();

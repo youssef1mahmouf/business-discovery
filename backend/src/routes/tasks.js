@@ -7,9 +7,15 @@ function register(router, ctx) {
   const notifs = ctx.db.get('notifications');
 
   router.get('/api/tasks', async (req,res) => {
+
     const u = requireAuth(req,res,ctx,origin); if(!u) return;
-    const items = await tasks.find({ $or: [{ owner: u.email }, { assignee: u.email }] }).toArray();
-    return sendJson(res,200,{ tasks: items },origin);
+    const url = new URL('http://x'+req.url);
+    const page = Math.max(1, Number(url.searchParams.get('page')||1));
+    const limit = Math.min(50, Number(url.searchParams.get('limit')||20));
+    const q = { $or: [{ owner: u.email }, { assignee: u.email }] };
+    const total = await tasks.countDocuments(q);
+    const items = await tasks.find(q).skip((page-1)*limit).limit(limit).toArray();
+    return sendJson(res,200,{ tasks: items, total, page, pages: Math.ceil(total/limit) },origin);
   });
 
   router.post('/api/tasks', async (req,res) => {
@@ -38,8 +44,13 @@ function register(router, ctx) {
 
   router.get('/api/notifications', async (req,res) => {
     const u = requireAuth(req,res,ctx,origin); if(!u) return;
-    const items = await notifs.find({ userEmail: u.email }).sort({ createdAt: -1 }).toArray();
-    return sendJson(res,200,{ notifications: items },origin);
+    const url = new URL('http://x'+req.url);
+    const page = Math.max(1, Number(url.searchParams.get('page')||1));
+    const limit = Math.min(50, Number(url.searchParams.get('limit')||20));
+    const q = { userEmail: u.email };
+    const total = await notifs.countDocuments(q);
+    const items = await notifs.find(q).sort({ createdAt: -1 }).skip((page-1)*limit).limit(limit).toArray();
+    return sendJson(res,200,{ notifications: items, total, page, pages: Math.ceil(total/limit) },origin);
   });
 
   router.post('/api/notifications/:id/read', async (req,res) => {
@@ -49,6 +60,21 @@ function register(router, ctx) {
     await notifs.updateOne({ _id: o, userEmail: u.email }, { $set: { read: true } });
     return sendJson(res,200,{ ok: true },origin);
   });
-}
+  router.delete('/api/tasks/:id', async (req,res) => {
+    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    const { ObjectId } = require('mongodb');
+    let o; try { o=new ObjectId(req.params.id);} catch { return sendJson(res,400,{error:'invalid_id'},origin);}
+    const t = await tasks.findOne({ _id: o });
+    if (!t || t.owner !== u.email) return sendJson(res,403,{error:'forbidden'},origin);
+    await tasks.deleteOne({ _id: o });
+    return sendJson(res,200,{ ok:true },origin);
+  });
 
+  router.post('/api/notifications/read-all', async (req,res) => {
+    const u = requireAuth(req,res,ctx,origin); if(!u) return;
+    await notifs.updateMany({ userEmail: u.email, read: false }, { $set: { read: true } });
+    return sendJson(res,200,{ ok:true },origin);
+  });
+
+}
 module.exports = { register };
