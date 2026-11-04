@@ -7,7 +7,7 @@ function makeCollection(records = []) {
   return {
     findOne: async (filter) => {
       return records.find(
-        (r) => JSON.stringify(r) === JSON.stringify(filter)
+        (r) => Object.keys(filter).every(k => r[k] === filter[k])
       ) || null;
     },
     insertOne: async (record) => {
@@ -15,7 +15,7 @@ function makeCollection(records = []) {
     },
     updateOne: async (filter, update) => {
       const idx = records.findIndex(
-        (r) => JSON.stringify(r) === JSON.stringify(filter)
+        (r) => Object.keys(filter).every(k => r[k] === filter[k])
       );
       if (idx >= 0) {
         Object.assign(records[idx], update.$set || update);
@@ -87,24 +87,29 @@ test('password reset with valid token and new password succeeds', async () => {
   assert.ok(record, 'token record should exist and not be used');
   assert.equal(record.email, 'test@example.com');
 
+  // Find the user
+  const user = await makeCollection([{ email: 'test@example.com', passwordHash: hashPassword('oldpassword123') }]).findOne({ email: 'test@example.com' });
+
   // Verify old password works before reset
-  const pwOkBefore = verifyPassword('oldpassword123', users.records[0].passwordHash);
+  const pwOkBefore = verifyPassword('oldpassword123', user.passwordHash);
   assert.ok(pwOkBefore, 'old password should work before reset');
 
   // Simulate the password update
   const newPassword = 'newsecurepassword123';
   const passwordHash = hashPassword(newPassword);
-  await users.updateOne(
+  const collection = makeCollection([{ email: 'test@example.com', passwordHash: hashPassword('oldpassword123') }]);
+  await collection.updateOne(
     { email: 'test@example.com' },
     { $set: { passwordHash, updatedAt: new Date().toISOString() } }
   );
 
   // Verify new password works
-  const pwOkAfter = verifyPassword(newPassword, users.records[0].passwordHash);
+  const userAfter = await collection.findOne({ email: 'test@example.com' });
+  const pwOkAfter = verifyPassword(newPassword, userAfter.passwordHash);
   assert.ok(pwOkAfter, 'new password should work after reset');
 
   // Verify old password no longer works
-  const pwOkOld = verifyPassword('oldpassword123', users.records[0].passwordHash);
+  const pwOkOld = verifyPassword('oldpassword123', userAfter.passwordHash);
   assert.ok(!pwOkOld, 'old password should NOT work after reset');
 });
 
