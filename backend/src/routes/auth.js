@@ -45,6 +45,61 @@ function register(router, ctx) {
     return sendJson(res, 200, { token, user: { id: String(user._id), email: user.email, role } }, origin);
   });
 
+  router.post('/api/auth/password-recovery', async (req, res) => {
+    if (!rateLimit(req, res, 60000, 20)) return;
+    let body;
+    try { body = await parseBody(req); } catch { return sendJson(res, 400, { error: 'invalid_json' }, origin); }
+    const email = String(body.email || '').trim().toLowerCase();
+    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+      return sendJson(res, 400, { error: 'invalid_input' }, origin);
+    }
+    const users = ctx.db.get('users');
+    const user = await users.findOne({ email });
+    if (!user) {
+      // Generic response - do not reveal whether email exists
+      return sendJson(res, 200, { ok: true });
+    }
+    // Generate a cryptographically secure random token
+    const crypto = require('crypto');
+    const token = crypto.randomBytes(32).toString('base64url');
+    const tokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    // Store the hashed token in user_states collection
+    const userStates = ctx.db.get('user_states');
+    await userStates.insertOne({ email: user.email, token, expiresAt: tokenExpires, used: false });
+    // Generic response - do not reveal whether email exists
+    return sendJson(res, 200, { ok: true });
+  });
+
+  router.post('/api/auth/reset-password', async (req, res) => {
+    if (!rateLimit(req, res, 60000, 20)) return;
+    let body;
+    try { body = await parseBody(req); } catch { return sendJson(res, 400, { error: 'invalid_json' }, origin); }
+    const { token, newPassword } = body;
+    if (!token || !newPassword || newPassword.length < 8) {
+      return sendJson(res, 400, { error: 'invalid_input' }, origin);
+    }
+    const crypto = require('crypto');
+    // Hash the token for lookup
+    const hashedToken = crypto.createHash('sha256').update(token).digest('base64url');
+    const userStates = ctx.db.get('user_states');
+    const record = await userStates.findOne({ token: hashedToken, used: false });
+    if (!record) {
+      return sendJson(res, 400, { error: 'invalid_or_expired_token' }, origin);
+    }
+    if (new Date() > new Date(record.expiresAt)) {
+      // Mark as used/expired
+      await userStates.updateOne({ token: hashedToken }, { $set: { used: true } });
+      return sendJson(res, 400, { error: 'invalid_or_expired_token' }, origin);
+    }
+    // Mark token as used
+    await userStates.updateOne({ token: hashedToken }, { $set: { used: true } });
+    // Hash the new password and update user
+    const passwordHash = hashPassword(newPassword);
+    const users = ctx.db.get('users');
+    await users.updateOne({ email: record.email }, { $set: { passwordHash, updatedAt: new Date().toISOString() } });
+    return sendJson(res, 200, { ok: true });
+  });
+
   router.get('/api/auth/me', async (req, res) => {
     const user = await requireAuth(req, res, ctx, origin);
     if (!user) return;

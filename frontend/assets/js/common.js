@@ -8,7 +8,15 @@ async function api(path, opts={}){
   if (t) headers.Authorization = 'Bearer '+t;
   const res = await fetch(API+path, Object.assign({}, opts, { headers }));
   const data = await res.json().catch(()=>({}));
-  if (!res.ok) throw new Error(data.error || res.statusText);
+  if (!res.ok) {
+  const errorMessages = {
+    'email_in_use': 'هذا البريد الإلكتروني مستخدم بالفعل',
+    'invalid_credentials': 'اسم المستخدم أو كلمة المرور غير صحيحة',
+    'invalid_input': 'بيانات إدخال غير صحيحة',
+    'invalid_json': 'بيانات غير صحيحة'
+  };
+  throw new Error(errorMessages[data.error] || data.error || res.statusText);
+}
   return data;
 }
 window.BD = { API, getToken, setToken, api };

@@ -1,4 +1,4 @@
-# Business Discovery — Project Guide for AI Coding Clients
+﻿# Business Discovery — Project Guide for AI Coding Clients
 
 ## 1. Project Overview
 
@@ -383,3 +383,4 @@ Files modified:
 - Voice interaction.
 - Future integration with Nexus AI.
 - Future integration with the user's other projects and website.
+
