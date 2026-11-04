@@ -330,6 +330,38 @@ These are future ideas only and are not currently implemented:
 - Final product branding/name is still undecided.
 - A real AI assistant with model selection and model management.
 - Controlled AI access to project data and permissions.
+## 14. Frontend Redesign (3D Creative)
+
+Redesigned pages:
+- `frontend/index.html` — premium homepage with interactive Three.js icosahedron, GSAP entrance animations, Lenis smooth scroll, feature cards, stats, CTA.
+- `frontend/login.html` — glassmorphism auth card, password toggle, validation, loading state, forgot-password modal, registration link.
+- `frontend/register.html` — premium registration, password strength meter, confirm password, validation, loading/success/error states.
+
+Design system additions in `frontend/assets/css/main.css`:
+- New color tokens (cyan/violet/blue), glass surfaces, radius, shadows, spacing helpers.
+- Reusable `.rd-*` component classes for nav, hero, cards, buttons, inputs, auth, modal, spinner.
+- Reduced-motion support and responsive breakpoints.
+
+Dependencies:
+- Uses existing vendored `three.module.js`, `lenis.mjs`, and copied `gsap.js` (minified UMD) from root `node_modules/gsap`.
+- No new npm dependencies installed.
+
+Animation architecture:
+- Three.js renders a single interactive 3D hero element with mouse parallax; disabled under `prefers-reduced-motion` or missing WebGL.
+- GSAP handles entrance animations.
+- Lenis provides smooth scrolling; disabled under reduced motion.
+- CSS handles blobs, hover, transitions.
+
+Authentication UI changes:
+- Preserved existing `BD.api` integration and token storage.
+- Added client-side validation matching backend rules (email format, password >= 8).
+- Forgot-password interface is informational only; backend reset endpoint is not implemented.
+
+Files modified:
+- `frontend/index.html`, `frontend/login.html`, `frontend/register.html`
+- `frontend/assets/css/main.css`
+- `frontend/assets/vendor/gsap.js` (replaced incomplete ESM shim with stable minified build)
+- `docs/PROJECT_GUIDE.md`, `docs/FRONTEND_REDESIGN_REPORT.md`
 - Voice interaction.
 - Future integration with Nexus AI.
 - Future integration with the user's other projects and website.

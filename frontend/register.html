@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -6,22 +6,112 @@
 <link rel="stylesheet" href="assets/css/main.css">
 </head>
 <body>
-<nav class="nav"><a href="index.html">الرئيسية</a><a href="login.html">تسجيل الدخول</a><a href="register.html">تسجيل</a></nav>
-<div class="container"><div class="card">
-<h2>إنشاء حساب</h2>
-<input id="email" type="email" placeholder="البريد الإلكتروني">
-<input id="password" type="password" placeholder="كلمة المرور (8 أحرف على الأقل)">
-<button class="btn" onclick="reg()">تسجيل</button>
-<p id="msg"></p>
-</div></div>
+<div class="rd-shell">
+  <div class="rd-bg"></div>
+  <div class="rd-grid-overlay"></div>
+  <div class="rd-blob b1"></div>
+  <div class="rd-blob b2"></div>
+  <div class="rd-auth">
+    <div class="rd-auth-card">
+      <div class="rd-logo" style="margin-bottom:18px;"><span class="rd-logo-mark">BD</span><span>Business Discovery</span></div>
+      <h1>إنشاء حساب</h1>
+      <p class="sub">انضم إلينا وابدأ إدارة أعمالك.</p>
+      <form id="regForm" onsubmit="return false;">
+        <div class="rd-field">
+          <label class="rd-label" for="email">البريد الإلكتروني</label>
+          <input id="email" class="rd-input" type="email" placeholder="name@example.com" autocomplete="email">
+          <div id="emailErr" class="rd-error"></div>
+        </div>
+        <div class="rd-field">
+          <label class="rd-label" for="password">كلمة المرور</label>
+          <div class="rd-input-wrap">
+            <input id="password" class="rd-input" type="password" placeholder="8 أحرف على الأقل" autocomplete="new-password" oninput="updateStrength()">
+            <button type="button" class="rd-toggle-pw" onclick="togglePw('password', this)">إظهار</button>
+          </div>
+          <div class="rd-strength"><div id="strengthBar" class="rd-strength-bar"></div></div>
+          <div id="strengthLabel" class="rd-strength-label">قوة كلمة المرور: —</div>
+          <div id="pwErr" class="rd-error"></div>
+        </div>
+        <div class="rd-field">
+          <label class="rd-label" for="confirm">تأكيد كلمة المرور</label>
+          <div class="rd-input-wrap">
+            <input id="confirm" class="rd-input" type="password" placeholder="أعد إدخال كلمة المرور" autocomplete="new-password">
+            <button type="button" class="rd-toggle-pw" onclick="togglePw('confirm', this)">إظهار</button>
+          </div>
+          <div id="confirmErr" class="rd-error"></div>
+        </div>
+        <button id="regBtn" class="rd-btn primary" style="width:100%;" onclick="reg()">تسجيل</button>
+        <div id="msg" class="rd-msg"></div>
+      </form>
+      <p style="margin-top:18px;font-size:13px;color:var(--muted);text-align:center;">
+        لديك حساب؟ <a class="rd-link" href="login.html">تسجيل الدخول</a>
+      </p>
+    </div>
+  </div>
+</div>
+
 <script src="assets/js/common.js"></script>
 <script>
-async function reg(){
-  try {
-    const data = await BD.api('/api/auth/register', { method:'POST', body: JSON.stringify({ email: document.getElementById('email').value, password: document.getElementById('password').value }) });
-    BD.setToken(data.token);
-    location.href = 'projects.html';
-  } catch(e){ document.getElementById('msg').textContent = e.message; }
-}
+  function togglePw(id, btn) {
+    const el = document.getElementById(id);
+    if (el.type === 'password') { el.type = 'text'; btn.textContent = 'إخفاء'; }
+    else { el.type = 'password'; btn.textContent = 'إظهار'; }
+  }
+  function setLoading(btn, loading, label) {
+    if (loading) { btn.disabled = true; btn.innerHTML = '<span class="rd-spinner"></span> جاري...'; }
+    else { btn.disabled = false; btn.textContent = label; }
+  }
+  function scorePassword(pw) {
+    let score = 0;
+    if (pw.length >= 8) score++;
+    if (pw.length >= 12) score++;
+    if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) score++;
+    if (/[0-9]/.test(pw)) score++;
+    if (/[^A-Za-z0-9]/.test(pw)) score++;
+    return Math.min(score, 4);
+  }
+  function updateStrength() {
+    const pw = document.getElementById('password').value;
+    const bar = document.getElementById('strengthBar');
+    const label = document.getElementById('strengthLabel');
+    const score = scorePassword(pw);
+    const pct = pw.length === 0 ? 0 : (score + 1) * 20;
+    bar.style.width = pct + '%';
+    const colors = ['#ef4444', '#f59e0b', '#eab308', '#22c55e', '#10b981'];
+    const names = ['ضعيفة جداً', 'ضعيفة', 'متوسطة', 'قوية', 'قوية جداً'];
+    bar.style.background = colors[score];
+    label.textContent = 'قوة كلمة المرور: ' + (pw.length === 0 ? '—' : names[score]);
+    label.style.color = pw.length === 0 ? 'var(--muted)' : colors[score];
+  }
+  async function reg() {
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    const confirm = document.getElementById('confirm').value;
+    const emailErr = document.getElementById('emailErr');
+    const pwErr = document.getElementById('pwErr');
+    const confirmErr = document.getElementById('confirmErr');
+    const msg = document.getElementById('msg');
+    emailErr.textContent = ''; pwErr.textContent = ''; confirmErr.textContent = ''; msg.textContent = ''; msg.className = 'rd-msg';
+    let ok = true;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { emailErr.textContent = 'بريد إلكتروني غير صالح'; ok = false; }
+    if (password.length < 8) { pwErr.textContent = 'كلمة المرور 8 أحرف على الأقل'; ok = false; }
+    if (confirm !== password) { confirmErr.textContent = 'كلمات المرور غير متطابقة'; ok = false; }
+    if (!ok) return;
+    const btn = document.getElementById('regBtn');
+    setLoading(btn, true, 'تسجيل');
+    try {
+      const data = await BD.api('/api/auth/register', { method: 'POST', body: JSON.stringify({ email, password }) });
+      BD.setToken(data.token);
+      msg.textContent = 'تم إنشاء الحساب بنجاح';
+      msg.className = 'rd-msg success';
+      setTimeout(() => location.href = 'projects.html', 700);
+    } catch (e) {
+      msg.textContent = e.message || 'فشل التسجيل';
+      msg.className = 'rd-msg error';
+    } finally {
+      setLoading(btn, false, 'تسجيل');
+    }
+  }
+  document.addEventListener('keydown', e => { if (e.key === 'Enter') reg(); });
 </script>
 </body></html>
