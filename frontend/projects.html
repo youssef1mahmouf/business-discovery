@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>المشاريع</title>
+<title>المشاريع | Business Discovery</title>
 <link rel="stylesheet" href="assets/css/main.css">
 </head>
 <body>
@@ -18,7 +18,7 @@
     <header class="topbar" id="bdTopbar">
       <button class="mobile-menu-btn" id="bdMenuBtn">☰</button>
       <div class="topbar-left"><h1 class="page-title" id="bdPageTitle"></h1></div>
-      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث..."></div>
+      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث عن مشروع..."></div>
       <div class="topbar-actions">
         <a href="notifications.html" class="icon-btn">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
         <div class="profile-menu">
@@ -32,10 +32,32 @@
     </header>
     <main class="content" id="bdContent">
       <div class="container">
-        <div class="card"><h2>مشاريعي</h2><div id="list"></div></div>
-        <div class="card"><h3>إنشاء مشروع</h3>
-        <input id="name" placeholder="اسم المشروع"><input id="desc" placeholder="الوصف">
-        <button class="btn" onclick="create()">إنشاء</button><p id="msg"></p></div>
+        <div class="card">
+          <div class="card-header">
+            <h2>مشاريعي</h2>
+            <span id="projectCount" class="badge badge-blue">0</span>
+          </div>
+          <div id="list"></div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3>إنشاء مشروع جديد</h3>
+          </div>
+          <div class="gap-16 flex-col">
+            <div>
+              <label class="label" for="name">اسم المشروع</label>
+              <input id="name" class="input" type="text" placeholder="أدخل اسم المشروع">
+            </div>
+            <div>
+              <label class="label" for="desc">وصف المشروع</label>
+              <input id="desc" class="input" type="text" placeholder="أضف وصفاً موجزاً">
+            </div>
+            <div class="flex gap-8 justify-start">
+              <button class="btn btn-primary" onclick="create()">إنشاء المشروع</button>
+            </div>
+            <p id="msg" class="small mt-8"></p>
+          </div>
+        </div>
       </div>
     </main>
     <footer class="app-footer" id="bdFooter">Business Discovery © 2026 — جميع الحقوق محفوظة</footer>
@@ -45,8 +67,9 @@
 <script src="assets/js/layout.js"></script>
 <script>
 BD.requireAuth();
-async function load(){ try{ const d=await BD.api('/api/projects'); const list=document.getElementById('list'); list.textContent=''; if(!d.projects||!d.projects.length){ list.textContent='لا توجد مشاريع'; } else d.projects.forEach(p=>{ const card=document.createElement('div'); card.className='card'; const b=document.createElement('b'); b.textContent=p.name; card.appendChild(b); card.appendChild(document.createElement('br')); const desc=document.createElement('div'); desc.textContent=p.description||''; card.appendChild(desc); list.appendChild(card); }); }catch(e){ document.getElementById('list').textContent=e.message;} }
-async function create(){ try{ await BD.api('/api/projects',{method:'POST',body:JSON.stringify({name:document.getElementById('name').value,description:document.getElementById('desc').value})}); load(); }catch(e){ document.getElementById('msg').textContent=e.message;} }
+async function load(){ try{ const d=await BD.api('/api/projects'); const list=document.getElementById('list'); const countEl=document.getElementById('projectCount'); list.textContent=''; if(!d.projects||!d.projects.length){ list.innerHTML='<div class="empty-state"><span class="empty-icon">📁</span><h3>لا توجد مشاريع</h3><p>ابدأ بإنشاء مشروعك الأول الآن.</p></div>'; countEl.textContent='0'; } else { countEl.textContent=d.projects.length; d.projects.forEach(p=>{ const card=document.createElement('div'); card.className='card'; card.style.padding='16px'; card.style.marginBottom='12px'; const name=document.createElement('div'); name.style.fontWeight='700'; name.style.color='var(--text)'; name.style.marginBottom='4px'; name.textContent=p.name; card.appendChild(name); const desc=document.createElement('div'); desc.style.color='var(--text-muted)'; desc.style.fontSize='14px'; desc.textContent=p.description||'لا يوجد وصف'; card.appendChild(desc); list.appendChild(card); }); } }catch(e){ list.innerHTML='<div class="empty-state"><span class="empty-icon">⚠️</span><h3>حدث خطأ</h3><p>'+e.message+'</p></div>';} }
+async function create(){ const name=document.getElementById('name'); const desc=document.getElementById('desc'); const msg=document.getElementById('msg'); msg.textContent=''; if(!name.value.trim()){ msg.textContent='يرجى إدخال اسم المشروع'; msg.style.color='var(--danger)'; return; } try{ await BD.api('/api/projects',{method:'POST',body:JSON.stringify({name:name.value,description:desc.value})}); name.value=''; desc.value=''; load(); showToast('تم إنشاء المشروع بنجاح','success'); }catch(e){ msg.textContent=e.message; msg.style.color='var(--danger)';} }
+function showToast(message,type){ const t=document.createElement('div'); t.className='toast '+type; t.textContent=message; document.body.appendChild(t); setTimeout(()=>t.classList.add('show'),10); setTimeout(()=>{ t.classList.remove('show'); setTimeout(()=>t.remove(),300);},3000); }
 load();
 </script>
 </body></html>

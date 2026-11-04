@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>الشركاء</title><link rel="stylesheet" href="assets/css/main.css"></head><body>
+<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>الشركاء | Business Discovery</title><link rel="stylesheet" href="assets/css/main.css"></head><body>
 <div class="app-shell" id="appShell">
   <aside class="sidebar" id="bdSidebar">
     <div class="sidebar-brand"><div class="brand-icon">BD</div><span class="brand-text">Business Discovery</span></div>
@@ -11,7 +11,7 @@
     <header class="topbar" id="bdTopbar">
       <button class="mobile-menu-btn" id="bdMenuBtn">☰</button>
       <div class="topbar-left"><h1 class="page-title" id="bdPageTitle"></h1></div>
-      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث..."></div>
+      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث عن شريك..."></div>
       <div class="topbar-actions">
         <a href="notifications.html" class="icon-btn">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
         <div class="profile-menu">
@@ -25,7 +25,13 @@
     </header>
     <main class="content" id="bdContent">
       <div class="container">
-        <div class="card"><h2>الشركاء</h2><div id="list"></div></div>
+        <div class="card">
+          <div class="card-header">
+            <h2>الشركاء</h2>
+            <span id="partnerCount" class="badge badge-blue">0</span>
+          </div>
+          <div id="list"></div>
+        </div>
       </div>
     </main>
     <footer class="app-footer" id="bdFooter">Business Discovery © 2026 — جميع الحقوق محفوظة</footer>
@@ -35,6 +41,6 @@
 <script src="assets/js/layout.js"></script>
 <script>
 BD.requireAuth();
-async function load(){ try{ const d=await BD.api('/api/partners'); document.getElementById('list').innerHTML='شركاء: '+(d.partners.join(', ')||'لا يوجد')+'<br>دعوات معلقة: '+d.pending.length; }catch(e){ document.getElementById('list').textContent=e.message;} }
+async function load(){ try{ const d=await BD.api('/api/partners'); const list=document.getElementById('list'); const countEl=document.getElementById('partnerCount'); list.textContent=''; const partners=d.partners||[]; countEl.textContent=partners.length; if(!partners.length){ list.innerHTML='<div class="empty-state"><span class="empty-icon">🤝</span><h3>لا يوجد شركاء</h3><p>لا توجد شراكات مفعلة حالياً.</p></div>'; } else { partners.forEach(pt=>{ const item=document.createElement('div'); item.className='card'; item.style.padding='16px'; item.style.marginBottom='12px'; item.style.display='flex'; item.style.justifyContent='space-between'; item.style.alignItems='center'; const name=document.createElement('div'); name.style.fontWeight='700'; name.style.color='var(--text)'; name.textContent=pt; item.appendChild(name); const badge=document.createElement('span'); badge.className='badge badge-purple'; badge.textContent='شريك'; item.appendChild(badge); list.appendChild(item); }); } const pending=d.pending||[]; if(pending.length){ const pdiv=document.createElement('div'); pdiv.className='card'; pdiv.style.marginTop='16px'; pdiv.style.padding='16px'; const h=document.createElement('div'); h.style.fontWeight='700'; h.style.color='var(--text)'; h.style.marginBottom='8px'; h.textContent='دعوات معلقة ('+pending.length+')'; pdiv.appendChild(h); pending.forEach(pr=>{ const pi=document.createElement('div'); pi.style.color='var(--text-muted)'; pi.style.fontSize='14px'; pi.textContent=pr; pdiv.appendChild(pi); }); list.appendChild(pdiv);} }catch(e){ list.innerHTML='<div class="empty-state"><span class="empty-icon">⚠️</span><h3>حدث خطأ</h3><p>'+e.message+'</p></div>';} }
 load();
 </script></body></html>

@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -83,58 +83,38 @@
   }
 </script>
 <script type="module">
-  import * as THREE from './assets/vendor/three.module.js';
-  const canvas = document.getElementById('hero3d');
+  import { initHero3D } from './src/animations/three-scene.js';
+  import { initLenis } from './src/animations/lenis.js';
+  import { splitReveal } from './src/animations/split-type.js';
+  import { createIcon } from './src/utils/lucide.js';
+
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (canvas && !reduce && 'WebGLRenderingContext' in window) {
-    try {
-      const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
-      const w = canvas.clientWidth || 600;
-      const h = canvas.clientHeight || 460;
-      renderer.setSize(w, h, false);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 100);
-      camera.position.z = 4;
-      const geo = new THREE.IcosahedronGeometry(1.4, 2);
-      const mat = new THREE.MeshStandardMaterial({ color: 0x22d3ee, wireframe: true, transparent: true, opacity: 0.85 });
-      const mesh = new THREE.Mesh(geo, mat);
-      scene.add(mesh);
-      const inner = new THREE.Mesh(new THREE.IcosahedronGeometry(0.9, 1), new THREE.MeshStandardMaterial({ color: 0x8b5cf6, wireframe: true, transparent: true, opacity: 0.6 }));
-      scene.add(inner);
-      const light1 = new THREE.DirectionalLight(0xffffff, 1.2); light1.position.set(3, 3, 3); scene.add(light1);
-      const light2 = new THREE.PointLight(0x8b5cf6, 1.5, 10); light2.position.set(-2, -2, 2); scene.add(light2);
-      const ambient = new THREE.AmbientLight(0x22d3ee, 0.4); scene.add(ambient);
-      const pGeo = new THREE.BufferGeometry();
-      const count = 200;
-      const pos = new Float32Array(count * 3);
-      for (let i = 0; i < count * 3; i++) pos[i] = (Math.random() - 0.5) * 6;
-      pGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      const pMat = new THREE.PointsMaterial({ color: 0x22d3ee, size: 0.03, transparent: true, opacity: 0.7 });
-      const points = new THREE.Points(pGeo, pMat);
-      scene.add(points);
-      let mx = 0, my = 0;
-      window.addEventListener('mousemove', e => { mx = (e.clientX / window.innerWidth - 0.5) * 0.5; my = (e.clientY / window.innerHeight - 0.5) * 0.5; });
-      function animate() {
-        requestAnimationFrame(animate);
-        mesh.rotation.x += 0.002; mesh.rotation.y += 0.003;
-        inner.rotation.x -= 0.004; inner.rotation.y -= 0.002;
-        points.rotation.y += 0.0008;
-        mesh.rotation.x += (my - mesh.rotation.x) * 0.02;
-        mesh.rotation.y += (mx - mesh.rotation.y) * 0.02;
-        renderer.render(scene, camera);
-      }
-      animate();
-      window.addEventListener('resize', () => {
-        const nw = canvas.clientWidth || 600; const nh = canvas.clientHeight || 460;
-        renderer.setSize(nw, nh, false); camera.aspect = nw / nh; camera.updateProjectionMatrix();
-      });
-    } catch (e) { console.warn('WebGL unavailable', e); }
+
+  const hero = initHero3D('hero3d', { color: 0x35D5F2, innerColor: 0x8B5CF6, particleCount: 150 });
+
+  initLenis({ duration: 1.2 });
+
+  if (!reduce && window.gsap) {
+    try { splitReveal('.rd-hero-text h1', window.gsap, { delay: 0.2, stagger: 0.03, duration: 0.5 }); }
+    catch (e) { console.warn('SplitType failed', e); }
   }
+
+  document.querySelectorAll('.rd-feature-icon').forEach((el, i) => {
+    const names = ['Folder', 'Users', 'CheckCircle', 'Bell'];
+    const icon = createIcon(names[i] || 'Star', { size: 24, color: 'currentColor' });
+    el.innerHTML = '';
+    el.appendChild(icon);
+  });
+
+  if (window.gsap) {
+    try {
+      window.gsap.from('.rd-hero-text > *', { opacity: 0, y: 30, duration: 0.8, stagger: 0.12, ease: 'power3.out' });
+      window.gsap.from('.rd-feature', { opacity: 0, y: 40, duration: 0.7, stagger: 0.1, delay: 0.3, ease: 'power3.out' });
+      window.gsap.from('.rd-float-card', { opacity: 0, scale: 0.8, duration: 0.6, delay: 0.6, stagger: 0.15 });
+    } catch (e) { console.warn(e); }
+  }
+
+  window.addEventListener('beforeunload', () => { if (hero) hero.dispose(); });
 </script>
-<script type="module">
-  import Lenis from './assets/vendor/lenis.mjs';
-  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (!reduce) { try { const lenis = new Lenis({ duration: 1.2 }); function raf(t){ lenis.raf(t); requestAnimationFrame(raf); } requestAnimationFrame(raf); } catch(e){ console.warn('Lenis unavailable', e); } }
-</script>
-</body></html>
+</body>
+</html>

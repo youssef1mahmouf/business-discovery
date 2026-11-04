@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>الإعدادات</title><link rel="stylesheet" href="assets/css/main.css"></head><body>
+<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>الإعدادات | Business Discovery</title><link rel="stylesheet" href="assets/css/main.css"></head><body>
 <div class="app-shell" id="appShell">
   <aside class="sidebar" id="bdSidebar">
     <div class="sidebar-brand"><div class="brand-icon">BD</div><span class="brand-text">Business Discovery</span></div>
@@ -24,7 +24,21 @@
       </div>
     </header>
     <main class="content" id="bdContent">
-      <div class="container"><div class="card"><h2>إعدادات التطبيق</h2><textarea id="val" rows="6"></textarea><button class="btn" onclick="save()">حفظ</button><p id="msg"></p></div></div>
+      <div class="container">
+        <div class="card">
+          <div class="card-header"><h2>إعدادات التطبيق</h2></div>
+          <div class="gap-16 flex-col">
+            <div>
+              <label class="label" for="val">قيم الإعدادات (JSON)</label>
+              <textarea id="val" class="input" rows="8" spellcheck="false"></textarea>
+            </div>
+            <div class="flex gap-8 justify-start">
+              <button class="btn btn-primary" onclick="save()">حفظ الإعدادات</button>
+            </div>
+            <p id="msg" class="small mt-8"></p>
+          </div>
+        </div>
+      </div>
     </main>
     <footer class="app-footer" id="bdFooter">Business Discovery © 2026 — جميع الحقوق محفوظة</footer>
   </div>
@@ -33,7 +47,8 @@
 <script src="assets/js/layout.js"></script>
 <script>
 BD.requireAuth();
-async function load(){ try{ const d=await BD.api('/api/settings'); document.getElementById('val').value=JSON.stringify(d.settings,null,2); }catch(e){ document.getElementById('msg').textContent=e.message;} }
-async function save(){ try{ let parsed; try { parsed = JSON.parse(document.getElementById('val').value); } catch(e){ document.getElementById('msg').textContent='JSON غير صالح'; return; } await BD.api('/api/settings',{method:'PUT',body:JSON.stringify(parsed)}); document.getElementById('msg').textContent='تم الحفظ'; }catch(e){ document.getElementById('msg').textContent=e.message;} }
+async function load(){ try{ const d=await BD.api('/api/settings'); document.getElementById('val').value=JSON.stringify(d.settings,null,2); }catch(e){ document.getElementById('msg').textContent=e.message; document.getElementById('msg').style.color='var(--danger)';} }
+async function save(){ const msg=document.getElementById('msg'); msg.textContent=''; try{ let parsed; try { parsed = JSON.parse(document.getElementById('val').value); } catch(e){ msg.textContent='JSON غير صالح'; msg.style.color='var(--danger)'; return; } await BD.api('/api/settings',{method:'PUT',body:JSON.stringify(parsed)}); msg.textContent='تم الحفظ بنجاح'; msg.style.color='var(--success)'; showToast('تم حفظ الإعدادات','success'); }catch(e){ msg.textContent=e.message; msg.style.color='var(--danger)';} }
+function showToast(message,type){ const t=document.createElement('div'); t.className='toast '+type; t.textContent=message; document.body.appendChild(t); setTimeout(()=>t.classList.add('show'),10); setTimeout(()=>{ t.classList.remove('show'); setTimeout(()=>t.remove(),300);},3000); }
 load();
 </script></body></html>

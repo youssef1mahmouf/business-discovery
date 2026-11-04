@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>المشاركون</title><link rel="stylesheet" href="assets/css/main.css"></head><body>
+<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>المشاركون | Business Discovery</title><link rel="stylesheet" href="assets/css/main.css"></head><body>
 <div class="app-shell" id="appShell">
   <aside class="sidebar" id="bdSidebar">
     <div class="sidebar-brand"><div class="brand-icon">BD</div><span class="brand-text">Business Discovery</span></div>
@@ -11,7 +11,7 @@
     <header class="topbar" id="bdTopbar">
       <button class="mobile-menu-btn" id="bdMenuBtn">☰</button>
       <div class="topbar-left"><h1 class="page-title" id="bdPageTitle"></h1></div>
-      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث..."></div>
+      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث عن مشارك..."></div>
       <div class="topbar-actions">
         <a href="notifications.html" class="icon-btn">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
         <div class="profile-menu">
@@ -24,7 +24,15 @@
       </div>
     </header>
     <main class="content" id="bdContent">
-      <div class="container"><div class="card"><h2>المشاركون</h2><div id="list"></div></div></div>
+      <div class="container">
+        <div class="card">
+          <div class="card-header">
+            <h2>المشاركون</h2>
+            <span id="participantCount" class="badge badge-blue">0</span>
+          </div>
+          <div id="list"></div>
+        </div>
+      </div>
     </main>
     <footer class="app-footer" id="bdFooter">Business Discovery © 2026 — جميع الحقوق محفوظة</footer>
   </div>
@@ -33,6 +41,6 @@
 <script src="assets/js/layout.js"></script>
 <script>
 BD.requireAuth();
-async function load(){ try{ const d=await BD.api('/api/participants'); const list=document.getElementById('list'); list.textContent=''; if(!d.participants||!d.participants.length){ list.textContent='لا يوجد'; return;} d.participants.forEach(p=>{ const card=document.createElement('div'); card.className='card'; card.textContent=(p.name||'')+' - '+(p.email||''); list.appendChild(card); }); }catch(e){ document.getElementById('list').textContent=e.message;} }
+async function load(){ try{ const d=await BD.api('/api/participants'); const list=document.getElementById('list'); const countEl=document.getElementById('participantCount'); list.textContent=''; if(!d.participants||!d.participants.length){ list.innerHTML='<div class="empty-state"><span class="empty-icon">👥</span><h3>لا يوجد مشاركون</h3><p>لا يوجد مشاركون مضافون حالياً.</p></div>'; countEl.textContent='0'; return;} countEl.textContent=d.participants.length; d.participants.forEach(p=>{ const card=document.createElement('div'); card.className='card'; card.style.padding='16px'; card.style.marginBottom='12px'; card.style.display='flex'; card.style.justifyContent='space-between'; card.style.alignItems='center'; const info=document.createElement('div'); const name=document.createElement('div'); name.style.fontWeight='700'; name.style.color='var(--text)'; name.textContent=p.name||'غير محدد'; info.appendChild(name); const email=document.createElement('div'); email.style.color='var(--text-muted)'; email.style.fontSize='14px'; email.textContent=p.email||'—'; info.appendChild(email); card.appendChild(info); const badge=document.createElement('span'); badge.className='badge badge-cyan'; badge.textContent='مشارك'; card.appendChild(badge); list.appendChild(card); }); }catch(e){ list.innerHTML='<div class="empty-state"><span class="empty-icon">⚠️</span><h3>حدث خطأ</h3><p>'+e.message+'</p></div>';} }
 load();
 </script></body></html>

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>المهام</title><link rel="stylesheet" href="assets/css/main.css"></head><body>
+<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>المهام | Business Discovery</title><link rel="stylesheet" href="assets/css/main.css"></head><body>
 <div class="app-shell" id="appShell">
   <aside class="sidebar" id="bdSidebar">
     <div class="sidebar-brand"><div class="brand-icon">BD</div><span class="brand-text">Business Discovery</span></div>
@@ -11,7 +11,7 @@
     <header class="topbar" id="bdTopbar">
       <button class="mobile-menu-btn" id="bdMenuBtn">☰</button>
       <div class="topbar-left"><h1 class="page-title" id="bdPageTitle"></h1></div>
-      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث..."></div>
+      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث عن مهمة..."></div>
       <div class="topbar-actions">
         <a href="notifications.html" class="icon-btn">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
         <div class="profile-menu">
@@ -25,8 +25,26 @@
     </header>
     <main class="content" id="bdContent">
       <div class="container">
-        <div class="card"><h2>المهام</h2><div id="list"></div></div>
-        <div class="card"><h3>مهمة جديدة</h3><input id="title" placeholder="العنوان"><button class="btn" onclick="create()">إنشاء</button></div>
+        <div class="card">
+          <div class="card-header">
+            <h2>المهام</h2>
+            <span id="taskCount" class="badge badge-blue">0</span>
+          </div>
+          <div id="list"></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>مهمة جديدة</h3></div>
+          <div class="gap-16 flex-col">
+            <div>
+              <label class="label" for="title">عنوان المهمة</label>
+              <input id="title" class="input" type="text" placeholder="أدخل عنوان المهمة">
+            </div>
+            <div class="flex gap-8 justify-start">
+              <button class="btn btn-primary" onclick="create()">إنشاء المهمة</button>
+            </div>
+            <p id="msg" class="small mt-8"></p>
+          </div>
+        </div>
       </div>
     </main>
     <footer class="app-footer" id="bdFooter">Business Discovery © 2026 — جميع الحقوق محفوظة</footer>
@@ -36,7 +54,8 @@
 <script src="assets/js/layout.js"></script>
 <script>
 BD.requireAuth();
-async function load(){ try{ const d=await BD.api('/api/tasks'); const list=document.getElementById('list'); list.textContent=''; if(!d.tasks||!d.tasks.length){ list.textContent='لا توجد مهام'; } else d.tasks.forEach(t=>{ const card=document.createElement('div'); card.className='card'; card.textContent=(t.title||'')+' - '+(t.status||''); list.appendChild(card); }); }catch(e){ document.getElementById('list').textContent=e.message;} }
-async function create(){ try{ await BD.api('/api/tasks',{method:'POST',body:JSON.stringify({title:document.getElementById('title').value})}); load(); }catch(e){} }
+async function load(){ try{ const d=await BD.api('/api/tasks'); const list=document.getElementById('list'); const countEl=document.getElementById('taskCount'); list.textContent=''; if(!d.tasks||!d.tasks.length){ list.innerHTML='<div class="empty-state"><span class="empty-icon">✅</span><h3>لا توجد مهام</h3><p>ابدأ بإنشاء مهمتك الأولى.</p></div>'; countEl.textContent='0'; return;} countEl.textContent=d.tasks.length; d.tasks.forEach(t=>{ const card=document.createElement('div'); card.className='card'; card.style.padding='16px'; card.style.marginBottom='12px'; card.style.display='flex'; card.style.justifyContent='space-between'; card.style.alignItems='center'; const info=document.createElement('div'); const title=document.createElement('div'); title.style.fontWeight='700'; title.style.color='var(--text)'; title.textContent=t.title||'بدون عنوان'; info.appendChild(title); const status=document.createElement('div'); status.style.color='var(--text-muted)'; status.style.fontSize='14px'; status.textContent=(t.status||'جديد'); info.appendChild(status); card.appendChild(info); const badge=document.createElement('span'); badge.className='badge badge-blue'; badge.textContent=t.status||'جديد'; card.appendChild(badge); list.appendChild(card); }); }catch(e){ list.innerHTML='<div class="empty-state"><span class="empty-icon">⚠️</span><h3>حدث خطأ</h3><p>'+e.message+'</p></div>';} }
+async function create(){ const title=document.getElementById('title'); const msg=document.getElementById('msg'); msg.textContent=''; if(!title.value.trim()){ msg.textContent='يرجى إدخال عنوان المهمة'; msg.style.color='var(--danger)'; return; } try{ await BD.api('/api/tasks',{method:'POST',body:JSON.stringify({title:title.value})}); title.value=''; load(); showToast('تم إنشاء المهمة بنجاح','success'); }catch(e){ msg.textContent=e.message; msg.style.color='var(--danger)';} }
+function showToast(message,type){ const t=document.createElement('div'); t.className='toast '+type; t.textContent=message; document.body.appendChild(t); setTimeout(()=>t.classList.add('show'),10); setTimeout(()=>{ t.classList.remove('show'); setTimeout(()=>t.remove(),300);},3000); }
 load();
 </script></body></html>

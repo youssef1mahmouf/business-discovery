@@ -13,10 +13,10 @@ Current scope verified from source code:
 ## 2. Technology Stack
 
 Frontend:
-- Static HTML pages
+- Static HTML pages (12 pages, all using the Premium Futuristic 3D Creative SaaS design identity)
 - Vanilla JavaScript (`frontend/assets/js/common.js`, `frontend/assets/js/layout.js`)
-- CSS (`frontend/assets/css/main.css`)
-- Vendor libraries: GSAP, Lenis, Three.js
+- CSS (`frontend/assets/css/main.css`) — centralized design system with CSS variables, glassmorphism, and reusable components
+- Vendor libraries: GSAP, Lenis, Three.js, Lucide, SplitType
 
 Backend:
 - Node.js (built-in `http` module)
@@ -73,6 +73,24 @@ Important files:
 ## 4. Application Architecture
 
 Frontend pages call the backend REST API using `fetch`. The backend validates the bearer token, looks up the current user in MongoDB, enforces authorization, performs data operations, and returns JSON. Static frontend files are served by the same Node process.
+
+### Frontend Design System
+
+All 12 frontend pages share a unified design system defined in `frontend/assets/css/main.css`:
+
+- **Color tokens**: Deep Navy (#080B18), Secondary (#0D1224), Surface (#141B31), Electric Blue (#397BFF), Purple (#8B5CF6), Cyan (#35D5F2)
+- **Glassmorphism**: `--glass` / `--glass-strong` with backdrop-filter blur and subtle glowing borders
+- **Components**: `.btn`, `.input`, `.card`, `.table-wrap`, `.modal`, `.toast`, `.badge`, `.avatar`, `.empty-state`, `.spinner`, `.skeleton`
+- **Layout**: `.app-shell`, `.sidebar`, `.topbar`, `.content` with fixed sidebar + mobile overlay
+- **Responsive**: Mobile sidebar drawer (below 900px), stacked topbar (below 600px)
+- **Reduced motion**: Respects `prefers-reduced-motion`
+
+Design token classes:
+- `.btn-primary`, `.btn-secondary`, `.btn-ghost`, `.btn-danger`
+- `.badge-blue`, `.badge-purple`, `.badge-cyan`, `.badge-success`, `.badge-danger`
+- `.input`, `.label`
+- `.card`, `.card-header`
+- `.empty-state`, `.spinner`, `.skeleton-text`, `.skeleton-title`
 
 ```mermaid
 flowchart LR

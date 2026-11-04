@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>الأصدقاء</title><link rel="stylesheet" href="assets/css/main.css"></head><body>
+<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>الأصدقاء | Business Discovery</title><link rel="stylesheet" href="assets/css/main.css"></head><body>
 <div class="app-shell" id="appShell">
   <aside class="sidebar" id="bdSidebar">
     <div class="sidebar-brand"><div class="brand-icon">BD</div><span class="brand-text">Business Discovery</span></div>
@@ -11,7 +11,7 @@
     <header class="topbar" id="bdTopbar">
       <button class="mobile-menu-btn" id="bdMenuBtn">☰</button>
       <div class="topbar-left"><h1 class="page-title" id="bdPageTitle"></h1></div>
-      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث..."></div>
+      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث عن صديق..."></div>
       <div class="topbar-actions">
         <a href="notifications.html" class="icon-btn">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
         <div class="profile-menu">
@@ -25,8 +25,26 @@
     </header>
     <main class="content" id="bdContent">
       <div class="container">
-        <div class="card"><h2>الأصدقاء والدعوات</h2><div id="list"></div></div>
-        <div class="card"><h3>إرسال دعوة صداقة</h3><input id="to" placeholder="بريد الصديق"><button class="btn" onclick="send()">إرسال</button><p id="msg"></p></div>
+        <div class="card">
+          <div class="card-header">
+            <h2>الأصدقاء والدعوات</h2>
+            <span id="friendCount" class="badge badge-blue">0</span>
+          </div>
+          <div id="list"></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>إرسال دعوة صداقة</h3></div>
+          <div class="gap-16 flex-col">
+            <div>
+              <label class="label" for="to">بريد الصديق</label>
+              <input id="to" class="input" type="email" placeholder="email@example.com">
+            </div>
+            <div class="flex gap-8 justify-start">
+              <button class="btn btn-primary" onclick="send()">إرسال الدعوة</button>
+            </div>
+            <p id="msg" class="small mt-8"></p>
+          </div>
+        </div>
       </div>
     </main>
     <footer class="app-footer" id="bdFooter">Business Discovery © 2026 — جميع الحقوق محفوظة</footer>
@@ -36,7 +54,8 @@
 <script src="assets/js/layout.js"></script>
 <script>
 BD.requireAuth();
-async function load(){ try{ const d=await BD.api('/api/friends'); const list=document.getElementById('list'); list.textContent=''; const f=document.createElement('div'); f.textContent='أصدقاء: '+(d.friends||[]).join(', ')||'لا يوجد'; list.appendChild(f); const p=document.createElement('div'); p.textContent='طلبات معلقة: '+(d.pending?d.pending.length:0); list.appendChild(p); }catch(e){ document.getElementById('list').textContent=e.message;} }
-async function send(){ try{ await BD.api('/api/friends/requests',{method:'POST',body:JSON.stringify({to:document.getElementById('to').value})}); load(); }catch(e){ document.getElementById('msg').textContent=e.message;} }
+async function load(){ try{ const d=await BD.api('/api/friends'); const list=document.getElementById('list'); const countEl=document.getElementById('friendCount'); list.textContent=''; const friends=d.friends||[]; countEl.textContent=friends.length; if(!friends.length){ list.innerHTML='<div class="empty-state"><span class="empty-icon">🤝</span><h3>لا يوجد أصدقاء</h3><p>ابدأ بإرسال دعوة صداقة.</p></div>'; } else { friends.forEach(fr=>{ const item=document.createElement('div'); item.className='card'; item.style.padding='16px'; item.style.marginBottom='12px'; item.style.display='flex'; item.style.justifyContent='space-between'; item.style.alignItems='center'; const name=document.createElement('div'); name.style.fontWeight='700'; name.style.color='var(--text)'; name.textContent=fr; item.appendChild(name); const badge=document.createElement('span'); badge.className='badge badge-cyan'; badge.textContent='صديق'; item.appendChild(badge); list.appendChild(item); }); } const pending=d.pending||[]; if(pending.length){ const pdiv=document.createElement('div'); pdiv.className='card'; pdiv.style.marginTop='16px'; pdiv.style.padding='16px'; const h=document.createElement('div'); h.style.fontWeight='700'; h.style.color='var(--text)'; h.style.marginBottom='8px'; h.textContent='طلبات معلقة ('+pending.length+')'; pdiv.appendChild(h); pending.forEach(pr=>{ const pi=document.createElement('div'); pi.style.color='var(--text-muted)'; pi.style.fontSize='14px'; pi.textContent=pr; pdiv.appendChild(pi); }); list.appendChild(pdiv);} }catch(e){ list.innerHTML='<div class="empty-state"><span class="empty-icon">⚠️</span><h3>حدث خطأ</h3><p>'+e.message+'</p></div>';} }
+async function send(){ const to=document.getElementById('to'); const msg=document.getElementById('msg'); msg.textContent=''; if(!to.value.trim()){ msg.textContent='يرجى إدخال البريد الإلكتروني'; msg.style.color='var(--danger)'; return; } try{ await BD.api('/api/friends/requests',{method:'POST',body:JSON.stringify({to:to.value})}); to.value=''; load(); showToast('تم إرسال دعوة الصداقة','success'); }catch(e){ msg.textContent=e.message; msg.style.color='var(--danger)';} }
+function showToast(message,type){ const t=document.createElement('div'); t.className='toast '+type; t.textContent=message; document.body.appendChild(t); setTimeout(()=>t.classList.add('show'),10); setTimeout(()=>{ t.classList.remove('show'); setTimeout(()=>t.remove(),300);},3000); }
 load();
 </script></body></html>
