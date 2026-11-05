@@ -13,13 +13,36 @@ async function api(path, opts={}){
     'email_in_use': 'هذا البريد الإلكتروني مستخدم بالفعل',
     'invalid_credentials': 'اسم المستخدم أو كلمة المرور غير صحيحة',
     'invalid_input': 'بيانات إدخال غير صحيحة',
-    'invalid_json': 'بيانات غير صحيحة'
+    'invalid_json': 'بيانات غير صحيحة',
+    'invalid_id': 'معرّف العنصر غير صالح',
+    'invalid_status': 'حالة المهمة غير صالحة',
+    'invalid_or_expired_code': 'رمز الاستعادة غير صحيح أو منتهي الصلاحية',
+    'passwords_do_not_match': 'كلمتا المرور غير متطابقتين',
+    'forbidden': 'ليست لديك صلاحية تنفيذ هذا الإجراء',
+    'not_found': 'العنصر المطلوب غير موجود',
+    'already_requested': 'أرسلت دعوة معلقة لهذا البريد بالفعل',
+    'already_friends': 'هذا المستخدم موجود في قائمة أصدقائك',
+    'request_received': 'لديك طلب صداقة وارد من هذا المستخدم',
+    'already_invited': 'أرسلت دعوة شراكة معلقة لهذا البريد بالفعل',
+    'already_partners': 'هذا المستخدم شريك بالفعل',
+    'invitation_received': 'لديك دعوة شراكة واردة من هذا المستخدم',
+    'already_member': 'هذا المستخدم عضو بالفعل في المشروع',
+    'cannot_remove_owner': 'لا يمكن إزالة مالك المشروع'
   };
   throw new Error(errorMessages[data.error] || data.error || res.statusText);
 }
   return data;
 }
-window.BD = { API, getToken, setToken, api };
+function showToast(message, type='success', duration=3000){
+  const toast=document.createElement('div');
+  toast.className='toast '+type;
+  toast.setAttribute('role','status');
+  toast.textContent=message;
+  document.body.appendChild(toast);
+  requestAnimationFrame(()=>toast.classList.add('show'));
+  setTimeout(()=>{toast.classList.remove('show');setTimeout(()=>toast.remove(),300);},duration);
+}
+window.BD = { API, getToken, setToken, api, showToast };
 function escapeHtml(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function requireAuth(){ if(!getToken()){ location.href='login.html'; } }
 window.BD.requireAuth = requireAuth;

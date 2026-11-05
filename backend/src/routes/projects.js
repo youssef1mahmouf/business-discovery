@@ -9,6 +9,17 @@ function register(router, ctx) {
   const projects = ctx.db.get('projects');
   const members = ctx.db.get('project_members');
   const participants = ctx.db.get('participants');
+  const participantManagers = new Set(['owner', 'project_manager', 'project_assistant']);
+
+  async function getParticipantProjectRole(projectId, email) {
+    const projectObjectId = oid(projectId);
+    if (!projectObjectId) return { error: 'invalid_id' };
+    const project = await projects.findOne({ _id: projectObjectId });
+    if (!project) return { error: 'not_found' };
+    const membership = await members.findOne({ projectId, email });
+    if (!membership) return { error: 'forbidden' };
+    return { role: membership.role };
+  }
 
   router.get('/api/projects', async (req,res) => {
     const u = await requireAuth(req,res,ctx,origin); if(!u) return;
@@ -18,15 +29,17 @@ function register(router, ctx) {
     const ms = await members.find({ email: u.email }).toArray();
     const ids = ms.map(m=>m.projectId);
     const oids = ids.map(x=>oid(x)).filter(Boolean);
-    const total = oids.length;
-    const slice = oids.slice((page-1)*limit, page*limit);
-    const items = await projects.find({ _id: { $in: slice } }).toArray();
-    return sendJson(res,200,{ projects: items.map(p=>({id:String(p._id),name:p.name,description:p.description||''})), total, page, pages: Math.ceil(total/limit) },origin);
+    const projectQuery = { _id: { $in: oids }, archived: { $ne: true } };
+    const total = await projects.countDocuments(projectQuery);
+    const items = await projects.find(projectQuery).skip((page-1)*limit).limit(limit).toArray();
+    const rolesByProject = new Map(ms.map((member) => [member.projectId, member.role]));
+    return sendJson(res,200,{ projects: items.map(p=>({id:String(p._id),name:p.name,description:p.description||'',role:rolesByProject.get(String(p._id))||'member'})), total, page, pages: Math.ceil(total/limit) },origin);
   });
 
   router.post('/api/projects', async (req,res) => {
     const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     let body; try { body=await parseBody(req);} catch { return sendJson(res,400,{error:'invalid_json'},origin);}
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJson(res,400,{error:'invalid_input'},origin);
     const name = String(body.name||'').trim();
     if (!name) return sendJson(res,400,{error:'invalid_input'},origin);
     const r = await projects.insertOne({ name, description: String(body.description||''), owner: u.email, createdAt: new Date().toISOString() });
@@ -40,8 +53,12 @@ function register(router, ctx) {
     const m = await members.findOne({ projectId: id, email: u.email });
     if (!m || m.role !== 'owner') return sendJson(res,403,{error:'forbidden'},origin);
     let body; try { body=await parseBody(req);} catch { return sendJson(res,400,{error:'invalid_json'},origin);}
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJson(res,400,{error:'invalid_input'},origin);
     const updates = {};
-    if (body.name) updates.name = String(body.name).trim();
+    if (body.name !== undefined) {
+      updates.name = String(body.name).trim();
+      if (!updates.name) return sendJson(res,400,{error:'invalid_input'},origin);
+    }
     if (body.description !== undefined) updates.description = String(body.description);
     if (body.archived !== undefined) updates.archived = !!body.archived;
     updates.updatedAt = new Date().toISOString();
@@ -113,7 +130,18 @@ function register(router, ctx) {
     const page = Math.max(1, Number(url.searchParams.get('page')||1));
     const limit = Math.min(50, Number(url.searchParams.get('limit')||20));
     const projectId = url.searchParams.get('projectId');
-    const q = projectId ? { projectId } : {};
+    let projectIds;
+    if (projectId) {
+      const access = await getParticipantProjectRole(projectId, u.email);
+      if (access.error) {
+        const status = access.error === 'invalid_id' ? 400 : access.error === 'not_found' ? 404 : 403;
+        return sendJson(res,status,{error:access.error},origin);
+      }
+      projectIds = [projectId];
+    } else {
+      projectIds = (await members.find({ email: u.email }).toArray()).map(m => m.projectId);
+    }
+    const q = { projectId: { $in: projectIds } };
     const total = await participants.countDocuments(q);
     const items = await participants.find(q).skip((page-1)*limit).limit(limit).toArray();
     return sendJson(res,200,{ participants: items, total, page, pages: Math.ceil(total/limit) },origin);
@@ -121,30 +149,63 @@ function register(router, ctx) {
 
   router.put('/api/participants/:id', async (req,res) => {
     const u = await requireAuth(req,res,ctx,origin); if(!u) return;
+    const o = oid(req.params.id);
+    if (!o) return sendJson(res,400,{error:'invalid_id'},origin);
+    const participant = await participants.findOne({ _id: o });
+    if (!participant) return sendJson(res,404,{error:'not_found'},origin);
+    const access = await getParticipantProjectRole(participant.projectId, u.email);
+    if (access.error) {
+      const status = access.error === 'not_found' ? 404 : 403;
+      return sendJson(res,status,{error:access.error},origin);
+    }
+    if (!participantManagers.has(access.role)) return sendJson(res,403,{error:'forbidden'},origin);
     let body; try { body=await parseBody(req);} catch { return sendJson(res,400,{error:'invalid_json'},origin);}
-    const { ObjectId } = require('mongodb');
-    let o; try { o=new ObjectId(req.params.id);} catch { return sendJson(res,400,{error:'invalid_id'},origin);}
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJson(res,400,{error:'invalid_input'},origin);
     const updates = {};
-    if (body.name !== undefined) updates.name = String(body.name).trim();
-    if (body.email !== undefined) updates.email = String(body.email).trim();
+    if (body.name !== undefined) {
+      updates.name = String(body.name).trim();
+      if (!updates.name) return sendJson(res,400,{error:'invalid_input'},origin);
+    }
+    if (body.email !== undefined) {
+      updates.email = String(body.email).trim().toLowerCase();
+      if (updates.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(updates.email)) return sendJson(res,400,{error:'invalid_input'},origin);
+    }
     if (body.phone !== undefined) updates.phone = String(body.phone).trim();
+    if (!Object.keys(updates).length) return sendJson(res,400,{error:'invalid_input'},origin);
     updates.updatedAt = new Date().toISOString();
-    await participants.updateOne({ _id: o }, { $set: updates });
+    await participants.updateOne({ _id: o, projectId: participant.projectId }, { $set: updates });
     return sendJson(res,200,{ ok:true },origin);
   });
   router.delete('/api/participants/:id', async (req,res) => {
     const u = await requireAuth(req,res,ctx,origin); if(!u) return;
-    const { ObjectId } = require('mongodb');
-    let o; try { o=new ObjectId(req.params.id);} catch { return sendJson(res,400,{error:'invalid_id'},origin);}
-    await participants.deleteOne({ _id: o });
+    const o = oid(req.params.id);
+    if (!o) return sendJson(res,400,{error:'invalid_id'},origin);
+    const participant = await participants.findOne({ _id: o });
+    if (!participant) return sendJson(res,404,{error:'not_found'},origin);
+    const access = await getParticipantProjectRole(participant.projectId, u.email);
+    if (access.error) {
+      const status = access.error === 'not_found' ? 404 : 403;
+      return sendJson(res,status,{error:access.error},origin);
+    }
+    if (!participantManagers.has(access.role)) return sendJson(res,403,{error:'forbidden'},origin);
+    await participants.deleteOne({ _id: o, projectId: participant.projectId });
     return sendJson(res,200,{ ok:true },origin);
   });
   router.post('/api/participants', async (req,res) => {
     const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     let body; try { body=await parseBody(req);} catch { return sendJson(res,400,{error:'invalid_json'},origin);}
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJson(res,400,{error:'invalid_input'},origin);
     const name = String(body.name||'').trim();
-    if (!name) return sendJson(res,400,{error:'invalid_input'},origin);
-    const doc = { name, email: String(body.email||'').trim(), phone: String(body.phone||'').trim(), projectId: String(body.projectId||''), createdBy: u.email, createdAt: new Date().toISOString() };
+    const projectId = String(body.projectId||'').trim();
+    const email = String(body.email||'').trim().toLowerCase();
+    if (!name || !oid(projectId) || (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return sendJson(res,400,{error:'invalid_input'},origin);
+    const access = await getParticipantProjectRole(projectId, u.email);
+    if (access.error) {
+      const status = access.error === 'invalid_id' ? 400 : access.error === 'not_found' ? 404 : 403;
+      return sendJson(res,status,{error:access.error},origin);
+    }
+    if (!participantManagers.has(access.role)) return sendJson(res,403,{error:'forbidden'},origin);
+    const doc = { name, email, phone: String(body.phone||'').trim(), projectId, createdBy: u.email, createdAt: new Date().toISOString() };
     const r = await participants.insertOne(doc);
     doc._id = r.insertedId;
     return sendJson(res,201,{ participant: doc },origin);

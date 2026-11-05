@@ -1,21 +1,29 @@
-<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>المشاركون | Business Discovery</title><link rel="stylesheet" href="assets/css/main.css"></head><body>
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>المشاركون | Business Discovery</title>
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
 <div class="app-shell" id="appShell">
   <aside class="sidebar" id="bdSidebar">
     <div class="sidebar-brand"><div class="brand-icon">BD</div><span class="brand-text">Business Discovery</span></div>
-    <button class="sidebar-toggle" id="bdCollapseBtn">⇔</button>
+    <button class="sidebar-toggle" id="bdCollapseBtn" type="button" aria-label="طي القائمة">⇔</button>
     <nav class="sidebar-nav" id="bdSidebarNav"></nav>
     <div class="sidebar-footer">© 2026</div>
   </aside>
   <div class="sidebar-overlay" id="bdOverlay"></div>
   <div class="main-area">
     <header class="topbar" id="bdTopbar">
-      <button class="mobile-menu-btn" id="bdMenuBtn">☰</button>
+      <button class="mobile-menu-btn" id="bdMenuBtn" type="button" aria-label="فتح القائمة">☰</button>
       <div class="topbar-left"><h1 class="page-title" id="bdPageTitle"></h1></div>
-      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث عن مشارك..."></div>
+      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث عن مشارك..." aria-label="بحث عن مشارك"></div>
       <div class="topbar-actions">
-        <a href="notifications.html" class="icon-btn">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
+        <a href="notifications.html" class="icon-btn" aria-label="الإشعارات">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
         <div class="profile-menu">
-          <button class="profile-btn" id="bdProfileBtn">👤 <span id="bdUserEmail"></span></button>
+          <button class="profile-btn" id="bdProfileBtn" type="button">👤 <span id="bdUserEmail"></span></button>
           <div class="profile-dropdown" id="bdProfileDropdown">
             <a href="settings.html">الإعدادات</a>
             <a href="#" id="bdLogout">تسجيل الخروج</a>
@@ -25,13 +33,41 @@
     </header>
     <main class="content" id="bdContent">
       <div class="container">
-        <div class="card">
+        <section class="card">
+          <div class="card-header">
+            <h2>إضافة مشارك</h2>
+            <span class="small">تُدار المشاركات داخل المشاريع التي لديك صلاحية إدارتها</span>
+          </div>
+          <form id="createParticipantForm" class="gap-16 flex-col">
+            <div>
+              <label class="label" for="participantProject">المشروع</label>
+              <select id="participantProject" class="input" required></select>
+            </div>
+            <div>
+              <label class="label" for="participantName">الاسم</label>
+              <input id="participantName" class="input" type="text" maxlength="120" required>
+            </div>
+            <div>
+              <label class="label" for="participantEmail">البريد الإلكتروني (اختياري)</label>
+              <input id="participantEmail" class="input" type="email" maxlength="254">
+            </div>
+            <div>
+              <label class="label" for="participantPhone">رقم الهاتف (اختياري)</label>
+              <input id="participantPhone" class="input" type="tel" maxlength="40">
+            </div>
+            <div class="flex gap-8 justify-start">
+              <button id="createParticipantBtn" class="btn btn-primary" type="submit">إضافة المشارك</button>
+            </div>
+            <p id="participantFormMsg" class="small" role="status" aria-live="polite"></p>
+          </form>
+        </section>
+        <section class="card">
           <div class="card-header">
             <h2>المشاركون</h2>
             <span id="participantCount" class="badge badge-blue">0</span>
           </div>
-          <div id="list"></div>
-        </div>
+          <div id="participantList" aria-live="polite"></div>
+        </section>
       </div>
     </main>
     <footer class="app-footer" id="bdFooter">Business Discovery © 2026 — جميع الحقوق محفوظة</footer>
@@ -40,7 +76,200 @@
 <script src="assets/js/common.js"></script>
 <script src="assets/js/layout.js"></script>
 <script>
-BD.requireAuth();
-async function load(){ try{ const d=await BD.api('/api/participants'); const list=document.getElementById('list'); const countEl=document.getElementById('participantCount'); list.textContent=''; if(!d.participants||!d.participants.length){ list.innerHTML='<div class="empty-state"><span class="empty-icon">👥</span><h3>لا يوجد مشاركون</h3><p>لا يوجد مشاركون مضافون حالياً.</p></div>'; countEl.textContent='0'; return;} countEl.textContent=d.participants.length; d.participants.forEach(p=>{ const card=document.createElement('div'); card.className='card'; card.style.padding='16px'; card.style.marginBottom='12px'; card.style.display='flex'; card.style.justifyContent='space-between'; card.style.alignItems='center'; const info=document.createElement('div'); const name=document.createElement('div'); name.style.fontWeight='700'; name.style.color='var(--text)'; name.textContent=p.name||'غير محدد'; info.appendChild(name); const email=document.createElement('div'); email.style.color='var(--text-muted)'; email.style.fontSize='14px'; email.textContent=p.email||'—'; info.appendChild(email); card.appendChild(info); const badge=document.createElement('span'); badge.className='badge badge-cyan'; badge.textContent='مشارك'; card.appendChild(badge); list.appendChild(card); }); }catch(e){ list.innerHTML='<div class="empty-state"><span class="empty-icon">⚠️</span><h3>حدث خطأ</h3><p>'+e.message+'</p></div>';} }
-load();
-</script></body></html>
+  BD.requireAuth();
+  const participantManagers = new Set(['owner', 'project_manager', 'project_assistant']);
+  const projectSelect = document.getElementById('participantProject');
+  const participantList = document.getElementById('participantList');
+  const participantSearch = document.getElementById('bdSearch');
+  let projects = [];
+  let participants = [];
+
+  function setFormMessage(message, isError = false) {
+    const element = document.getElementById('participantFormMsg');
+    element.textContent = message;
+    element.style.color = isError ? 'var(--danger)' : 'var(--success)';
+  }
+
+  function selectedProject() {
+    return projects.find((project) => project.id === projectSelect.value);
+  }
+
+  async function loadProjects() {
+    const data = await BD.api('/api/projects?limit=50');
+    projects = data.projects || [];
+    const editableProjects = projects.filter((project) => participantManagers.has(project.role));
+    projectSelect.textContent = '';
+    editableProjects.forEach((project) => {
+      const option = document.createElement('option');
+      option.value = project.id;
+      option.textContent = project.name;
+      projectSelect.appendChild(option);
+    });
+    document.getElementById('createParticipantBtn').disabled = editableProjects.length === 0;
+    if (!editableProjects.length) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = projects.length ? 'لا توجد صلاحية إدارة للمشاريع' : 'أنشئ مشروعاً أولاً';
+      projectSelect.appendChild(option);
+    }
+  }
+
+  function makeInput(labelText, value, type = 'text') {
+    const wrapper = document.createElement('div');
+    const label = document.createElement('label');
+    const input = document.createElement('input');
+    const id = 'edit-' + Math.random().toString(36).slice(2);
+    label.className = 'label';
+    label.htmlFor = id;
+    label.textContent = labelText;
+    input.id = id;
+    input.className = 'input';
+    input.type = type;
+    input.value = value || '';
+    input.maxLength = type === 'email' ? 254 : 120;
+    wrapper.append(label, input);
+    return { wrapper, input };
+  }
+
+  function renderParticipants() {
+    const query = participantSearch.value.trim().toLowerCase();
+    const visible = participants.filter((participant) => {
+      const project = projects.find((item) => item.id === participant.projectId);
+      return [participant.name, participant.email, project && project.name]
+        .some((value) => String(value || '').toLowerCase().includes(query));
+    });
+    document.getElementById('participantCount').textContent = String(visible.length);
+    participantList.textContent = '';
+    if (!visible.length) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      const title = document.createElement('h3');
+      const description = document.createElement('p');
+      title.textContent = query ? 'لا توجد نتائج' : 'لا يوجد مشاركون بعد';
+      description.textContent = query ? 'جرّب عبارة بحث أخرى.' : 'أضف مشاركين إلى مشروع تملكه أو تديره.';
+      empty.append(title, description);
+      participantList.appendChild(empty);
+      return;
+    }
+
+    visible.forEach((participant) => {
+      const project = projects.find((item) => item.id === participant.projectId);
+      const item = document.createElement('article');
+      item.className = 'card';
+      item.style.padding = '16px';
+      item.style.marginBottom = '12px';
+      const heading = document.createElement('h3');
+      heading.textContent = participant.name || 'غير محدد';
+      const details = document.createElement('p');
+      details.textContent = [participant.email, participant.phone, project && project.name].filter(Boolean).join(' · ') || 'لا توجد تفاصيل إضافية';
+      item.append(heading, details);
+
+      if (project && participantManagers.has(project.role)) {
+        const editor = document.createElement('details');
+        const summary = document.createElement('summary');
+        summary.className = 'rd-link';
+        summary.textContent = 'تعديل البيانات';
+        const form = document.createElement('form');
+        form.className = 'gap-16 flex-col mt-16';
+        const name = makeInput('الاسم', participant.name);
+        const email = makeInput('البريد الإلكتروني', participant.email, 'email');
+        const phone = makeInput('رقم الهاتف', participant.phone, 'tel');
+        const actions = document.createElement('div');
+        actions.className = 'flex gap-8';
+        const save = document.createElement('button');
+        save.className = 'btn btn-secondary btn-sm';
+        save.type = 'submit';
+        save.textContent = 'حفظ';
+        const remove = document.createElement('button');
+        remove.className = 'btn btn-danger btn-sm';
+        remove.type = 'button';
+        remove.textContent = 'حذف';
+        actions.append(save, remove);
+        form.append(name.wrapper, email.wrapper, phone.wrapper, actions);
+        form.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          save.disabled = true;
+          try {
+            await BD.api('/api/participants/' + encodeURIComponent(participant._id), {
+              method: 'PUT',
+              body: JSON.stringify({ name: name.input.value, email: email.input.value, phone: phone.input.value })
+            });
+            BD.showToast('تم تحديث بيانات المشارك');
+            await loadParticipants();
+          } catch (error) {
+            BD.showToast(error.message, 'error');
+          } finally {
+            save.disabled = false;
+          }
+        });
+        remove.addEventListener('click', async () => {
+          if (!confirm('هل تريد حذف هذا المشارك؟')) return;
+          remove.disabled = true;
+          try {
+            await BD.api('/api/participants/' + encodeURIComponent(participant._id), { method: 'DELETE' });
+            BD.showToast('تم حذف المشارك');
+            await loadParticipants();
+          } catch (error) {
+            BD.showToast(error.message, 'error');
+          } finally {
+            remove.disabled = false;
+          }
+        });
+        editor.append(summary, form);
+        item.appendChild(editor);
+      }
+      participantList.appendChild(item);
+    });
+  }
+
+  async function loadParticipants() {
+    const data = await BD.api('/api/participants?limit=50');
+    participants = data.participants || [];
+    renderParticipants();
+  }
+
+  document.getElementById('createParticipantForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = document.getElementById('createParticipantBtn');
+    const name = document.getElementById('participantName').value.trim();
+    const project = selectedProject();
+    if (!name || !project) {
+      setFormMessage('اختر مشروعاً وأدخل اسم المشارك.', true);
+      return;
+    }
+    button.disabled = true;
+    setFormMessage('');
+    try {
+      await BD.api('/api/participants', {
+        method: 'POST',
+        body: JSON.stringify({
+          name,
+          email: document.getElementById('participantEmail').value.trim(),
+          phone: document.getElementById('participantPhone').value.trim(),
+          projectId: project.id
+        })
+      });
+      event.currentTarget.reset();
+      setFormMessage('تمت إضافة المشارك.');
+      BD.showToast('تمت إضافة المشارك');
+      await loadParticipants();
+    } catch (error) {
+      setFormMessage(error.message, true);
+    } finally {
+      button.disabled = !projects.some((item) => participantManagers.has(item.role));
+    }
+  });
+  participantSearch.addEventListener('input', renderParticipants);
+
+  (async () => {
+    try {
+      await loadProjects();
+      await loadParticipants();
+    } catch (error) {
+      participantList.textContent = error.message || 'تعذر تحميل بيانات المشاركين.';
+      BD.showToast(error.message || 'تعذر تحميل البيانات', 'error');
+    }
+  })();
+</script>
+</body>
+</html>

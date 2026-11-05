@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-﻿# Business Discovery — Master Documentation
-=======
 # Business Discovery — Master Documentation
->>>>>>> 6578d99ec4a6cb1bf309e31425a47f3230903736
 
 *Authoritative reference for all future development.*
 
@@ -74,7 +70,7 @@ Current scope verified from source code:
 ### Testing
 - Node built-in test runner (node --test).
 - Tests in backend/test/.
-- 22/22 backend tests passing.
+- 30/30 backend tests passing.
 
 ---
 
@@ -473,62 +469,3 @@ The following source documents were incorporated into this consolidated README:
 ---
 
 *End of consolidated README*
-
----
-
-## 7. Database
-
-MongoDB is the primary data store.
-- 15 collections.
-- Users, user_states, friend_requests, friendships, partner_invites, partnerships, app_settings.
-- Projects, project_members, participants, tasks, notifications, conversations, messages, ai_conversations.
-- Backend database role is the source of truth for authorization.
-
-## 8. API Endpoints
-
-Auth: POST /api/auth/login, POST /api/auth/register
-Projects: GET/POST /api/projects
-Participants: GET /api/participants
-Friends: GET /api/friends, POST /api/friends/requests
-Partners: GET /api/partners
-Tasks: GET/POST /api/tasks
-Notifications: GET /api/notifications
-Chat: GET /api/conversations
-Settings: GET/PUT /api/settings
-Admin: GET /api/admin/stats, GET /api/admin/users
-
-## 9. Frontend Pages
-
-Public: index.html, login.html, register.html
-App shell: projects.html, participants.html, friends.html, partners.html, tasks.html, notifications.html, chat.html, settings.html, admin.html
-Total: 12 pages
-
-## 10. Security
-
-- Password hashing with scrypt.
-- HMAC-SHA256 signed base64url tokens.
-- Bearer token in Authorization header.
-- Token stored in browser localStorage (XSS risk - known limitation).
-- Token revocation not implemented; logout is client-side only.
-
-## 11. Known Limitations
-
-- Token revocation is not implemented; logout is client-side only.
-- Token stored in browser localStorage.
-- No automated database integration tests.
-- Chat is request/response based, not real-time.
-- AI chat endpoint returns unavailable/not implemented.
-
-## 12. AI Development Instructions
-
-Every future AI client must:
-- Read this guide before modifying the project.
-- Inspect the current code before making assumptions.
-- Make small, scoped changes.
-- Preserve existing API contracts unless a change is explicitly approved.
-- Prioritize data correctness and data safety over UI changes.
-- Run relevant tests and report actual results.
-- Never claim a test or database check passed unless it was actually performed.
-
----
-

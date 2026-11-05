@@ -45,19 +45,41 @@
 </div>
 
 <div id="forgotBackdrop" class="rd-modal-backdrop">
-  <div class="rd-modal">
-    <h2 style="margin:0 0 6px;">استعادة كلمة المرور</h2>
-    <p style="color:var(--muted);font-size:14px;margin:0 0 16px;">أدخل بريدك الإلكتروني وسنرسل تعليمات الاستعادة.</p>
-    <div class="rd-field">
-      <label class="rd-label">البريد الإلكتروني</label>
-      <input id="forgotEmail" class="rd-input" type="email" placeholder="name@example.com">
+  <section class="rd-modal" role="dialog" aria-modal="true" aria-labelledby="forgotTitle">
+    <h2 id="forgotTitle" style="margin:0 0 6px;">استعادة كلمة المرور</h2>
+    <div id="forgotRequestStep">
+      <p style="color:var(--muted);font-size:14px;margin:0 0 16px;">أدخل بريدك الإلكتروني لاستلام رمز استعادة صالح لمدة 15 دقيقة.</p>
+      <div class="rd-field">
+        <label class="rd-label" for="forgotEmail">البريد الإلكتروني</label>
+        <input id="forgotEmail" class="rd-input" type="email" placeholder="name@example.com" autocomplete="email">
+      </div>
+      <div id="forgotRequestMsg" class="rd-msg" role="status" aria-live="polite"></div>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button class="rd-btn ghost" style="flex:1;" onclick="closeForgot()">إلغاء</button>
+        <button id="forgotRequestBtn" class="rd-btn primary" style="flex:1;" onclick="requestPasswordReset()">إرسال الرمز</button>
+      </div>
     </div>
-    <div id="forgotMsg" class="rd-msg"></div>
-    <div style="display:flex;gap:8px;margin-top:12px;">
-      <button class="rd-btn ghost" style="flex:1;" onclick="closeForgot()">إلغاء</button>
-      <button class="rd-btn primary" style="flex:1;" onclick="submitForgot()">إرسال</button>
+    <div id="forgotResetStep" hidden>
+      <p style="color:var(--muted);font-size:14px;margin:0 0 16px;">أدخل الرمز الذي وصلك واختر كلمة مرور جديدة.</p>
+      <div class="rd-field">
+        <label class="rd-label" for="recoveryCode">رمز الاستعادة</label>
+        <input id="recoveryCode" class="rd-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}">
+      </div>
+      <div class="rd-field">
+        <label class="rd-label" for="recoveryPassword">كلمة المرور الجديدة</label>
+        <input id="recoveryPassword" class="rd-input" type="password" autocomplete="new-password">
+      </div>
+      <div class="rd-field">
+        <label class="rd-label" for="recoveryConfirm">تأكيد كلمة المرور</label>
+        <input id="recoveryConfirm" class="rd-input" type="password" autocomplete="new-password">
+      </div>
+      <div id="forgotResetMsg" class="rd-msg" role="status" aria-live="polite"></div>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button class="rd-btn ghost" style="flex:1;" onclick="closeForgot()">إلغاء</button>
+        <button id="forgotResetBtn" class="rd-btn primary" style="flex:1;" onclick="completePasswordReset()">تحديث كلمة المرور</button>
+      </div>
     </div>
-  </div>
+  </section>
 </div>
 
 <script src="assets/js/common.js"></script>
@@ -71,12 +93,73 @@
     if (loading) { btn.disabled = true; btn.innerHTML = '<span class="rd-spinner"></span> جاري...'; }
     else { btn.disabled = false; btn.textContent = 'دخول'; }
   }
-  function openForgot() { document.getElementById('forgotBackdrop').classList.add('open'); }
-  function closeForgot() { document.getElementById('forgotBackdrop').classList.remove('open'); }
-  function submitForgot() {
-    const m = document.getElementById('forgotMsg');
-    m.textContent = 'خدمة استعادة كلمة المرور غير متاحة في هذا الإصدار. تواصل مع المدير.';
-    m.className = 'rd-msg error';
+  function openForgot() {
+    document.getElementById('forgotEmail').value = document.getElementById('email').value.trim();
+    document.getElementById('forgotBackdrop').classList.add('open');
+    document.getElementById('forgotEmail').focus();
+  }
+  function closeForgot() {
+    document.getElementById('forgotBackdrop').classList.remove('open');
+    document.getElementById('forgotRequestStep').hidden = false;
+    document.getElementById('forgotResetStep').hidden = true;
+    document.getElementById('recoveryCode').value = '';
+    document.getElementById('recoveryPassword').value = '';
+    document.getElementById('recoveryConfirm').value = '';
+  }
+  async function requestPasswordReset() {
+    const email = document.getElementById('forgotEmail').value.trim();
+    const message = document.getElementById('forgotRequestMsg');
+    const button = document.getElementById('forgotRequestBtn');
+    message.textContent = '';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      message.textContent = 'يرجى إدخال بريد إلكتروني صالح';
+      message.className = 'rd-msg error';
+      return;
+    }
+    button.disabled = true;
+    try {
+      await BD.api('/api/auth/password-recovery', { method: 'POST', body: JSON.stringify({ email }) });
+      document.getElementById('forgotRequestStep').hidden = true;
+      document.getElementById('forgotResetStep').hidden = false;
+      document.getElementById('recoveryCode').focus();
+      document.getElementById('forgotResetMsg').textContent = 'إذا كان البريد مرتبطاً بحساب، فسيصلك رمز الاستعادة. تحقق من إعدادات البريد أو تواصل مع الإدارة إذا لم يصلك.';
+      document.getElementById('forgotResetMsg').className = 'rd-msg';
+    } catch (error) {
+      message.textContent = error.message || 'تعذر طلب استعادة كلمة المرور';
+      message.className = 'rd-msg error';
+    } finally {
+      button.disabled = false;
+    }
+  }
+  async function completePasswordReset() {
+    const email = document.getElementById('forgotEmail').value.trim();
+    const code = document.getElementById('recoveryCode').value.trim();
+    const newPassword = document.getElementById('recoveryPassword').value;
+    const confirmPassword = document.getElementById('recoveryConfirm').value;
+    const message = document.getElementById('forgotResetMsg');
+    const button = document.getElementById('forgotResetBtn');
+    message.textContent = '';
+    if (!/^\d{6}$/.test(code) || newPassword.length < 8 || newPassword !== confirmPassword) {
+      message.textContent = newPassword !== confirmPassword ? 'كلمتا المرور غير متطابقتين' : 'تحقق من الرمز وكلمة المرور (8 أحرف على الأقل)';
+      message.className = 'rd-msg error';
+      return;
+    }
+    button.disabled = true;
+    try {
+      await BD.api('/api/auth/reset-password-with-code', {
+        method: 'POST',
+        body: JSON.stringify({ email, code, newPassword, confirmPassword })
+      });
+      closeForgot();
+      const loginMessage = document.getElementById('msg');
+      loginMessage.textContent = 'تم تحديث كلمة المرور. يمكنك تسجيل الدخول الآن.';
+      loginMessage.className = 'rd-msg success';
+    } catch (error) {
+      message.textContent = error.message || 'تعذر تحديث كلمة المرور';
+      message.className = 'rd-msg error';
+    } finally {
+      button.disabled = false;
+    }
   }
   async function login() {
     const email = document.getElementById('email').value.trim();
@@ -94,6 +177,10 @@
     try {
       const data = await BD.api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
       BD.setToken(data.token);
+      if (data.user && data.user.mustChangePassword) {
+        location.href = 'change-password.html';
+        return;
+      }
       msg.textContent = 'تم تسجيل الدخول بنجاح';
       msg.className = 'rd-msg success';
       setTimeout(() => location.href = 'projects.html', 600);
@@ -104,6 +191,11 @@
       setLoading(btn, false);
     }
   }
-  document.addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    if (!document.getElementById('forgotBackdrop').classList.contains('open')) login();
+    else if (!document.getElementById('forgotRequestStep').hidden) requestPasswordReset();
+    else completePasswordReset();
+  });
 </script>
 </body></html>

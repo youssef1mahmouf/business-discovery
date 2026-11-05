@@ -10,6 +10,9 @@ function register(router, ctx) {
     if (!rateLimit(req, res, 60000, 20)) return;
     let body;
     try { body = await parseBody(req); } catch { return sendJson(res, 400, { error: 'invalid_json' }, origin); }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return sendJson(res, 400, { error: 'invalid_input' }, origin);
+    }
     const email = String(body.email || '').trim().toLowerCase();
     const password = String(body.password || '');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 8) {
@@ -33,6 +36,9 @@ function register(router, ctx) {
     if (!rateLimit(req, res, 60000, 20)) return;
     let body;
     try { body = await parseBody(req); } catch { return sendJson(res, 400, { error: 'invalid_json' }, origin); }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return sendJson(res, 400, { error: 'invalid_input' }, origin);
+    }
     const email = String(body.email || '').trim().toLowerCase();
     const password = String(body.password || '');
     const users = ctx.db.get('users');
@@ -49,8 +55,11 @@ function register(router, ctx) {
     if (!rateLimit(req, res, 60000, 20)) return;
     let body;
     try { body = await parseBody(req); } catch { return sendJson(res, 400, { error: 'invalid_json' }, origin); }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return sendJson(res, 400, { error: 'invalid_input' }, origin);
+    }
     const email = String(body.email || '').trim().toLowerCase();
-    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return sendJson(res, 400, { error: 'invalid_input' }, origin);
     }
     const users = ctx.db.get('users');
@@ -111,6 +120,51 @@ function register(router, ctx) {
     const passwordHash = hashPassword(newPassword);
     const users = ctx.db.get('users');
     await users.updateOne({ email: record.email }, { $set: { passwordHash, updatedAt: new Date().toISOString() } });
+    return sendJson(res, 200, { ok: true });
+  });
+
+  router.post('/api/auth/reset-password-with-code', async (req, res) => {
+    if (!rateLimit(req, res, 60000, 10)) return;
+    let body;
+    try { body = await parseBody(req); } catch { return sendJson(res, 400, { error: 'invalid_json' }, origin); }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return sendJson(res, 400, { error: 'invalid_input' }, origin);
+    }
+    const email = String(body.email || '').trim().toLowerCase();
+    const code = String(body.code || '');
+    const newPassword = String(body.newPassword || '');
+    const confirmPassword = String(body.confirmPassword || '');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !/^\d{6}$/.test(code) || newPassword.length < 8) {
+      return sendJson(res, 400, { error: 'invalid_input' }, origin);
+    }
+    if (newPassword !== confirmPassword) {
+      return sendJson(res, 400, { error: 'passwords_do_not_match' }, origin);
+    }
+
+    const crypto = require('crypto');
+    const hashedCode = crypto.createHash('sha256').update(code).digest('base64url');
+    const userStates = ctx.db.get('user_states');
+    const filter = { email, code: hashedCode, used: false, type: 'recovery' };
+    const record = await userStates.findOne(filter);
+    if (!record) return sendJson(res, 400, { error: 'invalid_or_expired_code' }, origin);
+    const expiresAt = new Date(record.expiresAt).getTime();
+    if (!Number.isFinite(expiresAt) || Date.now() >= expiresAt) {
+      await userStates.updateOne(filter, { $set: { used: true } });
+      return sendJson(res, 400, { error: 'invalid_or_expired_code' }, origin);
+    }
+
+    const consumed = await userStates.updateOne(filter, { $set: { used: true } });
+    if (!consumed.matchedCount) {
+      return sendJson(res, 400, { error: 'invalid_or_expired_code' }, origin);
+    }
+    await ctx.db.get('users').updateOne({ email }, {
+      $set: {
+        passwordHash: hashPassword(newPassword),
+        mustChangePassword: false,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+    await userStates.updateMany({ email, type: 'recovery', used: false }, { $set: { used: true } });
     return sendJson(res, 200, { ok: true });
   });
 

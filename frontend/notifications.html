@@ -1,21 +1,29 @@
-<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>الإشعارات | Business Discovery</title><link rel="stylesheet" href="assets/css/main.css"></head><body>
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>الإشعارات | Business Discovery</title>
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
 <div class="app-shell" id="appShell">
   <aside class="sidebar" id="bdSidebar">
     <div class="sidebar-brand"><div class="brand-icon">BD</div><span class="brand-text">Business Discovery</span></div>
-    <button class="sidebar-toggle" id="bdCollapseBtn">⇔</button>
+    <button class="sidebar-toggle" id="bdCollapseBtn" type="button" aria-label="طي القائمة">⇔</button>
     <nav class="sidebar-nav" id="bdSidebarNav"></nav>
     <div class="sidebar-footer">© 2026</div>
   </aside>
   <div class="sidebar-overlay" id="bdOverlay"></div>
   <div class="main-area">
     <header class="topbar" id="bdTopbar">
-      <button class="mobile-menu-btn" id="bdMenuBtn">☰</button>
+      <button class="mobile-menu-btn" id="bdMenuBtn" type="button" aria-label="فتح القائمة">☰</button>
       <div class="topbar-left"><h1 class="page-title" id="bdPageTitle"></h1></div>
-      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث في الإشعارات..."></div>
+      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث في الإشعارات..." aria-label="بحث في الإشعارات"></div>
       <div class="topbar-actions">
-        <a href="notifications.html" class="icon-btn">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
+        <a href="notifications.html" class="icon-btn" aria-label="الإشعارات">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
         <div class="profile-menu">
-          <button class="profile-btn" id="bdProfileBtn">👤 <span id="bdUserEmail"></span></button>
+          <button class="profile-btn" id="bdProfileBtn" type="button">👤 <span id="bdUserEmail"></span></button>
           <div class="profile-dropdown" id="bdProfileDropdown">
             <a href="settings.html">الإعدادات</a>
             <a href="#" id="bdLogout">تسجيل الخروج</a>
@@ -25,13 +33,16 @@
     </header>
     <main class="content" id="bdContent">
       <div class="container">
-        <div class="card">
+        <section class="card">
           <div class="card-header">
             <h2>الإشعارات</h2>
-            <span id="notifCount" class="badge badge-blue">0</span>
+            <div class="flex items-center gap-8">
+              <span id="notifCount" class="badge badge-blue">0</span>
+              <button id="readAllBtn" class="btn btn-secondary btn-sm" type="button">تحديد الكل كمقروء</button>
+            </div>
           </div>
-          <div id="list"></div>
-        </div>
+          <div id="notificationList" aria-live="polite"></div>
+        </section>
       </div>
     </main>
     <footer class="app-footer" id="bdFooter">Business Discovery © 2026 — جميع الحقوق محفوظة</footer>
@@ -40,7 +51,113 @@
 <script src="assets/js/common.js"></script>
 <script src="assets/js/layout.js"></script>
 <script>
-BD.requireAuth();
-async function load(){ try{ const d=await BD.api('/api/notifications'); const list=document.getElementById('list'); const countEl=document.getElementById('notifCount'); list.textContent=''; if(!d.notifications||!d.notifications.length){ list.innerHTML='<div class="empty-state"><span class="empty-icon">🔔</span><h3>لا توجد إشعارات</h3><p>جميع الإشعارات محدثة.</p></div>'; countEl.textContent='0'; return;} countEl.textContent=d.notifications.length; d.notifications.forEach(n=>{ const card=document.createElement('div'); card.className='card'; card.style.padding='16px'; card.style.marginBottom='12px'; card.style.display='flex'; card.style.justifyContent='space-between'; card.style.alignItems='center'; const info=document.createElement('div'); const type=document.createElement('div'); type.style.fontWeight='700'; type.style.color='var(--text)'; type.textContent=n.type||'إشعار'; info.appendChild(type); const from=document.createElement('div'); from.style.color='var(--text-muted)'; from.style.fontSize='14px'; from.textContent=n.from||'—'; info.appendChild(from); card.appendChild(info); const badge=document.createElement('span'); badge.className='badge badge-purple'; badge.textContent='جديد'; card.appendChild(badge); list.appendChild(card); }); }catch(e){ list.innerHTML='<div class="empty-state"><span class="empty-icon">⚠️</span><h3>حدث خطأ</h3><p>'+e.message+'</p></div>';} }
-load();
-</script></body></html>
+  BD.requireAuth();
+  const search = document.getElementById('bdSearch');
+  const list = document.getElementById('notificationList');
+  const readAllButton = document.getElementById('readAllBtn');
+  let notifications = [];
+
+  function emptyState(message) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    const description = document.createElement('p');
+    description.textContent = message;
+    empty.appendChild(description);
+    return empty;
+  }
+
+  function typeLabel(type) {
+    return ({
+      friend_request: 'طلب صداقة',
+      partner_invite: 'دعوة شراكة',
+      task_assigned: 'مهمة جديدة'
+    })[type] || 'إشعار';
+  }
+
+  function render() {
+    const query = search.value.trim().toLowerCase();
+    const visible = notifications.filter((notification) =>
+      [typeLabel(notification.type), notification.from, notification.createdAt]
+        .some((value) => String(value || '').toLowerCase().includes(query)));
+    const unreadCount = notifications.filter((notification) => !notification.read).length;
+    document.getElementById('notifCount').textContent = String(unreadCount);
+    readAllButton.disabled = unreadCount === 0;
+    list.textContent = '';
+    if (!visible.length) {
+      list.appendChild(emptyState(query ? 'لا توجد إشعارات مطابقة للبحث.' : 'لا توجد إشعارات حالياً.'));
+      return;
+    }
+
+    visible.forEach((notification) => {
+      const card = document.createElement('article');
+      card.className = 'card flex items-center justify-between gap-16';
+      card.style.padding = '16px';
+      card.style.marginBottom = '12px';
+      const info = document.createElement('div');
+      const title = document.createElement('strong');
+      title.textContent = typeLabel(notification.type);
+      const sender = document.createElement('p');
+      sender.className = 'small';
+      sender.textContent = notification.from ? 'من: ' + notification.from : 'إشعار من النظام';
+      const date = document.createElement('time');
+      date.className = 'small';
+      const timestamp = new Date(notification.createdAt);
+      date.dateTime = Number.isNaN(timestamp.getTime()) ? '' : timestamp.toISOString();
+      date.textContent = Number.isNaN(timestamp.getTime()) ? '' : timestamp.toLocaleString('ar');
+      info.append(title, sender, date);
+      card.appendChild(info);
+      if (notification.read) {
+        const badge = document.createElement('span');
+        badge.className = 'badge badge-success';
+        badge.textContent = 'مقروء';
+        card.appendChild(badge);
+      } else {
+        const button = document.createElement('button');
+        button.className = 'btn btn-secondary btn-sm';
+        button.type = 'button';
+        button.textContent = 'تحديد كمقروء';
+        button.addEventListener('click', async () => {
+          button.disabled = true;
+          try {
+            await BD.api('/api/notifications/' + encodeURIComponent(notification._id) + '/read', { method: 'POST' });
+            notification.read = true;
+            render();
+          } catch (error) {
+            button.disabled = false;
+            BD.showToast(error.message, 'error');
+          }
+        });
+        card.appendChild(button);
+      }
+      list.appendChild(card);
+    });
+  }
+
+  async function load() {
+    try {
+      const data = await BD.api('/api/notifications?limit=50');
+      notifications = data.notifications || [];
+      render();
+    } catch (error) {
+      list.textContent = '';
+      list.appendChild(emptyState(error.message || 'تعذر تحميل الإشعارات.'));
+    }
+  }
+
+  readAllButton.addEventListener('click', async () => {
+    readAllButton.disabled = true;
+    try {
+      await BD.api('/api/notifications/read-all', { method: 'POST' });
+      notifications.forEach((notification) => { notification.read = true; });
+      render();
+      BD.showToast('تم تحديد الإشعارات كمقروءة');
+    } catch (error) {
+      readAllButton.disabled = false;
+      BD.showToast(error.message, 'error');
+    }
+  });
+  search.addEventListener('input', render);
+  load();
+</script>
+</body>
+</html>

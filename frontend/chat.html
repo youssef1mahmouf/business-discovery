@@ -1,21 +1,29 @@
-<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>الدردشة | Business Discovery</title><link rel="stylesheet" href="assets/css/main.css"></head><body>
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>الدردشة | Business Discovery</title>
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
 <div class="app-shell" id="appShell">
   <aside class="sidebar" id="bdSidebar">
     <div class="sidebar-brand"><div class="brand-icon">BD</div><span class="brand-text">Business Discovery</span></div>
-    <button class="sidebar-toggle" id="bdCollapseBtn">⇔</button>
+    <button class="sidebar-toggle" id="bdCollapseBtn" type="button" aria-label="طي القائمة">⇔</button>
     <nav class="sidebar-nav" id="bdSidebarNav"></nav>
     <div class="sidebar-footer">© 2026</div>
   </aside>
   <div class="sidebar-overlay" id="bdOverlay"></div>
   <div class="main-area">
     <header class="topbar" id="bdTopbar">
-      <button class="mobile-menu-btn" id="bdMenuBtn">☰</button>
+      <button class="mobile-menu-btn" id="bdMenuBtn" type="button" aria-label="فتح القائمة">☰</button>
       <div class="topbar-left"><h1 class="page-title" id="bdPageTitle"></h1></div>
-      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث في المحادثات..."></div>
+      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث في المحادثات..." aria-label="بحث في المحادثات"></div>
       <div class="topbar-actions">
-        <a href="notifications.html" class="icon-btn">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
+        <a href="notifications.html" class="icon-btn" aria-label="الإشعارات">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
         <div class="profile-menu">
-          <button class="profile-btn" id="bdProfileBtn">👤 <span id="bdUserEmail"></span></button>
+          <button class="profile-btn" id="bdProfileBtn" type="button">👤 <span id="bdUserEmail"></span></button>
           <div class="profile-dropdown" id="bdProfileDropdown">
             <a href="settings.html">الإعدادات</a>
             <a href="#" id="bdLogout">تسجيل الخروج</a>
@@ -25,13 +33,38 @@
     </header>
     <main class="content" id="bdContent">
       <div class="container">
-        <div class="card">
+        <section class="card">
+          <div class="card-header"><h2>المحادثات</h2><span id="conversationCount" class="badge badge-blue">0</span></div>
+          <div id="conversationList" aria-live="polite"></div>
+        </section>
+        <section class="card">
+          <div class="card-header"><h2 id="conversationHeading">إنشاء محادثة</h2></div>
+          <form id="createConversationForm" class="gap-16 flex-col">
+            <div>
+              <label class="label" for="conversationType">نوع المحادثة</label>
+              <select id="conversationType" class="input">
+                <option value="direct">مباشرة</option>
+                <option value="group">مجموعة</option>
+              </select>
+            </div>
+            <div><label class="label" for="conversationTitle">اسم المجموعة (اختياري)</label><input id="conversationTitle" class="input" type="text" maxlength="120"></div>
+            <div><label class="label" for="conversationMembers">بريد عضو أو أكثر (افصل بين العناوين بفاصلة)</label><input id="conversationMembers" class="input" type="text" required></div>
+            <div><button id="createConversationBtn" class="btn btn-primary" type="submit">إنشاء المحادثة</button></div>
+            <p id="conversationFormMessage" class="small" role="status" aria-live="polite"></p>
+          </form>
+        </section>
+        <section class="card" id="messageSection" hidden>
           <div class="card-header">
-            <h2>المحادثات</h2>
-            <span id="convCount" class="badge badge-blue">0</span>
+            <h2 id="messageHeading">الرسائل</h2>
+            <a href="chat.html" class="btn btn-secondary btn-sm">العودة إلى القائمة</a>
           </div>
-          <div id="list"></div>
-        </div>
+          <div id="messageList" aria-live="polite"></div>
+          <form id="sendMessageForm" class="flex gap-8 mt-16">
+            <label class="sr-only" for="messageInput">اكتب رسالتك</label>
+            <input id="messageInput" class="input" type="text" maxlength="2000" autocomplete="off" placeholder="اكتب رسالتك..." required>
+            <button id="sendMessageBtn" class="btn btn-primary" type="submit">إرسال</button>
+          </form>
+        </section>
       </div>
     </main>
     <footer class="app-footer" id="bdFooter">Business Discovery © 2026 — جميع الحقوق محفوظة</footer>
@@ -40,7 +73,165 @@
 <script src="assets/js/common.js"></script>
 <script src="assets/js/layout.js"></script>
 <script>
-BD.requireAuth();
-async function load(){ try{ const d=await BD.api('/api/conversations'); const list=document.getElementById('list'); const countEl=document.getElementById('convCount'); list.textContent=''; if(!d.conversations||!d.conversations.length){ list.innerHTML='<div class="empty-state"><span class="empty-icon">💬</span><h3>لا توجد محادثات</h3><p>ابدأ محادثة جديدة مع فريقك.</p></div>'; countEl.textContent='0'; return;} countEl.textContent=d.conversations.length; d.conversations.forEach(c=>{ const card=document.createElement('div'); card.className='card'; card.style.padding='16px'; card.style.marginBottom='12px'; card.style.display='flex'; card.style.justifyContent='space-between'; card.style.alignItems='center'; card.style.cursor='pointer'; card.onclick=function(){ location.href='chat.html?id='+c.id; }; const info=document.createElement('div'); const title=document.createElement('div'); title.style.fontWeight='700'; title.style.color='var(--text)'; title.textContent=c.title||c.type||'محادثة'; info.appendChild(title); const members=document.createElement('div'); members.style.color='var(--text-muted)'; members.style.fontSize='14px'; members.textContent=(c.members||[]).join(', '); info.appendChild(members); card.appendChild(info); const badge=document.createElement('span'); badge.className='badge badge-cyan'; badge.textContent='محادثة'; card.appendChild(badge); list.appendChild(card); }); }catch(e){ list.innerHTML='<div class="empty-state"><span class="empty-icon">⚠️</span><h3>حدث خطأ</h3><p>'+e.message+'</p></div>';} }
-load();
-</script></body></html>
+  BD.requireAuth();
+  const search = document.getElementById('bdSearch');
+  const conversationList = document.getElementById('conversationList');
+  const messageSection = document.getElementById('messageSection');
+  const conversationId = new URLSearchParams(location.search).get('id');
+  let conversations = [];
+  let currentEmail = '';
+  try {
+    const token = BD.getToken();
+    currentEmail = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).email || '';
+  } catch (error) {
+    currentEmail = '';
+  }
+
+  function emptyState(message) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    const description = document.createElement('p');
+    description.textContent = message;
+    empty.appendChild(description);
+    return empty;
+  }
+
+  function renderConversations() {
+    const query = search.value.trim().toLowerCase();
+    const visible = conversations.filter((conversation) =>
+      [conversation.title, conversation.type, ...(conversation.members || [])]
+        .some((value) => String(value || '').toLowerCase().includes(query)));
+    document.getElementById('conversationCount').textContent = String(visible.length);
+    conversationList.textContent = '';
+    if (!visible.length) {
+      conversationList.appendChild(emptyState(query ? 'لا توجد محادثات مطابقة للبحث.' : 'لا توجد محادثات بعد. ابدأ محادثة جديدة أدناه.'));
+      return;
+    }
+
+    visible.forEach((conversation) => {
+      const card = document.createElement('article');
+      card.className = 'card flex items-center justify-between gap-16';
+      card.style.padding = '16px';
+      card.style.marginBottom = '12px';
+      const info = document.createElement('div');
+      const title = document.createElement('h3');
+      const otherMembers = (conversation.members || []).filter((email) => email !== currentEmail);
+      title.textContent = conversation.title || (conversation.type === 'direct' ? otherMembers.join(', ') : 'محادثة جماعية');
+      const members = document.createElement('p');
+      members.className = 'small';
+      members.textContent = otherMembers.join('، ');
+      info.append(title, members);
+      card.appendChild(info);
+      if (conversation.unread > 0) {
+        const unread = document.createElement('span');
+        unread.className = 'badge badge-cyan';
+        unread.textContent = String(conversation.unread) + ' جديدة';
+        card.appendChild(unread);
+      }
+      const open = document.createElement('a');
+      open.className = 'btn btn-secondary btn-sm';
+      open.href = 'chat.html?id=' + encodeURIComponent(String(conversation._id));
+      open.textContent = 'فتح';
+      card.appendChild(open);
+      conversationList.appendChild(card);
+    });
+  }
+
+  async function loadConversations() {
+    try {
+      const data = await BD.api('/api/conversations');
+      conversations = data.conversations || [];
+      renderConversations();
+    } catch (error) {
+      conversationList.textContent = '';
+      conversationList.appendChild(emptyState(error.message || 'تعذر تحميل المحادثات.'));
+    }
+  }
+
+  async function loadMessages() {
+    if (!conversationId) return;
+    const list = document.getElementById('messageList');
+    try {
+      const data = await BD.api('/api/conversations/' + encodeURIComponent(conversationId) + '/messages?limit=50');
+      list.textContent = '';
+      const messages = data.messages || [];
+      if (!messages.length) list.appendChild(emptyState('ابدأ المحادثة بإرسال أول رسالة.'));
+      messages.forEach((message) => {
+        const item = document.createElement('article');
+        item.className = 'card';
+        item.style.padding = '12px 16px';
+        item.style.marginBottom = '8px';
+        const sender = document.createElement('strong');
+        sender.textContent = message.sender === currentEmail ? 'أنت' : message.sender;
+        const content = document.createElement('p');
+        content.textContent = message.content;
+        const date = document.createElement('time');
+        date.className = 'small';
+        const timestamp = new Date(message.createdAt);
+        date.textContent = Number.isNaN(timestamp.getTime()) ? '' : timestamp.toLocaleString('ar');
+        item.append(sender, content, date);
+        list.appendChild(item);
+      });
+      list.scrollTop = list.scrollHeight;
+      const selected = conversations.find((conversation) => String(conversation._id) === conversationId);
+      document.getElementById('messageHeading').textContent = selected && selected.title || 'الرسائل';
+    } catch (error) {
+      list.textContent = '';
+      list.appendChild(emptyState(error.message || 'تعذر تحميل الرسائل.'));
+      document.getElementById('sendMessageBtn').disabled = true;
+    }
+  }
+
+  document.getElementById('createConversationForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = document.getElementById('createConversationBtn');
+    const message = document.getElementById('conversationFormMessage');
+    const members = document.getElementById('conversationMembers').value.split(',').map((email) => email.trim()).filter(Boolean);
+    const body = {
+      type: document.getElementById('conversationType').value,
+      title: document.getElementById('conversationTitle').value.trim(),
+      members
+    };
+    button.disabled = true;
+    message.textContent = '';
+    try {
+      const data = await BD.api('/api/conversations', { method: 'POST', body: JSON.stringify(body) });
+      location.href = 'chat.html?id=' + encodeURIComponent(String(data.conversation._id));
+    } catch (error) {
+      message.textContent = error.message;
+      message.style.color = 'var(--danger)';
+      button.disabled = false;
+    }
+  });
+
+  document.getElementById('sendMessageForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = document.getElementById('sendMessageBtn');
+    const input = document.getElementById('messageInput');
+    const content = input.value.trim();
+    if (!content) return;
+    button.disabled = true;
+    try {
+      await BD.api('/api/conversations/' + encodeURIComponent(conversationId) + '/messages', {
+        method: 'POST',
+        body: JSON.stringify({ content })
+      });
+      input.value = '';
+      await loadMessages();
+      await loadConversations();
+    } catch (error) {
+      BD.showToast(error.message, 'error');
+    } finally {
+      button.disabled = false;
+    }
+  });
+  search.addEventListener('input', renderConversations);
+  if (conversationId) {
+    messageSection.hidden = false;
+    document.getElementById('createConversationForm').closest('section').hidden = true;
+  }
+  loadConversations().then(loadMessages);
+  if (conversationId) setInterval(loadMessages, 15000);
+</script>
+</body>
+</html>

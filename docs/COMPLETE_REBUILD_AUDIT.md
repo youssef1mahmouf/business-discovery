@@ -15,6 +15,7 @@ This audit examined all files in the Business Discovery project to classify each
 ---
 
 ## 2. FILE CLASSIFICATION
+
 ### 2.1 Frontend Files
 
 | `frontend/projects.html` | INCOMPLETE | API calls to `/api/projects` with create, load, and toast functionality | No backend route handler for all project operations; form validation present but incomplete |
@@ -26,15 +27,19 @@ This audit examined all files in the Business Discovery project to classify each
 | | `frontend/notifications.html` | INCOMPLETE | API calls to `/api/notifications` with load functionality |
 | | `frontend/friends.html` | INCOMPLETE | API calls to `/api/friends` and `/api/friends/requests` with send functionality | Friend request flow incomplete; backend route truncation observed during audit |
 | | `frontend/participants.html` | INCOMPLETE | API calls to `/api/participants` with load functionality | Participant management routes exist but ownership/role checks are inconsistent across routes |
+
 | File | State | Notes |
-|------|-------|-------|
-| `frontend/index.html` | COMPLETE | Full hero section, 3D canvas, vendor scripts, modular initialization | Additional: Three.js hero scene with auto-resize and reduced-motion safeguards.
+| ------ | ------- | ------- |
+| `frontend/index.html` | COMPLETE | Full hero section, 3D canvas, vendor scripts, modular initialization |
+
+ Additional: Three.js hero scene with auto-resize and reduced-motion safeguards.
 | `frontend/login.html` | INCOMPLETE | Form validation, login API call, but password recovery says "Service unavailable" | Password recovery UI permanently disabled with "Service unavailable" message; backend flow exists but frontend disconnects user |
 | `frontend/register.html` | INCOMPLETE | Form validation, strength meter, registration API call | Registration lacks frontend email uniqueness validation; depends on backend `email_in_use` error mapping |
+
 ### 2.2 Frontend JavaScript Files
 
 | File | State | Notes |
-|------|-------|-------|
+| ------ | ------- | ------- |
 | `frontend/assets/js/common.js` | COMPLETE | BD object with API wrapper, token management, requireAuth, error message mapping |
 | `frontend/assets/js/layout.js` | COMPLETE | Sidebar navigation, admin role detection, profile email, logout, notification counts |
 | `frontend/src/core/api.js` | INCOMPLETE | Typed API helpers wrappers; references endpoints not all implemented in backend |
@@ -49,7 +54,7 @@ This audit examined all files in the Business Discovery project to classify each
 ### 2.3 Backend Files
 
 | File | State | Notes |
-|------|-------|-------|
+| ------ | ------- | ------- |
 | `backend/src/server.js` | COMPLETE | Custom HTTP server, routing, static file serving, health check |
 | `backend/src/app.js` | COMPLETE | App creation, route registration, CORS, API health endpoint |
 | `backend/src/config.js` | INCOMPLETE | Config validation with development defaults; production checks incomplete |
@@ -68,7 +73,7 @@ This audit examined all files in the Business Discovery project to classify each
 ### 2.4 Backend Middleware
 
 | File | State | Notes |
-|------|-------|-------|
+| ------ | ------- | ------- |
 | `backend/src/middleware/router.js` | COMPLETE | Simple route matching with pattern support |
 | `backend/src/middleware/http.js` | COMPLETE | JSON response sending, body parsing |
 | `backend/src/middleware/auth.js` | INCOMPLETE | Token verification, role determination from DB, email-payload matching |
@@ -77,7 +82,7 @@ This audit examined all files in the Business Discovery project to classify each
 ### 2.5 Test Files
 
 | File | State | Notes |
-|------|-------|-------|
+| ------ | ------- | ------- |
 | `backend/test/config.test.js` | COMPLETE | Config validation tests (MONGODB_URI, TOKEN_SECRET, FRONTEND_ORIGIN) |
 | `backend/test/provisioning.test.js` | COMPLETE | Provisioning script tests (email format, missing config) |
 | `backend/test/auth-middleware.test.js` | COMPLETE | Authentication middleware tests (deleted user, role changes, requireAuth) |
@@ -88,13 +93,14 @@ This audit examined all files in the Business Discovery project to classify each
 
 | File | State | Notes |
 |------|-------|-------|
-| `backend/scripts/promote-super-admin.js` | COMPLETE | Provisioning script; requires ADMIN_EMAIL env var and ADMIN_PROVISION_CONFIRM=yes |
+
+|  `backend/scripts/promote-super-admin.js` | COMPLETE  | Provisioning script; requires ADMIN_EMAIL env var and ADMIN_PROVISION_CONFIRM=yes |
 | `backend/scripts/init-db.js` | COMPLETE | Index initialization from database/indexes.json |
 
 ### 2.7 Configuration
 
 | File | State | Notes |
-|------|-------|-------|
+| ------ | ------- | ------- |
 | `.env.example` | COMPLETE | Development defaults with production warnings |
 | `backend/.env.example` | COMPLETE | Same as root .env.example |
 | `database/collections.json` | COMPLETE | Lists 15 MongoDB collections |
@@ -104,6 +110,7 @@ This audit examined all files in the Business Discovery project to classify each
 
 | File | State | Notes |
 |------|-------|-------|
+
 | `frontend/assets/css/main.css` | NOT READILY READ | Not yet inspected in detail |
 | `frontend/assets/vendor/` | COMPLETE | GSAP, Lenis, Three.js, Lucide, SplitType installed |
 

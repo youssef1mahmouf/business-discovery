@@ -1,21 +1,29 @@
-<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>المهام | Business Discovery</title><link rel="stylesheet" href="assets/css/main.css"></head><body>
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>المهام | Business Discovery</title>
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
 <div class="app-shell" id="appShell">
   <aside class="sidebar" id="bdSidebar">
     <div class="sidebar-brand"><div class="brand-icon">BD</div><span class="brand-text">Business Discovery</span></div>
-    <button class="sidebar-toggle" id="bdCollapseBtn">⇔</button>
+    <button class="sidebar-toggle" id="bdCollapseBtn" type="button" aria-label="طي القائمة">⇔</button>
     <nav class="sidebar-nav" id="bdSidebarNav"></nav>
     <div class="sidebar-footer">© 2026</div>
   </aside>
   <div class="sidebar-overlay" id="bdOverlay"></div>
   <div class="main-area">
     <header class="topbar" id="bdTopbar">
-      <button class="mobile-menu-btn" id="bdMenuBtn">☰</button>
+      <button class="mobile-menu-btn" id="bdMenuBtn" type="button" aria-label="فتح القائمة">☰</button>
       <div class="topbar-left"><h1 class="page-title" id="bdPageTitle"></h1></div>
-      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث عن مهمة..."></div>
+      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث عن مهمة..." aria-label="بحث عن مهمة"></div>
       <div class="topbar-actions">
-        <a href="notifications.html" class="icon-btn">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
+        <a href="notifications.html" class="icon-btn" aria-label="الإشعارات">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
         <div class="profile-menu">
-          <button class="profile-btn" id="bdProfileBtn">👤 <span id="bdUserEmail"></span></button>
+          <button class="profile-btn" id="bdProfileBtn" type="button">👤 <span id="bdUserEmail"></span></button>
           <div class="profile-dropdown" id="bdProfileDropdown">
             <a href="settings.html">الإعدادات</a>
             <a href="#" id="bdLogout">تسجيل الخروج</a>
@@ -25,26 +33,20 @@
     </header>
     <main class="content" id="bdContent">
       <div class="container">
-        <div class="card">
-          <div class="card-header">
-            <h2>المهام</h2>
-            <span id="taskCount" class="badge badge-blue">0</span>
-          </div>
-          <div id="list"></div>
-        </div>
-        <div class="card">
-          <div class="card-header"><h3>مهمة جديدة</h3></div>
-          <div class="gap-16 flex-col">
-            <div>
-              <label class="label" for="title">عنوان المهمة</label>
-              <input id="title" class="input" type="text" placeholder="أدخل عنوان المهمة">
-            </div>
-            <div class="flex gap-8 justify-start">
-              <button class="btn btn-primary" onclick="create()">إنشاء المهمة</button>
-            </div>
-            <p id="msg" class="small mt-8"></p>
-          </div>
-        </div>
+        <section class="card">
+          <div class="card-header"><h2>المهام</h2><span id="taskCount" class="badge badge-blue">0</span></div>
+          <div id="taskList" aria-live="polite"></div>
+        </section>
+        <section class="card">
+          <div class="card-header"><h2>مهمة جديدة</h2></div>
+          <form id="createTaskForm" class="gap-16 flex-col">
+            <div><label class="label" for="taskTitle">عنوان المهمة</label><input id="taskTitle" class="input" type="text" maxlength="200" required></div>
+            <div><label class="label" for="taskDescription">الوصف (اختياري)</label><textarea id="taskDescription" class="input" rows="3" maxlength="4000"></textarea></div>
+            <div><label class="label" for="taskAssignee">البريد الإلكتروني للمكلّف (اختياري)</label><input id="taskAssignee" class="input" type="email" autocomplete="email"></div>
+            <div><button id="createTaskBtn" class="btn btn-primary" type="submit">إنشاء المهمة</button></div>
+            <p id="taskFormMessage" class="small" role="status" aria-live="polite"></p>
+          </form>
+        </section>
       </div>
     </main>
     <footer class="app-footer" id="bdFooter">Business Discovery © 2026 — جميع الحقوق محفوظة</footer>
@@ -53,9 +55,151 @@
 <script src="assets/js/common.js"></script>
 <script src="assets/js/layout.js"></script>
 <script>
-BD.requireAuth();
-async function load(){ try{ const d=await BD.api('/api/tasks'); const list=document.getElementById('list'); const countEl=document.getElementById('taskCount'); list.textContent=''; if(!d.tasks||!d.tasks.length){ list.innerHTML='<div class="empty-state"><span class="empty-icon">✅</span><h3>لا توجد مهام</h3><p>ابدأ بإنشاء مهمتك الأولى.</p></div>'; countEl.textContent='0'; return;} countEl.textContent=d.tasks.length; d.tasks.forEach(t=>{ const card=document.createElement('div'); card.className='card'; card.style.padding='16px'; card.style.marginBottom='12px'; card.style.display='flex'; card.style.justifyContent='space-between'; card.style.alignItems='center'; const info=document.createElement('div'); const title=document.createElement('div'); title.style.fontWeight='700'; title.style.color='var(--text)'; title.textContent=t.title||'بدون عنوان'; info.appendChild(title); const status=document.createElement('div'); status.style.color='var(--text-muted)'; status.style.fontSize='14px'; status.textContent=(t.status||'جديد'); info.appendChild(status); card.appendChild(info); const badge=document.createElement('span'); badge.className='badge badge-blue'; badge.textContent=t.status||'جديد'; card.appendChild(badge); list.appendChild(card); }); }catch(e){ list.innerHTML='<div class="empty-state"><span class="empty-icon">⚠️</span><h3>حدث خطأ</h3><p>'+e.message+'</p></div>';} }
-async function create(){ const title=document.getElementById('title'); const msg=document.getElementById('msg'); msg.textContent=''; if(!title.value.trim()){ msg.textContent='يرجى إدخال عنوان المهمة'; msg.style.color='var(--danger)'; return; } try{ await BD.api('/api/tasks',{method:'POST',body:JSON.stringify({title:title.value})}); title.value=''; load(); showToast('تم إنشاء المهمة بنجاح','success'); }catch(e){ msg.textContent=e.message; msg.style.color='var(--danger)';} }
-function showToast(message,type){ const t=document.createElement('div'); t.className='toast '+type; t.textContent=message; document.body.appendChild(t); setTimeout(()=>t.classList.add('show'),10); setTimeout(()=>{ t.classList.remove('show'); setTimeout(()=>t.remove(),300);},3000); }
-load();
-</script></body></html>
+  BD.requireAuth();
+  const taskList = document.getElementById('taskList');
+  const search = document.getElementById('bdSearch');
+  let tasks = [];
+  let currentEmail = '';
+  try {
+    const token = BD.getToken();
+    currentEmail = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).email || '';
+  } catch (error) {
+    currentEmail = '';
+  }
+
+  function statusLabel(status) {
+    return ({ open: 'مفتوحة', in_progress: 'قيد التنفيذ', done: 'مكتملة' })[status] || status;
+  }
+
+  function emptyState(message) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    const description = document.createElement('p');
+    description.textContent = message;
+    empty.appendChild(description);
+    return empty;
+  }
+
+  function render() {
+    const query = search.value.trim().toLowerCase();
+    const visible = tasks.filter((task) => [task.title, task.description, task.assignee]
+      .some((value) => String(value || '').toLowerCase().includes(query)));
+    document.getElementById('taskCount').textContent = String(visible.length);
+    taskList.textContent = '';
+    if (!visible.length) {
+      taskList.appendChild(emptyState(query ? 'لا توجد مهام مطابقة للبحث.' : 'لا توجد مهام بعد. أنشئ مهمتك الأولى أدناه.'));
+      return;
+    }
+
+    visible.forEach((task) => {
+      const card = document.createElement('article');
+      card.className = 'card';
+      card.style.padding = '16px';
+      card.style.marginBottom = '12px';
+      const header = document.createElement('div');
+      header.className = 'flex items-center justify-between gap-16';
+      const title = document.createElement('h3');
+      title.textContent = task.title || 'بدون عنوان';
+      const badge = document.createElement('span');
+      badge.className = task.status === 'done' ? 'badge badge-success' : 'badge badge-blue';
+      badge.textContent = statusLabel(task.status || 'open');
+      header.append(title, badge);
+      card.appendChild(header);
+      if (task.description) {
+        const description = document.createElement('p');
+        description.textContent = task.description;
+        card.appendChild(description);
+      }
+      const meta = document.createElement('p');
+      meta.className = 'small';
+      meta.textContent = 'المكلّف: ' + (task.assignee || task.owner || '—');
+      card.appendChild(meta);
+
+      const actions = document.createElement('div');
+      actions.className = 'flex gap-8 mt-16';
+      const status = document.createElement('select');
+      status.className = 'input';
+      status.setAttribute('aria-label', 'حالة المهمة');
+      [['open', 'مفتوحة'], ['in_progress', 'قيد التنفيذ'], ['done', 'مكتملة']].forEach(([value, label]) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = label;
+        option.selected = (task.status || 'open') === value;
+        status.appendChild(option);
+      });
+      status.addEventListener('change', async () => {
+        status.disabled = true;
+        try {
+          await BD.api('/api/tasks/' + encodeURIComponent(task._id), { method: 'PUT', body: JSON.stringify({ status: status.value }) });
+          BD.showToast('تم تحديث حالة المهمة');
+          await load();
+        } catch (error) {
+          BD.showToast(error.message, 'error');
+          status.value = task.status || 'open';
+          status.disabled = false;
+        }
+      });
+      actions.appendChild(status);
+
+      if (task.owner === currentEmail) {
+        const remove = document.createElement('button');
+        remove.className = 'btn btn-danger btn-sm';
+        remove.type = 'button';
+        remove.textContent = 'حذف';
+        remove.addEventListener('click', async () => {
+          if (!confirm('هل تريد حذف هذه المهمة؟')) return;
+          try {
+            await BD.api('/api/tasks/' + encodeURIComponent(task._id), { method: 'DELETE' });
+            BD.showToast('تم حذف المهمة');
+            await load();
+          } catch (error) {
+            BD.showToast(error.message, 'error');
+          }
+        });
+        actions.appendChild(remove);
+      }
+      card.appendChild(actions);
+      taskList.appendChild(card);
+    });
+  }
+
+  async function load() {
+    try {
+      const data = await BD.api('/api/tasks?limit=50');
+      tasks = data.tasks || [];
+      render();
+    } catch (error) {
+      taskList.textContent = '';
+      taskList.appendChild(emptyState(error.message || 'تعذر تحميل المهام.'));
+    }
+  }
+
+  document.getElementById('createTaskForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = document.getElementById('createTaskBtn');
+    const message = document.getElementById('taskFormMessage');
+    const body = {
+      title: document.getElementById('taskTitle').value.trim(),
+      description: document.getElementById('taskDescription').value.trim(),
+      assignee: document.getElementById('taskAssignee').value.trim()
+    };
+    if (!body.assignee) delete body.assignee;
+    button.disabled = true;
+    message.textContent = '';
+    try {
+      await BD.api('/api/tasks', { method: 'POST', body: JSON.stringify(body) });
+      event.currentTarget.reset();
+      BD.showToast('تم إنشاء المهمة');
+      await load();
+    } catch (error) {
+      message.textContent = error.message;
+      message.style.color = 'var(--danger)';
+    } finally {
+      button.disabled = false;
+    }
+  });
+  search.addEventListener('input', render);
+  load();
+</script>
+</body>
+</html>

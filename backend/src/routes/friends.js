@@ -15,16 +15,29 @@ function register(router, ctx) {
     const items = await fs_.find({ $or: [{ a: u.email },{ b: u.email }] }).toArray();
     const friends = items.map(x => x.a === u.email ? x.b : x.a);
     const pending = await fr.find({ to: u.email, type: 'friend', status: 'pending' }).toArray();
-    return sendJson(res,200,{ friends, pending },origin);
+    const sent = await fr.find({ from: u.email, type: 'friend', status: 'pending' }).toArray();
+    return sendJson(res,200,{ friends, pending, sent },origin);
   });
 
   router.post('/api/friends/requests', async (req,res) => {
     const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     let body; try { body=await parseBody(req);} catch { return sendJson(res,400,{error:'invalid_json'},origin);}
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJson(res,400,{error:'invalid_input'},origin);
     const to = String(body.to||'').trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to) || to === u.email) return sendJson(res,400,{error:'invalid_input'},origin);
-    try { await fr.insertOne({ from: u.email, to, type: 'friend', status: 'pending', createdAt: new Date().toISOString() }); }
-    catch (e) { if (e && e.code===11000) return sendJson(res,409,{error:'already_requested'},origin); throw e; }
+    const friendship = await fs_.findOne({ $or: [{ a: u.email, b: to },{ a: to, b: u.email }] });
+    if (friendship) return sendJson(res,409,{error:'already_friends'},origin);
+    const incoming = await fr.findOne({ from: to, to: u.email, type: 'friend', status: 'pending' });
+    if (incoming) return sendJson(res,409,{error:'request_received'},origin);
+    const existing = await fr.findOne({ from: u.email, to, type: 'friend' });
+    const createdAt = new Date().toISOString();
+    if (existing) {
+      if (existing.status === 'pending') return sendJson(res,409,{error:'already_requested'},origin);
+      await fr.updateOne({ _id: existing._id }, { $set: { status: 'pending', createdAt } });
+    } else {
+      try { await fr.insertOne({ from: u.email, to, type: 'friend', status: 'pending', createdAt }); }
+      catch (e) { if (e && e.code===11000) return sendJson(res,409,{error:'already_requested'},origin); throw e; }
+    }
     await ctx.db.get('notifications').insertOne({ userEmail: to, type: 'friend_request', from: u.email, createdAt: new Date().toISOString(), read: false });
     return sendJson(res,201,{ ok: true },origin);
   });
@@ -43,8 +56,8 @@ function register(router, ctx) {
 
   router.delete('/api/friends/requests/:id', async (req,res) => {
     const u = await requireAuth(req,res,ctx,origin); if(!u) return;
-    const { ObjectId } = require('mongodb');
-    let o; try { o=new ObjectId(req.params.id);} catch { return sendJson(res,400,{error:'invalid_id'},origin);}
+    const o = oid(req.params.id);
+    if (!o) return sendJson(res,400,{error:'invalid_id'},origin);
     const r = await fr.findOne({ _id: o });
     if (!r || r.from !== u.email) return sendJson(res,403,{error:'forbidden'},origin);
     await fr.deleteOne({ _id: o });
@@ -53,7 +66,7 @@ function register(router, ctx) {
 
   router.delete('/api/friends/:email', async (req,res) => {
     const u = await requireAuth(req,res,ctx,origin); if(!u) return;
-    const target = decodeURIComponent(req.params.email).toLowerCase();
+    const target = String(req.params.email).toLowerCase();
     await fs_.deleteMany({ $or: [{ a: u.email, b: target }, { a: target, b: u.email }] });
     return sendJson(res,200,{ ok:true },origin);
   });
@@ -72,16 +85,29 @@ function register(router, ctx) {
     const items = await ps.find({ $or: [{ a: u.email },{ b: u.email }] }).toArray();
     const partners = items.map(x => x.a === u.email ? x.b : x.a);
     const pending = await pi.find({ to: u.email, type: 'partner', status: 'pending' }).toArray();
-    return sendJson(res,200,{ partners, pending },origin);
+    const sent = await pi.find({ from: u.email, type: 'partner', status: 'pending' }).toArray();
+    return sendJson(res,200,{ partners, pending, sent },origin);
   });
 
   router.post('/api/partners/invitations', async (req,res) => {
     const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     let body; try { body=await parseBody(req);} catch { return sendJson(res,400,{error:'invalid_json'},origin);}
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJson(res,400,{error:'invalid_input'},origin);
     const to = String(body.to||'').trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to) || to === u.email) return sendJson(res,400,{error:'invalid_input'},origin);
-    try { await pi.insertOne({ from: u.email, to, type: 'partner', status: 'pending', createdAt: new Date().toISOString() }); }
-    catch (e) { if (e && e.code===11000) return sendJson(res,409,{error:'already_invited'},origin); throw e; }
+    const partnership = await ps.findOne({ $or: [{ a: u.email, b: to },{ a: to, b: u.email }] });
+    if (partnership) return sendJson(res,409,{error:'already_partners'},origin);
+    const incoming = await pi.findOne({ from: to, to: u.email, type: 'partner', status: 'pending' });
+    if (incoming) return sendJson(res,409,{error:'invitation_received'},origin);
+    const existing = await pi.findOne({ from: u.email, to, type: 'partner' });
+    const createdAt = new Date().toISOString();
+    if (existing) {
+      if (existing.status === 'pending') return sendJson(res,409,{error:'already_invited'},origin);
+      await pi.updateOne({ _id: existing._id }, { $set: { status: 'pending', createdAt } });
+    } else {
+      try { await pi.insertOne({ from: u.email, to, type: 'partner', status: 'pending', createdAt }); }
+      catch (e) { if (e && e.code===11000) return sendJson(res,409,{error:'already_invited'},origin); throw e; }
+    }
     await ctx.db.get('notifications').insertOne({ userEmail: to, type: 'partner_invite', from: u.email, createdAt: new Date().toISOString(), read: false });
     return sendJson(res,201,{ ok: true },origin);
   });

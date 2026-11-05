@@ -39,8 +39,8 @@
       </div>
       <div class="rd-hero-visual">
         <canvas id="hero3d"></canvas>
-        <div class="rd-float-card c1">📊 +42% نمو هذا الشهر</div>
-        <div class="rd-float-card c2">🤝 12 شريك جديد</div>
+        <div class="rd-float-card c1">📊 مساحة واحدة لإدارة مشاريعك</div>
+        <div class="rd-float-card c2">🤝 تعاون أوضح مع فريقك</div>
       </div>
     </section>
     <section class="rd-section">
@@ -57,11 +57,12 @@
     </section>
     <section class="rd-section">
       <div class="rd-stats">
-        <div class="rd-stat"><div class="num">99.9%</div><div class="lbl">وقت تشغيل</div></div>
-        <div class="rd-stat"><div class="num">24/7</div><div class="lbl">دعم مستمر</div></div>
-        <div class="rd-stat"><div class="num">10k+</div><div class="lbl">مستخدم نشط</div></div>
-        <div class="rd-stat"><div class="num">50+</div><div class="lbl">تكامل</div></div>
+        <div class="rd-stat"><div class="num" id="publicUsers">—</div><div class="lbl">عضو مسجل</div></div>
+        <div class="rd-stat"><div class="num" id="publicProjects">—</div><div class="lbl">مشروع نشط</div></div>
+        <div class="rd-stat"><div class="num" id="publicTasks">—</div><div class="lbl">مهمة مسجلة</div></div>
+        <div class="rd-stat"><div class="num" id="publicPartnerships">—</div><div class="lbl">شراكة مؤكدة</div></div>
       </div>
+      <p id="publicStatsStatus" class="small text-center" role="status" aria-live="polite"></p>
     </section>
     <div class="rd-cta">
       <h2 style="margin:0 0 12px;">جاهز للبدء؟</h2>
@@ -73,15 +74,6 @@
 </div>
 <script src="assets/vendor/gsap.js"></script>
 <script src="assets/js/common.js"></script>
-<script>
-  if (window.gsap) {
-    try {
-      gsap.from('.rd-hero-text > *', { opacity: 0, y: 30, duration: 0.8, stagger: 0.12, ease: 'power3.out' });
-      gsap.from('.rd-feature', { opacity: 0, y: 40, duration: 0.7, stagger: 0.1, delay: 0.3, ease: 'power3.out' });
-      gsap.from('.rd-float-card', { opacity: 0, scale: 0.8, duration: 0.6, delay: 0.6, stagger: 0.15 });
-    } catch (e) { console.warn(e); }
-  }
-</script>
 <script type="module">
   import { initHero3D } from './src/animations/three-scene.js';
   import { initLenis } from './src/animations/lenis.js';
@@ -93,6 +85,7 @@
   const hero = initHero3D('hero3d', { color: 0x35D5F2, innerColor: 0x8B5CF6, particleCount: 150 });
 
   initLenis({ duration: 1.2 });
+  loadPublicStats();
 
   if (!reduce && window.gsap) {
     try { splitReveal('.rd-hero-text h1', window.gsap, { delay: 0.2, stagger: 0.03, duration: 0.5 }); }
@@ -108,13 +101,40 @@
 
   if (window.gsap) {
     try {
-      window.gsap.from('.rd-hero-text > *', { opacity: 0, y: 30, duration: 0.8, stagger: 0.12, ease: 'power3.out' });
+      window.gsap.from('.rd-hero-text > :not(h1)', { opacity: 0, y: 30, duration: 0.8, stagger: 0.12, ease: 'power3.out' });
       window.gsap.from('.rd-feature', { opacity: 0, y: 40, duration: 0.7, stagger: 0.1, delay: 0.3, ease: 'power3.out' });
       window.gsap.from('.rd-float-card', { opacity: 0, scale: 0.8, duration: 0.6, delay: 0.6, stagger: 0.15 });
     } catch (e) { console.warn(e); }
   }
 
   window.addEventListener('beforeunload', () => { if (hero) hero.dispose(); });
+
+  async function loadPublicStats() {
+    const fields = {
+      users: document.getElementById('publicUsers'),
+      projects: document.getElementById('publicProjects'),
+      tasks: document.getElementById('publicTasks'),
+      partnerships: document.getElementById('publicPartnerships'),
+    };
+    const status = document.getElementById('publicStatsStatus');
+    try {
+      const response = await fetch('/api/public/stats');
+      if (!response.ok) throw new Error('Public statistics request failed: ' + response.status);
+      const { stats } = await response.json();
+      Object.entries(fields).forEach(([key, element]) => {
+        const value = stats && stats[key];
+        if (!element || !Number.isSafeInteger(value) || value < 0) {
+          throw new Error('Public statistics response is invalid.');
+        }
+        element.textContent = new Intl.NumberFormat('en').format(value);
+      });
+      if (status) status.textContent = '';
+    } catch (error) {
+      Object.values(fields).forEach((element) => { if (element) element.textContent = '—'; });
+      if (status) status.textContent = 'الإحصاءات غير متاحة حالياً';
+      console.error('Unable to load public statistics:', error);
+    }
+  }
 </script>
 </body>
 </html>

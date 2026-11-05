@@ -1,28 +1,29 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>المشاريع | Business Discovery</title>
-<link rel="stylesheet" href="assets/css/main.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>المشاريع | Business Discovery</title>
+  <link rel="stylesheet" href="assets/css/main.css">
 </head>
 <body>
 <div class="app-shell" id="appShell">
   <aside class="sidebar" id="bdSidebar">
     <div class="sidebar-brand"><div class="brand-icon">BD</div><span class="brand-text">Business Discovery</span></div>
-    <button class="sidebar-toggle" id="bdCollapseBtn">⇔</button>
+    <button class="sidebar-toggle" id="bdCollapseBtn" type="button" aria-label="طي القائمة">⇔</button>
     <nav class="sidebar-nav" id="bdSidebarNav"></nav>
     <div class="sidebar-footer">© 2026</div>
   </aside>
   <div class="sidebar-overlay" id="bdOverlay"></div>
   <div class="main-area">
     <header class="topbar" id="bdTopbar">
-      <button class="mobile-menu-btn" id="bdMenuBtn">☰</button>
+      <button class="mobile-menu-btn" id="bdMenuBtn" type="button" aria-label="فتح القائمة">☰</button>
       <div class="topbar-left"><h1 class="page-title" id="bdPageTitle"></h1></div>
-      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث عن مشروع..."></div>
+      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث عن مشروع..." aria-label="بحث عن مشروع"></div>
       <div class="topbar-actions">
-        <a href="notifications.html" class="icon-btn">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
+        <a href="notifications.html" class="icon-btn" aria-label="الإشعارات">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
         <div class="profile-menu">
-          <button class="profile-btn" id="bdProfileBtn">👤 <span id="bdUserEmail"></span></button>
+          <button class="profile-btn" id="bdProfileBtn" type="button">👤 <span id="bdUserEmail"></span></button>
           <div class="profile-dropdown" id="bdProfileDropdown">
             <a href="settings.html">الإعدادات</a>
             <a href="#" id="bdLogout">تسجيل الخروج</a>
@@ -32,32 +33,19 @@
     </header>
     <main class="content" id="bdContent">
       <div class="container">
-        <div class="card">
-          <div class="card-header">
-            <h2>مشاريعي</h2>
-            <span id="projectCount" class="badge badge-blue">0</span>
-          </div>
-          <div id="list"></div>
-        </div>
-        <div class="card">
-          <div class="card-header">
-            <h3>إنشاء مشروع جديد</h3>
-          </div>
-          <div class="gap-16 flex-col">
-            <div>
-              <label class="label" for="name">اسم المشروع</label>
-              <input id="name" class="input" type="text" placeholder="أدخل اسم المشروع">
-            </div>
-            <div>
-              <label class="label" for="desc">وصف المشروع</label>
-              <input id="desc" class="input" type="text" placeholder="أضف وصفاً موجزاً">
-            </div>
-            <div class="flex gap-8 justify-start">
-              <button class="btn btn-primary" onclick="create()">إنشاء المشروع</button>
-            </div>
-            <p id="msg" class="small mt-8"></p>
-          </div>
-        </div>
+        <section class="card">
+          <div class="card-header"><h2>مشاريعي</h2><span id="projectCount" class="badge badge-blue">0</span></div>
+          <div id="projectList" aria-live="polite"></div>
+        </section>
+        <section class="card">
+          <div class="card-header"><h2>إنشاء مشروع جديد</h2></div>
+          <form id="createProjectForm" class="gap-16 flex-col">
+            <div><label class="label" for="projectName">اسم المشروع</label><input id="projectName" class="input" type="text" maxlength="160" required></div>
+            <div><label class="label" for="projectDescription">الوصف (اختياري)</label><textarea id="projectDescription" class="input" rows="3" maxlength="4000"></textarea></div>
+            <div><button id="createProjectBtn" class="btn btn-primary" type="submit">إنشاء المشروع</button></div>
+            <p id="projectFormMessage" class="small" role="status" aria-live="polite"></p>
+          </form>
+        </section>
       </div>
     </main>
     <footer class="app-footer" id="bdFooter">Business Discovery © 2026 — جميع الحقوق محفوظة</footer>
@@ -66,10 +54,159 @@
 <script src="assets/js/common.js"></script>
 <script src="assets/js/layout.js"></script>
 <script>
-BD.requireAuth();
-async function load(){ try{ const d=await BD.api('/api/projects'); const list=document.getElementById('list'); const countEl=document.getElementById('projectCount'); list.textContent=''; if(!d.projects||!d.projects.length){ list.innerHTML='<div class="empty-state"><span class="empty-icon">📁</span><h3>لا توجد مشاريع</h3><p>ابدأ بإنشاء مشروعك الأول الآن.</p></div>'; countEl.textContent='0'; } else { countEl.textContent=d.projects.length; d.projects.forEach(p=>{ const card=document.createElement('div'); card.className='card'; card.style.padding='16px'; card.style.marginBottom='12px'; const name=document.createElement('div'); name.style.fontWeight='700'; name.style.color='var(--text)'; name.style.marginBottom='4px'; name.textContent=p.name; card.appendChild(name); const desc=document.createElement('div'); desc.style.color='var(--text-muted)'; desc.style.fontSize='14px'; desc.textContent=p.description||'لا يوجد وصف'; card.appendChild(desc); list.appendChild(card); }); } }catch(e){ list.innerHTML='<div class="empty-state"><span class="empty-icon">⚠️</span><h3>حدث خطأ</h3><p>'+e.message+'</p></div>';} }
-async function create(){ const name=document.getElementById('name'); const desc=document.getElementById('desc'); const msg=document.getElementById('msg'); msg.textContent=''; if(!name.value.trim()){ msg.textContent='يرجى إدخال اسم المشروع'; msg.style.color='var(--danger)'; return; } try{ await BD.api('/api/projects',{method:'POST',body:JSON.stringify({name:name.value,description:desc.value})}); name.value=''; desc.value=''; load(); showToast('تم إنشاء المشروع بنجاح','success'); }catch(e){ msg.textContent=e.message; msg.style.color='var(--danger)';} }
-function showToast(message,type){ const t=document.createElement('div'); t.className='toast '+type; t.textContent=message; document.body.appendChild(t); setTimeout(()=>t.classList.add('show'),10); setTimeout(()=>{ t.classList.remove('show'); setTimeout(()=>t.remove(),300);},3000); }
-load();
+  BD.requireAuth();
+  const projectList = document.getElementById('projectList');
+  const search = document.getElementById('bdSearch');
+  let projects = [];
+
+  function emptyState(message) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    const description = document.createElement('p');
+    description.textContent = message;
+    empty.appendChild(description);
+    return empty;
+  }
+
+  function createEditForm(project) {
+    const form = document.createElement('form');
+    form.className = 'gap-16 flex-col mt-16';
+    const nameLabel = document.createElement('label');
+    nameLabel.className = 'label';
+    nameLabel.textContent = 'اسم المشروع';
+    const name = document.createElement('input');
+    name.className = 'input';
+    name.maxLength = 160;
+    name.required = true;
+    name.value = project.name;
+    nameLabel.appendChild(name);
+    const descriptionLabel = document.createElement('label');
+    descriptionLabel.className = 'label';
+    descriptionLabel.textContent = 'الوصف';
+    const description = document.createElement('textarea');
+    description.className = 'input';
+    description.rows = 3;
+    description.maxLength = 4000;
+    description.value = project.description || '';
+    descriptionLabel.appendChild(description);
+    const controls = document.createElement('div');
+    controls.className = 'flex gap-8';
+    const save = document.createElement('button');
+    save.className = 'btn btn-primary btn-sm';
+    save.type = 'submit';
+    save.textContent = 'حفظ التعديلات';
+    controls.appendChild(save);
+    form.append(nameLabel, descriptionLabel, controls);
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      save.disabled = true;
+      try {
+        await BD.api('/api/projects/' + encodeURIComponent(project.id), {
+          method: 'PUT',
+          body: JSON.stringify({ name: name.value.trim(), description: description.value.trim() })
+        });
+        BD.showToast('تم تحديث المشروع');
+        await load();
+      } catch (error) {
+        save.disabled = false;
+        BD.showToast(error.message, 'error');
+      }
+    });
+    return form;
+  }
+
+  function render() {
+    const query = search.value.trim().toLowerCase();
+    const visible = projects.filter((project) =>
+      [project.name, project.description].some((value) => String(value || '').toLowerCase().includes(query)));
+    document.getElementById('projectCount').textContent = String(visible.length);
+    projectList.textContent = '';
+    if (!visible.length) {
+      projectList.appendChild(emptyState(query ? 'لا توجد مشاريع مطابقة للبحث.' : 'لا توجد مشاريع بعد. أنشئ مشروعك الأول أدناه.'));
+      return;
+    }
+
+    visible.forEach((project) => {
+      const card = document.createElement('article');
+      card.className = 'card';
+      card.style.padding = '16px';
+      card.style.marginBottom = '12px';
+      const heading = document.createElement('div');
+      heading.className = 'flex items-center justify-between gap-16';
+      const name = document.createElement('h3');
+      name.textContent = project.name;
+      const role = document.createElement('span');
+      role.className = 'badge badge-blue';
+      role.textContent = project.role === 'owner' ? 'مالك' : project.role === 'project_manager' ? 'مدير مشروع' : 'عضو';
+      heading.append(name, role);
+      card.appendChild(heading);
+      const description = document.createElement('p');
+      description.textContent = project.description || 'لا يوجد وصف';
+      card.appendChild(description);
+
+      if (project.role === 'owner') {
+        const details = document.createElement('details');
+        const summary = document.createElement('summary');
+        summary.textContent = 'إدارة المشروع';
+        details.append(summary, createEditForm(project));
+        const archive = document.createElement('button');
+        archive.className = 'btn btn-danger btn-sm mt-16';
+        archive.type = 'button';
+        archive.textContent = 'أرشفة المشروع';
+        archive.addEventListener('click', async () => {
+          if (!confirm('ستتم أرشفة المشروع وإخفاؤه من القائمة. هل تريد المتابعة؟')) return;
+          archive.disabled = true;
+          try {
+            await BD.api('/api/projects/' + encodeURIComponent(project.id), { method: 'DELETE' });
+            BD.showToast('تمت أرشفة المشروع');
+            await load();
+          } catch (error) {
+            archive.disabled = false;
+            BD.showToast(error.message, 'error');
+          }
+        });
+        details.appendChild(archive);
+        card.appendChild(details);
+      }
+      projectList.appendChild(card);
+    });
+  }
+
+  async function load() {
+    try {
+      const data = await BD.api('/api/projects?limit=50');
+      projects = data.projects || [];
+      render();
+    } catch (error) {
+      projectList.textContent = '';
+      projectList.appendChild(emptyState(error.message || 'تعذر تحميل المشاريع.'));
+    }
+  }
+
+  document.getElementById('createProjectForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = document.getElementById('createProjectBtn');
+    const message = document.getElementById('projectFormMessage');
+    const body = {
+      name: document.getElementById('projectName').value.trim(),
+      description: document.getElementById('projectDescription').value.trim()
+    };
+    button.disabled = true;
+    message.textContent = '';
+    try {
+      await BD.api('/api/projects', { method: 'POST', body: JSON.stringify(body) });
+      event.currentTarget.reset();
+      BD.showToast('تم إنشاء المشروع');
+      await load();
+    } catch (error) {
+      message.textContent = error.message;
+      message.style.color = 'var(--danger)';
+    } finally {
+      button.disabled = false;
+    }
+  });
+  search.addEventListener('input', render);
+  load();
 </script>
-</body></html>
+</body>
+</html>

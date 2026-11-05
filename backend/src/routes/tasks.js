@@ -21,9 +21,13 @@ function register(router, ctx) {
   router.post('/api/tasks', async (req,res) => {
     const u = await requireAuth(req,res,ctx,origin); if(!u) return;
     let body; try { body=await parseBody(req);} catch { return sendJson(res,400,{error:'invalid_json'},origin);}
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJson(res,400,{error:'invalid_input'},origin);
     const title = String(body.title||'').trim();
-    if (!title) return sendJson(res,400,{error:'invalid_input'},origin);
-    const doc = { title, description: String(body.description||''), owner: u.email, assignee: String(body.assignee||u.email), status: 'open', createdAt: new Date().toISOString() };
+    const assignee = String(body.assignee||u.email).trim().toLowerCase();
+    if (!title || title.length > 200 || (body.description && String(body.description).length > 4000) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(assignee)) {
+      return sendJson(res,400,{error:'invalid_input'},origin);
+    }
+    const doc = { title, description: String(body.description||''), owner: u.email, assignee, status: 'open', createdAt: new Date().toISOString() };
     const r = await tasks.insertOne(doc); doc._id = r.insertedId;
     return sendJson(res,201,{ task: doc },origin);
   });
@@ -36,8 +40,20 @@ function register(router, ctx) {
     const t = await tasks.findOne({ _id: o });
     if (!t || (t.owner !== u.email && t.assignee !== u.email)) return sendJson(res,403,{error:'forbidden'},origin);
     const updates = {};
-    if (body.status) updates.status = String(body.status);
-    if (body.title) updates.title = String(body.title);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJson(res,400,{error:'invalid_input'},origin);
+    if (body.status !== undefined) {
+      if (!['open', 'in_progress', 'done'].includes(body.status)) return sendJson(res,400,{error:'invalid_status'},origin);
+      updates.status = body.status;
+    }
+    if (body.title !== undefined) {
+      updates.title = String(body.title).trim();
+      if (!updates.title || updates.title.length > 200) return sendJson(res,400,{error:'invalid_input'},origin);
+    }
+    if (body.description !== undefined) {
+      updates.description = String(body.description);
+      if (updates.description.length > 4000) return sendJson(res,400,{error:'invalid_input'},origin);
+    }
+    if (!Object.keys(updates).length) return sendJson(res,400,{error:'invalid_input'},origin);
     await tasks.updateOne({ _id: o }, { $set: updates });
     return sendJson(res,200,{ ok: true },origin);
   });

@@ -9,6 +9,7 @@ const friendRoutes = require('./routes/friends');
 const taskRoutes = require('./routes/tasks');
 const adminRoutes = require('./routes/admin');
 const chatRoutes = require('./routes/chat');
+const publicRoutes = require('./routes/public');
 
 const FRONTEND_DIR = path.resolve(__dirname, '..', '..', 'frontend');
 const MIME = {
@@ -54,6 +55,7 @@ function createApp(ctx) {
   taskRoutes.register(router, ctx);
   adminRoutes.register(router, ctx);
   chatRoutes.register(router, ctx);
+  publicRoutes.register(router, ctx);
 
   const origin = ctx.config.frontendOrigin === '*' ? '*' : ctx.config.frontendOrigin;
 
