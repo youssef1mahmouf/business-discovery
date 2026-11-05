@@ -41,6 +41,11 @@
           <div class="card-header"><h2>إنشاء مشروع جديد</h2></div>
           <form id="createProjectForm" class="gap-16 flex-col">
             <div><label class="label" for="projectName">اسم المشروع</label><input id="projectName" class="input" type="text" maxlength="160" required></div>
+            <div><label class="label" for="projectType">نوع المشروع</label><select id="projectType" class="input"><option value="">غير محدد</option><option value="saas">خدمة برمجية</option><option value="ecommerce">تجارة إلكترونية</option><option value="services">خدمات</option><option value="retail">تجارة / متجر</option><option value="marketplace">منصة وساطة</option><option value="other">أخرى</option></select></div>
+            <div><label class="label" for="projectIndustry">المجال</label><input id="projectIndustry" class="input" maxlength="120"></div>
+            <div><label class="label" for="projectStage">المرحلة</label><select id="projectStage" class="input"><option value="">غير محددة</option><option value="idea">فكرة</option><option value="validation">التحقق من الفكرة</option><option value="mvp">المنتج الأولي</option><option value="launched">تم الإطلاق</option><option value="growth">النمو</option></select></div>
+            <div><label class="label" for="projectTargetMarket">السوق أو العملاء المستهدفون</label><input id="projectTargetMarket" class="input" maxlength="500"></div>
+            <div class="wide"><label class="label" for="projectProblem">المشكلة التي يحلها</label><textarea id="projectProblem" class="input" rows="2" maxlength="2000"></textarea></div>
             <div><label class="label" for="projectDescription">الوصف (اختياري)</label><textarea id="projectDescription" class="input" rows="3" maxlength="4000"></textarea></div>
             <div><button id="createProjectBtn" class="btn btn-primary" type="submit">إنشاء المشروع</button></div>
             <p id="projectFormMessage" class="small" role="status" aria-live="polite"></p>
@@ -89,21 +94,45 @@
     description.maxLength = 4000;
     description.value = project.description || '';
     descriptionLabel.appendChild(description);
-    const controls = document.createElement('div');
-    controls.className = 'flex gap-8';
+    const metadata = [
+      { key: 'projectType', label: 'نوع المشروع', type: 'select', options: [['', 'غير محدد'], ['saas', 'خدمة برمجية'], ['ecommerce', 'تجارة إلكترونية'], ['services', 'خدمات'], ['retail', 'تجارة / متجر'], ['marketplace', 'منصة وساطة'], ['other', 'أخرى']] },
+      { key: 'industry', label: 'المجال', maxLength: 120 },
+      { key: 'stage', label: 'المرحلة', type: 'select', options: [['', 'غير محددة'], ['idea', 'فكرة'], ['validation', 'التحقق من الفكرة'], ['mvp', 'المنتج الأولي'], ['launched', 'تم الإطلاق'], ['growth', 'النمو']] },
+      { key: 'targetMarket', label: 'السوق أو العملاء المستهدفون', maxLength: 500 },
+      { key: 'problem', label: 'المشكلة التي يحلها المشروع', type: 'textarea', maxLength: 2000 }
+    ];
+    const controls = metadata.map((field) => {
+      const label = document.createElement('label');
+      label.className = 'label';
+      label.textContent = field.label;
+      const input = document.createElement(field.type === 'textarea' ? 'textarea' : field.type === 'select' ? 'select' : 'input');
+      input.className = 'input';
+      if (field.type === 'textarea') input.rows = 2;
+      if (field.maxLength) input.maxLength = field.maxLength;
+      if (field.options) field.options.forEach(([value, text]) => input.add(new Option(text, value)));
+      input.value = project[field.key] || '';
+      label.appendChild(input);
+      return { key: field.key, label, input };
+    });
+    const buttonRow = document.createElement('div');
+    buttonRow.className = 'flex gap-8';
     const save = document.createElement('button');
     save.className = 'btn btn-primary btn-sm';
     save.type = 'submit';
     save.textContent = 'حفظ التعديلات';
-    controls.appendChild(save);
-    form.append(nameLabel, descriptionLabel, controls);
+    buttonRow.appendChild(save);
+    form.append(nameLabel, descriptionLabel, ...controls.map((field) => field.label), buttonRow);
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       save.disabled = true;
       try {
         await BD.api('/api/projects/' + encodeURIComponent(project.id), {
           method: 'PUT',
-          body: JSON.stringify({ name: name.value.trim(), description: description.value.trim() })
+          body: JSON.stringify({
+            name: name.value.trim(),
+            description: description.value.trim(),
+            ...Object.fromEntries(controls.map((field) => [field.key, field.input.value.trim()]))
+          })
         });
         BD.showToast('تم تحديث المشروع');
         await load();
@@ -118,7 +147,8 @@
   function render() {
     const query = search.value.trim().toLowerCase();
     const visible = projects.filter((project) =>
-      [project.name, project.description].some((value) => String(value || '').toLowerCase().includes(query)));
+      [project.name, project.description, project.industry, project.targetMarket, project.problem]
+        .some((value) => String(value || '').toLowerCase().includes(query)));
     document.getElementById('projectCount').textContent = String(visible.length);
     projectList.textContent = '';
     if (!visible.length) {
@@ -143,6 +173,19 @@
       const description = document.createElement('p');
       description.textContent = project.description || 'لا يوجد وصف';
       card.appendChild(description);
+      const details = [
+        project.projectType && 'النوع: ' + ({ saas: 'خدمة برمجية', ecommerce: 'تجارة إلكترونية', services: 'خدمات', retail: 'تجارة / متجر', marketplace: 'منصة وساطة', other: 'أخرى' })[project.projectType],
+        project.industry && 'المجال: ' + project.industry,
+        project.stage && 'المرحلة: ' + ({ idea: 'فكرة', validation: 'التحقق من الفكرة', mvp: 'المنتج الأولي', launched: 'تم الإطلاق', growth: 'النمو' })[project.stage],
+        project.targetMarket && 'السوق المستهدف: ' + project.targetMarket,
+        project.problem && 'المشكلة: ' + project.problem
+      ].filter(Boolean);
+      details.forEach((detail) => {
+        const paragraph = document.createElement('p');
+        paragraph.className = 'small';
+        paragraph.textContent = detail;
+        card.appendChild(paragraph);
+      });
 
       if (project.role === 'owner') {
         const details = document.createElement('details');
@@ -189,7 +232,12 @@
     const message = document.getElementById('projectFormMessage');
     const body = {
       name: document.getElementById('projectName').value.trim(),
-      description: document.getElementById('projectDescription').value.trim()
+      description: document.getElementById('projectDescription').value.trim(),
+      projectType: document.getElementById('projectType').value,
+      industry: document.getElementById('projectIndustry').value.trim(),
+      stage: document.getElementById('projectStage').value,
+      targetMarket: document.getElementById('projectTargetMarket').value.trim(),
+      problem: document.getElementById('projectProblem').value.trim()
     };
     button.disabled = true;
     message.textContent = '';

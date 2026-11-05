@@ -1,8 +1,8 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Business Discovery - Register</title>
+<title>إنشاء حساب | Business Discovery</title>
 <link rel="stylesheet" href="assets/css/main.css">
 </head>
 <body>
@@ -11,107 +11,284 @@
   <div class="rd-grid-overlay"></div>
   <div class="rd-blob b1"></div>
   <div class="rd-blob b2"></div>
-  <div class="rd-auth">
-    <div class="rd-auth-card">
-      <div class="rd-logo" style="margin-bottom:18px;"><span class="rd-logo-mark">BD</span><span>Business Discovery</span></div>
+  <main class="rd-auth">
+    <div class="rd-auth-card rd-register-card">
+      <a class="rd-logo" style="margin-bottom:18px;" href="index.html"><span class="rd-logo-mark">BD</span><span>Business Discovery</span></a>
       <h1>إنشاء حساب</h1>
-      <p class="sub">انضم إلينا وابدأ إدارة أعمالك.</p>
-      <form id="regForm" onsubmit="return false;">
-        <div class="rd-field">
-          <label class="rd-label" for="email">البريد الإلكتروني</label>
-          <input id="email" class="rd-input" type="email" placeholder="name@example.com" autocomplete="email">
-          <div id="emailErr" class="rd-error"></div>
-        </div>
-        <div class="rd-field">
-          <label class="rd-label" for="password">كلمة المرور</label>
-          <div class="rd-input-wrap">
-            <input id="password" class="rd-input" type="password" placeholder="8 أحرف على الأقل" autocomplete="new-password" oninput="updateStrength()">
-            <button type="button" class="rd-toggle-pw" onclick="togglePw('password', this)">إظهار</button>
+      <p class="sub">أنشئ حسابك وابدأ بسيرتك الذاتية ومعلومات مشروعك.</p>
+      <form id="regForm" novalidate>
+        <div class="rd-form-grid">
+          <div class="rd-field">
+            <label class="rd-label" for="displayName">الاسم الكامل</label>
+            <input id="displayName" class="rd-input" maxlength="80" autocomplete="name" required>
           </div>
-          <div class="rd-strength"><div id="strengthBar" class="rd-strength-bar"></div></div>
-          <div id="strengthLabel" class="rd-strength-label">قوة كلمة المرور: —</div>
-          <div id="pwErr" class="rd-error"></div>
-        </div>
-        <div class="rd-field">
-          <label class="rd-label" for="confirm">تأكيد كلمة المرور</label>
-          <div class="rd-input-wrap">
-            <input id="confirm" class="rd-input" type="password" placeholder="أعد إدخال كلمة المرور" autocomplete="new-password">
-            <button type="button" class="rd-toggle-pw" onclick="togglePw('confirm', this)">إظهار</button>
+          <div class="rd-field">
+            <label class="rd-label" for="username">اسم المستخدم</label>
+            <input id="username" class="rd-input" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]{3,30}" autocomplete="username" aria-describedby="usernameHint usernameErr" required>
+            <small id="usernameHint" class="rd-hint">3 إلى 30 حرفاً إنجليزياً أو رقماً أو _</small>
+            <div id="usernameErr" class="rd-error"></div>
           </div>
-          <div id="confirmErr" class="rd-error"></div>
+          <div class="rd-field">
+            <label class="rd-label" for="email">البريد الإلكتروني</label>
+            <input id="email" class="rd-input" type="email" placeholder="name@example.com" autocomplete="email" required>
+            <div id="emailErr" class="rd-error"></div>
+          </div>
+          <div class="rd-field">
+            <label class="rd-label" for="headline">المسمى المهني (اختياري)</label>
+            <input id="headline" class="rd-input" maxlength="120" placeholder="مثال: رائد أعمال">
+          </div>
         </div>
-        <button id="regBtn" class="rd-btn primary" style="width:100%;" onclick="reg()">تسجيل</button>
-        <div id="msg" class="rd-msg"></div>
+        <div class="rd-form-grid">
+          <div class="rd-field">
+            <label class="rd-label" for="password">كلمة المرور</label>
+            <div class="rd-input-wrap">
+              <input id="password" class="rd-input" type="password" placeholder="8 أحرف على الأقل" autocomplete="new-password" required>
+              <button type="button" class="rd-toggle-pw" onclick="togglePw('password', this)">إظهار</button>
+            </div>
+            <div class="rd-strength"><div id="strengthBar" class="rd-strength-bar"></div></div>
+            <div id="strengthLabel" class="rd-strength-label">قوة كلمة المرور: —</div>
+            <div id="pwErr" class="rd-error"></div>
+          </div>
+          <div class="rd-field">
+            <label class="rd-label" for="confirm">تأكيد كلمة المرور</label>
+            <div class="rd-input-wrap">
+              <input id="confirm" class="rd-input" type="password" placeholder="أعد إدخال كلمة المرور" autocomplete="new-password" required>
+              <button type="button" class="rd-toggle-pw" onclick="togglePw('confirm', this)">إظهار</button>
+            </div>
+            <div id="confirmErr" class="rd-error"></div>
+          </div>
+        </div>
+
+        <details class="rd-register-section" open>
+          <summary>معلومات السيرة الذاتية <span>(اختياري)</span></summary>
+          <div class="rd-form-grid">
+            <div class="rd-field">
+              <label class="rd-label" for="location">المدينة أو المنطقة</label>
+              <input id="location" class="rd-input" maxlength="120" autocomplete="address-level2">
+            </div>
+            <div class="rd-field">
+              <label class="rd-label" for="website">الموقع الشخصي</label>
+              <input id="website" class="rd-input" type="url" maxlength="500" placeholder="https://">
+            </div>
+            <div class="rd-field rd-field-wide">
+              <label class="rd-label" for="bio">نبذة مهنية</label>
+              <textarea id="bio" class="rd-input" rows="3" maxlength="3000"></textarea>
+            </div>
+            <div class="rd-field rd-field-wide">
+              <label class="rd-label" for="skills">المهارات (افصل بينها بفاصلة)</label>
+              <input id="skills" class="rd-input" maxlength="2000" placeholder="التسويق، إدارة المنتجات، المبيعات">
+            </div>
+            <div class="rd-field rd-field-wide">
+              <label class="rd-label" for="experience">الخبرات (سطر لكل خبرة: المسمى | الجهة | الفترة | التفاصيل)</label>
+              <textarea id="experience" class="rd-input" rows="3" maxlength="8000"></textarea>
+            </div>
+            <div class="rd-field rd-field-wide">
+              <label class="rd-label" for="education">التعليم (سطر لكل مؤهل: المؤهل | المؤسسة | الفترة)</label>
+              <textarea id="education" class="rd-input" rows="3" maxlength="4000"></textarea>
+            </div>
+          </div>
+        </details>
+
+        <details class="rd-register-section" open>
+          <summary>معلومات مشروعك الأول <span>(اختياري — اكتب الاسم لإنشائه)</span></summary>
+          <div class="rd-form-grid">
+            <div class="rd-field">
+              <label class="rd-label" for="projectName">اسم المشروع</label>
+              <input id="projectName" class="rd-input" maxlength="160" placeholder="مثال: متجر منتجات محلية">
+            </div>
+            <div class="rd-field">
+              <label class="rd-label" for="projectType">نوع المشروع</label>
+              <select id="projectType" class="rd-input">
+                <option value="">اختر النوع (اختياري)</option>
+                <option value="saas">خدمة برمجية</option>
+                <option value="ecommerce">تجارة إلكترونية</option>
+                <option value="services">خدمات</option>
+                <option value="retail">تجارة / متجر</option>
+                <option value="marketplace">منصة وساطة</option>
+                <option value="other">نوع آخر</option>
+              </select>
+            </div>
+            <div class="rd-field">
+              <label class="rd-label" for="industry">المجال</label>
+              <input id="industry" class="rd-input" maxlength="120" placeholder="مثال: التعليم">
+            </div>
+            <div class="rd-field">
+              <label class="rd-label" for="projectStage">مرحلة المشروع</label>
+              <select id="projectStage" class="rd-input">
+                <option value="">اختر المرحلة (اختياري)</option>
+                <option value="idea">فكرة</option>
+                <option value="validation">التحقق من الفكرة</option>
+                <option value="mvp">المنتج الأولي</option>
+                <option value="launched">تم الإطلاق</option>
+                <option value="growth">النمو</option>
+              </select>
+            </div>
+            <div class="rd-field rd-field-wide">
+              <label class="rd-label" for="targetMarket">العملاء أو السوق المستهدف</label>
+              <input id="targetMarket" class="rd-input" maxlength="500">
+            </div>
+            <div class="rd-field rd-field-wide">
+              <label class="rd-label" for="problem">المشكلة التي يحلها المشروع</label>
+              <textarea id="problem" class="rd-input" rows="2" maxlength="2000"></textarea>
+            </div>
+            <div class="rd-field rd-field-wide">
+              <label class="rd-label" for="projectDescription">وصف المشروع</label>
+              <textarea id="projectDescription" class="rd-input" rows="3" maxlength="4000"></textarea>
+            </div>
+          </div>
+          <div id="projectErr" class="rd-error"></div>
+        </details>
+
+        <button id="regBtn" class="rd-btn primary" style="width:100%;" type="submit">إنشاء الحساب</button>
+        <div id="msg" class="rd-msg" role="status" aria-live="polite"></div>
+        <a id="projectsLink" class="rd-link" href="projects.html" hidden>الانتقال إلى صفحة المشاريع</a>
       </form>
-      <p style="margin-top:18px;font-size:13px;color:var(--muted);text-align:center;">
-        لديك حساب؟ <a class="rd-link" href="login.html">تسجيل الدخول</a>
-      </p>
+      <p class="rd-register-login">لديك حساب؟ <a class="rd-link" href="login.html">تسجيل الدخول</a></p>
     </div>
-  </div>
+  </main>
 </div>
 
 <script src="assets/js/common.js"></script>
 <script>
+  const form = document.getElementById('regForm');
+  const passwordInput = document.getElementById('password');
+  const confirmInput = document.getElementById('confirm');
+
   function togglePw(id, btn) {
-    const el = document.getElementById(id);
-    if (el.type === 'password') { el.type = 'text'; btn.textContent = 'إخفاء'; }
-    else { el.type = 'password'; btn.textContent = 'إظهار'; }
+    const input = document.getElementById(id);
+    input.type = input.type === 'password' ? 'text' : 'password';
+    btn.textContent = input.type === 'password' ? 'إظهار' : 'إخفاء';
   }
-  function setLoading(btn, loading, label) {
-    if (loading) { btn.disabled = true; btn.innerHTML = '<span class="rd-spinner"></span> جاري...'; }
-    else { btn.disabled = false; btn.textContent = label; }
-  }
-  function scorePassword(pw) {
+
+  function scorePassword(password) {
     let score = 0;
-    if (pw.length >= 8) score++;
-    if (pw.length >= 12) score++;
-    if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) score++;
-    if (/[0-9]/.test(pw)) score++;
-    if (/[^A-Za-z0-9]/.test(pw)) score++;
+    if (password.length >= 8) score++;
+    if (password.length >= 12) score++;
+    if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score++;
+    if (/[0-9]/.test(password)) score++;
+    if (/[^A-Za-z0-9]/.test(password)) score++;
     return Math.min(score, 4);
   }
+
   function updateStrength() {
-    const pw = document.getElementById('password').value;
+    const password = passwordInput.value;
     const bar = document.getElementById('strengthBar');
     const label = document.getElementById('strengthLabel');
-    const score = scorePassword(pw);
-    const pct = pw.length === 0 ? 0 : (score + 1) * 20;
-    bar.style.width = pct + '%';
+    const score = scorePassword(password);
     const colors = ['#ef4444', '#f59e0b', '#eab308', '#22c55e', '#10b981'];
     const names = ['ضعيفة جداً', 'ضعيفة', 'متوسطة', 'قوية', 'قوية جداً'];
+    bar.style.width = password.length ? (score + 1) * 20 + '%' : '0%';
     bar.style.background = colors[score];
-    label.textContent = 'قوة كلمة المرور: ' + (pw.length === 0 ? '—' : names[score]);
-    label.style.color = pw.length === 0 ? 'var(--muted)' : colors[score];
+    label.textContent = 'قوة كلمة المرور: ' + (password.length ? names[score] : '—');
+    label.style.color = password.length ? colors[score] : 'var(--text-muted)';
   }
-  async function reg() {
-    const email = document.getElementById('email').value.trim();
-    const password = document.getElementById('password').value;
-    const confirm = document.getElementById('confirm').value;
-    const emailErr = document.getElementById('emailErr');
-    const pwErr = document.getElementById('pwErr');
-    const confirmErr = document.getElementById('confirmErr');
+
+  function lineValues(value, count) {
+    return value.split(/\r?\n/).map((line) => line.split('|').map((part) => part.trim()))
+      .filter((parts) => parts.some(Boolean)).map((parts) => {
+        while (parts.length < count) parts.push('');
+        return parts.slice(0, count);
+      });
+  }
+
+  function validatePasswordMatch() {
+    const message = document.getElementById('confirmErr');
+    confirmInput.classList.toggle('match', !!confirmInput.value && confirmInput.value === passwordInput.value);
+    message.textContent = confirmInput.value && confirmInput.value !== passwordInput.value
+      ? 'كلمتا المرور غير متطابقتين' : '';
+  }
+
+  function profileData(username) {
+    return {
+      username,
+      displayName: document.getElementById('displayName').value.trim(),
+      headline: document.getElementById('headline').value.trim(),
+      location: document.getElementById('location').value.trim(),
+      website: document.getElementById('website').value.trim(),
+      bio: document.getElementById('bio').value.trim(),
+      skills: document.getElementById('skills').value.split(',').map((item) => item.trim()).filter(Boolean),
+      experience: lineValues(document.getElementById('experience').value, 4)
+        .map(([role, organization, period, details]) => ({ role, organization, period, details })),
+      education: lineValues(document.getElementById('education').value, 3)
+        .map(([qualification, institution, period]) => ({ qualification, institution, period }))
+    };
+  }
+
+  function projectData() {
+    return {
+      name: document.getElementById('projectName').value.trim(),
+      projectType: document.getElementById('projectType').value,
+      industry: document.getElementById('industry').value.trim(),
+      stage: document.getElementById('projectStage').value,
+      targetMarket: document.getElementById('targetMarket').value.trim(),
+      problem: document.getElementById('problem').value.trim(),
+      description: document.getElementById('projectDescription').value.trim()
+    };
+  }
+
+  passwordInput.addEventListener('input', () => { updateStrength(); validatePasswordMatch(); });
+  confirmInput.addEventListener('input', validatePasswordMatch);
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const email = document.getElementById('email').value.trim().toLowerCase();
+    const username = document.getElementById('username').value.trim().toLowerCase();
+    const password = passwordInput.value;
+    const project = projectData();
+    const errors = {
+      email: document.getElementById('emailErr'),
+      username: document.getElementById('usernameErr'),
+      password: document.getElementById('pwErr'),
+      confirm: document.getElementById('confirmErr'),
+      project: document.getElementById('projectErr')
+    };
+    Object.values(errors).forEach((element) => { element.textContent = ''; });
     const msg = document.getElementById('msg');
-    emailErr.textContent = ''; pwErr.textContent = ''; confirmErr.textContent = ''; msg.textContent = ''; msg.className = 'rd-msg';
-    let ok = true;
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { emailErr.textContent = 'بريد إلكتروني غير صالح'; ok = false; }
-    if (password.length < 8) { pwErr.textContent = 'كلمة المرور 8 أحرف على الأقل'; ok = false; }
-    if (confirm !== password) { confirmErr.textContent = 'كلمات المرور غير متطابقة'; ok = false; }
-    if (!ok) return;
-    const btn = document.getElementById('regBtn');
-    setLoading(btn, true, 'تسجيل');
+    msg.textContent = '';
+    msg.className = 'rd-msg';
+    let valid = true;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { errors.email.textContent = 'بريد إلكتروني غير صالح'; valid = false; }
+    if (!/^[a-z0-9_]{3,30}$/.test(username)) { errors.username.textContent = 'استخدم 3 إلى 30 حرفاً إنجليزياً أو رقماً أو _'; valid = false; }
+    if (password.length < 8) { errors.password.textContent = 'كلمة المرور 8 أحرف على الأقل'; valid = false; }
+    if (confirmInput.value !== password) { errors.confirm.textContent = 'كلمتا المرور غير متطابقتين'; valid = false; }
+    if (!project.name && Object.entries(project).some(([key, value]) => key !== 'name' && value)) {
+      errors.project.textContent = 'أدخل اسم المشروع لحفظ معلوماته، أو اترك حقوله فارغة.';
+      valid = false;
+    }
+    if (!valid) return;
+
+    const button = document.getElementById('regBtn');
+    button.disabled = true;
+    button.textContent = 'جارٍ إنشاء الحساب…';
     try {
-      const data = await BD.api('/api/auth/register', { method: 'POST', body: JSON.stringify({ email, password }) });
+      const data = await BD.api('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ email, password, username, profile: profileData(username) })
+      });
       BD.setToken(data.token);
-      msg.textContent = 'تم إنشاء الحساب بنجاح';
+      if (project.name) {
+        try {
+          await BD.api('/api/projects', { method: 'POST', body: JSON.stringify(project) });
+        } catch (error) {
+          msg.textContent = 'تم إنشاء الحساب وحفظ السيرة الذاتية، لكن تعذر إنشاء المشروع: ' + error.message;
+          msg.className = 'rd-msg error';
+          document.getElementById('projectsLink').hidden = false;
+          return;
+        }
+      }
+      msg.textContent = project.name
+        ? 'تم إنشاء الحساب والسيرة الذاتية والمشروع الأول.'
+        : 'تم إنشاء الحساب وحفظ سيرتك الذاتية.';
       msg.className = 'rd-msg success';
-      setTimeout(() => location.href = 'projects.html', 700);
-    } catch (e) {
-      msg.textContent = e.message || 'فشل التسجيل';
+      setTimeout(() => { location.href = project.name ? 'projects.html' : 'profile.html'; }, 800);
+    } catch (error) {
+      msg.textContent = error.message || 'تعذر إنشاء الحساب.';
       msg.className = 'rd-msg error';
     } finally {
-      setLoading(btn, false, 'تسجيل');
+      button.disabled = false;
+      button.textContent = 'إنشاء الحساب';
     }
-  }
-  document.addEventListener('keydown', e => { if (e.key === 'Enter') reg(); });
+  });
 </script>
-</body></html>
+</body>
+</html>

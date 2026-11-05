@@ -34,7 +34,10 @@
     <main class="content" id="bdContent">
       <div class="container">
         <section class="card">
-          <div class="card-header"><h2>المحادثات</h2><span id="conversationCount" class="badge badge-blue">0</span></div>
+          <div class="card-header">
+            <div><h2>محادثات الفريق</h2><span id="conversationCount" class="badge badge-blue">0</span></div>
+            <a class="btn btn-secondary btn-sm" href="assistant.html#aiChat">محادثة مع Ollama</a>
+          </div>
           <div id="conversationList" aria-live="polite"></div>
         </section>
         <section class="card">
@@ -82,7 +85,7 @@
   let currentEmail = '';
   try {
     const token = BD.getToken();
-    currentEmail = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).email || '';
+    currentEmail = JSON.parse(atob(token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/'))).email || '';
   } catch (error) {
     currentEmail = '';
   }

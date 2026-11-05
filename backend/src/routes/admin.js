@@ -18,12 +18,27 @@ function register(router, ctx) {
     const u = await requireAdmin(req,res,ctx,origin); if(!u) return;
     const url = new URL('http://x'+req.url);
     const q = String(url.searchParams.get('q')||'').trim().toLowerCase();
-    const page = Math.max(1, Number(url.searchParams.get('page')||1));
+    const requestedPage = Number(url.searchParams.get('page')||1);
+    const page = Number.isInteger(requestedPage) ? Math.max(1, requestedPage) : 1;
     const limit = 20;
-    const filter = q ? { email: { $regex: q, $options: 'i' } } : {};
+    const escapedQuery = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const filter = q ? { $or: [
+      { email: { $regex: escapedQuery, $options: 'i' } },
+      { username: { $regex: escapedQuery, $options: 'i' } },
+      { displayName: { $regex: escapedQuery, $options: 'i' } }
+    ] } : {};
     const total = await users.countDocuments(filter);
-    const items = await users.find(filter, { projection: { passwordHash: 0 } }).skip((page-1)*limit).limit(limit).toArray();
-    return sendJson(res,200,{ users: items.map(x=>({id:String(x._id),email:x.email,role:x.role,createdAt:x.createdAt})), total, page, pages: Math.ceil(total/limit) },origin);
+    const pages = Math.ceil(total / limit);
+    const items = await users.find(filter, { projection: { passwordHash: 0, profile: 0 } })
+      .skip((page-1)*limit).limit(limit).toArray();
+    return sendJson(res,200,{ users: items.map(x=>({
+      id:String(x._id),
+      email:x.email,
+      username:x.username || '',
+      displayName:x.displayName || '',
+      role:x.role,
+      createdAt:x.createdAt
+    })), total, page, pages },origin);
   });
 
   router.get('/api/settings', async (req,res) => {

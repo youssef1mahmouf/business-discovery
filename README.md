@@ -10,15 +10,15 @@
 2. [Technology Stack](#2-technology-stack)
 3. [Repository Structure](#3-repository-structure)
 4. [Application Architecture](#4-application-architecture)
-5. [Design System](#5-design-system)
 6. [Authentication & Authorization](#6-authentication--authorization)
-7. [Database](#7-database)
-8. [API Endpoints](#8-api-endpoints)
-9. [Frontend Pages](#9-frontend-pages)
-10. [Security](#10-security)
-11. [Known Limitations](#11-known-limitations)
-12. [AI Development Instructions](#12-ai-development-instructions)
-13. [New Requirements — Master Consolidation Prompt](#13-new-requirements-master-consolidation-prompt)
+[Registration Flow](#b-registration-flow)
+[Homepage and Modern Visual Redesign](#c-homepage-and-modern-visual-redesign)
+[Homepage Hero and Visual Content](#d-homepage-hero-and-visual-content)
+[3D Visual Design](#e-3d-visual-design)
+[Floating AI Assistant](#f-floating-ai-assistant)
+[User, Business, and Administrator Settings](#g-user-business-and-administrator-settings)
+[Real Website Statistics](#h-real-website-statistics--no-fake-data)
+[Main Super Admin Security](#i-main-super-admin-security)
 14. [Conflicts & Unresolved Decisions](#14-conflicts--unresolved-decisions)
 15. [Documentation Governance](#15-documentation-governance)
 16. [Appendix: Source Documents](#16-appendix-source-documents)
@@ -35,15 +35,19 @@ Current scope verified from source code:
 - Email/password authentication with signed tokens.
 - Role-based authorization: regular_user, site_admin, main_super_admin.
 - Backend database role is the source of truth for authorization.
-- 12 frontend HTML pages (3 public + 9 internal app-shell pages).
-- 15 MongoDB collections.
+- 18 frontend HTML pages, including private CV/profile management, project assessment, an Ollama planning assistant, product management, and a public shop.
+- 18 MongoDB collections, including project assessments, products, and orders.
+- Project-linked task completion requires project-manager approval.
+- Product and order workflows are limited to Egyptian pounds and manually verified InstaPay transfers; no payment is confirmed automatically.
+
+The private profile can be shared only through a revocable random-token link. Project assessments contain 100 questions across five equally weighted categories. Ollama chat and project analysis use the selected project's latest assessment; task suggestions still require explicit user approval, and the assistant cannot perform financial or destructive actions. Settings provide role-aware shortcuts to profiles, projects, assessments, AI chat, products, orders, payments, and administration. These features and their limitations are documented in [docs/PROJECT_GUIDE.md](./docs/PROJECT_GUIDE.md).
 
 ---
 
 ## 2. Technology Stack
 
 ### Frontend
-- Static HTML pages (12 pages, Premium Futuristic 3D Creative SaaS design identity).
+- Static HTML pages (18 pages, Premium Futuristic 3D Creative SaaS design identity).
 - Vanilla JavaScript (frontend/assets/js/common.js, frontend/assets/js/layout.js).
 - CSS (frontend/assets/css/main.css) — centralized design system with CSS variables, glassmorphism, reusable components.
 - Vendor libraries: GSAP, Lenis, Three.js, Lucide, SplitType.
@@ -56,7 +60,7 @@ Current scope verified from source code:
 
 ### Database
 - MongoDB (Atlas in production; local MongoDB possible via configuration).
-- 15 collections: users, user_states, friend_requests, friendships, partner_invites, partnerships, app_settings, projects, project_members, participants, tasks, notifications, conversations, messages, ai_conversations.
+- 18 collections: users, user_states, friend_requests, friendships, partner_invites, partnerships, app_settings, projects, project_members, participants, tasks, notifications, conversations, messages, ai_conversations, project_assessments, products, orders.
 
 ### Authentication
 - Password hashing with scrypt (backend/src/services/auth.js).
@@ -70,7 +74,7 @@ Current scope verified from source code:
 ### Testing
 - Node built-in test runner (node --test).
 - Tests in backend/test/.
-- 32/32 backend tests passing.
+- Run the current backend suite with `npm test --prefix backend`; test totals are not treated as a permanent baseline.
 
 ---
 
@@ -101,7 +105,9 @@ business-discovery/
 │   ├── FRONTEND_REDESIGN_PROGRESS.md
 │   ├── FRONTEND_ANIMATION_ARCHITECTURE.md
 │   ├── FINAL_FRONTEND_QA_REPORT.md
-│   └── FINAL_RUNTIME_VERIFICATION.md
+│   ├── FINAL_RUNTIME_VERIFICATION.md
+│   ├── COMPLETE_REBUILD_AUDIT.md
+│   └── COMPLETE_REBUILD_AUDIT_BACKUP.md
 └── frontend/
     ├── *.html
     └── assets/
@@ -458,6 +464,8 @@ The following source documents were incorporated into this consolidated README:
 - FRONTEND_ANIMATION_ARCHITECTURE.md
 - FINAL_FRONTEND_QA_REPORT.md
 - FINAL_RUNTIME_VERIFICATION.md
+- COMPLETE_REBUILD_AUDIT.md
+- COMPLETE_REBUILD_AUDIT_BACKUP.md
 
 ### From root:
 - README.md (existing project documentation)

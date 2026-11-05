@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>مساعد الأعمال | Business Discovery</title>
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="bdSidebar">
+    <div class="sidebar-brand"><div class="brand-icon">BD</div><span class="brand-text">Business Discovery</span></div>
+    <button class="sidebar-toggle" id="bdCollapseBtn" type="button" aria-label="طي القائمة">⇔</button>
+    <nav class="sidebar-nav" id="bdSidebarNav"></nav>
+    <div class="sidebar-footer">© 2026</div>
+  </aside>
+  <div class="sidebar-overlay" id="bdOverlay"></div>
+  <div class="main-area">
+    <header class="topbar" id="bdTopbar">
+      <button class="mobile-menu-btn" id="bdMenuBtn" type="button" aria-label="فتح القائمة">☰</button>
+      <div class="topbar-left"><h1 class="page-title" id="bdPageTitle"></h1></div>
+      <div class="topbar-actions">
+        <a href="notifications.html" class="icon-btn" aria-label="الإشعارات">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
+        <div class="profile-menu">
+          <button class="profile-btn" id="bdProfileBtn" type="button">👤 <span id="bdUserEmail"></span></button>
+          <div class="profile-dropdown" id="bdProfileDropdown"><a href="settings.html">الإعدادات</a><a href="#" id="bdLogout">تسجيل الخروج</a></div>
+        </div>
+      </div>
+    </header>
+    <main class="content" id="bdContent">
+      <div class="container">
+        <section class="card">
+          <div class="card-header"><div><h2>مساعد تخطيط المشروع</h2><p>يستخدم Ollama المهيأ على الخادم لتحليل المشروع وإجابات التقييم المكوّن من 100 سؤال.</p></div></div>
+          <p class="small">لا يرسل المساعد رسائل، ولا يشتري، ولا يغير الأسعار أو الصلاحيات، ولا يحذف بيانات. لن تُضاف أي مهمة إلا بعد موافقتك.</p>
+          <div class="profile-form-grid mt-16">
+            <div><label class="label" for="assistantProject">المشروع</label><select class="input" id="assistantProject"><option value="">جارٍ تحميل المشاريع…</option></select></div>
+            <div class="flex items-center"><span class="small" id="assistantProviderStatus" role="status">جارٍ فحص الإعداد…</span></div>
+          </div>
+          <div class="flex gap-8 mt-16">
+            <button class="btn btn-primary" id="generatePlan" type="button">تحليل المشروع واقتراح خطوات</button>
+            <a class="btn btn-secondary" href="assessment.html">إكمال تقييم 100 سؤال</a>
+          </div>
+          <p id="assistantStatus" class="small mt-8" role="status" aria-live="polite"></p>
+        </section>
+        <section class="card" id="aiChat">
+          <div class="card-header"><div><h2>محادثة مع Ollama</h2><p>اسأل عن المشروع؛ يعتمد المساعد على أحدث تقييم محفوظ ومحادثتك معه.</p></div></div>
+          <div id="aiChatLog" class="ai-chat-log" role="log" aria-live="polite" aria-relevant="additions text">اختر مشروعاً لبدء المحادثة.</div>
+          <form id="aiChatForm" class="gap-16 flex-col mt-16">
+            <label class="sr-only" for="aiChatMessage">رسالتك إلى مساعد المشروع</label>
+            <textarea class="input" id="aiChatMessage" rows="3" maxlength="2000" placeholder="اكتب سؤالك عن المشروع..." required></textarea>
+            <div class="flex gap-8 items-center">
+              <button class="btn btn-primary" id="aiChatSend" type="submit" disabled>إرسال إلى Ollama</button>
+              <span id="aiChatStatus" class="small" role="status" aria-live="polite"></span>
+            </div>
+          </form>
+        </section>
+        <section class="card" id="assistantResults" hidden aria-live="polite">
+          <h2>ملخص المشروع</h2>
+          <p id="assistantSummary"></p>
+          <h3>مخاطر تستحق المراجعة</h3>
+          <ul id="assistantRisks"></ul>
+          <h3>مسودات المهام</h3>
+          <div id="assistantTasks"></div>
+        </section>
+      </div>
+    </main>
+    <footer class="app-footer" id="bdFooter">Business Discovery © 2026 — جميع الحقوق محفوظة</footer>
+  </div>
+</div>
+<script src="assets/js/common.js"></script>
+<script src="assets/js/layout.js"></script>
+<script>
+  BD.requireAuth();
+  const projectSelect = document.getElementById('assistantProject');
+  const status = document.getElementById('assistantStatus');
+  const resultPanel = document.getElementById('assistantResults');
+  const providerStatus = document.getElementById('assistantProviderStatus');
+  const chatLog = document.getElementById('aiChatLog');
+  const chatStatus = document.getElementById('aiChatStatus');
+  const managerRoles = new Set(['owner', 'project_manager', 'project_assistant']);
+  let projects = [];
+
+  function report(message, failed) {
+    status.textContent = message;
+    status.style.color = failed ? 'var(--danger)' : 'var(--text-muted)';
+  }
+
+  function selectedProject() {
+    return projects.find((project) => project.id === projectSelect.value);
+  }
+
+  function updateProjectActions() {
+    const project = selectedProject();
+    document.getElementById('generatePlan').disabled = !project || !managerRoles.has(project.role);
+    document.getElementById('aiChatSend').disabled = !project;
+    if (project && !managerRoles.has(project.role)) {
+      report('يمكن لأعضاء المشروع استخدام المحادثة. تحليل الخطة وإضافة المهام متاحان لمدير المشروع.', false);
+    }
+  }
+
+  function appendChatMessages(messages) {
+    if (!Array.isArray(messages)) return;
+    messages.forEach((message) => {
+      if (!message || !['user', 'assistant'].includes(message.role) || typeof message.content !== 'string') return;
+      const item = document.createElement('article');
+      item.className = 'ai-chat-message ' + (message.role === 'user' ? 'user' : 'assistant');
+      const author = document.createElement('strong');
+      author.textContent = message.role === 'user' ? 'أنت' : 'Ollama';
+      const content = document.createElement('p');
+      content.textContent = message.content;
+      item.append(author, content);
+      chatLog.appendChild(item);
+    });
+    chatLog.scrollTop = chatLog.scrollHeight;
+  }
+
+  async function loadChat() {
+    const project = selectedProject();
+    chatLog.replaceChildren();
+    if (!project) {
+      chatLog.textContent = 'اختر مشروعاً لبدء المحادثة.';
+      return;
+    }
+    chatLog.textContent = 'جارٍ تحميل المحادثة…';
+    try {
+      const data = await BD.api('/api/ai/projects/' + encodeURIComponent(project.id) + '/chat');
+      chatLog.replaceChildren();
+      if (!data.messages.length) chatLog.textContent = 'لا توجد رسائل بعد. ابدأ بسؤال عن مشروعك.';
+      appendChatMessages(data.messages);
+      chatStatus.textContent = '';
+    } catch (error) {
+      chatLog.textContent = 'تعذر تحميل المحادثة.';
+      chatStatus.textContent = error.message;
+      chatStatus.style.color = 'var(--danger)';
+    }
+  }
+
+  async function loadProjects() {
+    try {
+      const data = await BD.api('/api/projects?limit=50');
+      projectSelect.replaceChildren(new Option('اختر مشروعاً', ''));
+      projects = data.projects || [];
+      projects.forEach((item) => projectSelect.add(new Option(item.name, item.id)));
+      updateProjectActions();
+      if (!projects.length) {
+        report('أنشئ مشروعاً أولاً لبدء المحادثة أو التحليل.', true);
+      }
+    } catch (error) {
+      projectSelect.replaceChildren(new Option('تعذر تحميل المشاريع', ''));
+      report(error.message, true);
+    }
+  }
+
+  BD.api('/api/ai/status').then((data) => {
+    if (!data.reachable) {
+      providerStatus.textContent = 'تعذر الاتصال بـ Ollama على الخادم. شغّل Ollama وتأكد من OLLAMA_BASE_URL.';
+      providerStatus.style.color = 'var(--danger)';
+    } else if (!data.modelAvailable) {
+      providerStatus.textContent = 'Ollama متصل، لكن النموذج ' + data.model + ' غير مثبت. نفّذ: ollama pull ' + data.model;
+      providerStatus.style.color = 'var(--danger)';
+    } else {
+      providerStatus.textContent = 'متصل بـ Ollama · النموذج: ' + data.model;
+      providerStatus.style.color = 'var(--success)';
+    }
+  }).catch((error) => {
+    providerStatus.textContent = 'إعداد المساعد غير متاح: ' + error.message;
+    providerStatus.style.color = 'var(--danger)';
+  });
+
+  projectSelect.addEventListener('change', () => {
+    updateProjectActions();
+    loadChat();
+  });
+
+  document.getElementById('aiChatForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const project = selectedProject();
+    const input = document.getElementById('aiChatMessage');
+    const message = input.value.trim();
+    const button = document.getElementById('aiChatSend');
+    if (!project || !message) return;
+    button.disabled = true;
+    chatStatus.textContent = 'جارٍ انتظار رد Ollama…';
+    chatStatus.style.color = 'var(--text-muted)';
+    try {
+      const data = await BD.api('/api/ai/projects/' + encodeURIComponent(project.id) + '/chat', {
+        method: 'POST',
+        body: JSON.stringify({ message })
+      });
+      appendChatMessages(data.messages);
+      input.value = '';
+      chatStatus.textContent = '';
+    } catch (error) {
+      chatStatus.textContent = error.message;
+      chatStatus.style.color = 'var(--danger)';
+    } finally {
+      button.disabled = !selectedProject();
+    }
+  });
+
+  document.getElementById('generatePlan').addEventListener('click', async () => {
+    const project = selectedProject();
+    if (!project || !managerRoles.has(project.role)) {
+      report('اختر مشروعاً تديره لبدء التحليل.', true);
+      return;
+    }
+    const button = document.getElementById('generatePlan');
+    button.disabled = true;
+    report('جارٍ الاتصال بـ Ollama على الخادم…', false);
+    try {
+      const data = await BD.api('/api/ai/projects/' + encodeURIComponent(projectSelect.value) + '/plan', {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      document.getElementById('assistantSummary').textContent = data.summary;
+      const risks = document.getElementById('assistantRisks');
+      risks.replaceChildren();
+      data.risks.forEach((text) => {
+        const item = document.createElement('li');
+        item.textContent = text;
+        risks.appendChild(item);
+      });
+      const tasks = document.getElementById('assistantTasks');
+      tasks.replaceChildren();
+      data.tasks.forEach((suggestion) => {
+        const card = document.createElement('article');
+        card.className = 'card';
+        const title = document.createElement('h3');
+        title.textContent = suggestion.title;
+        const description = document.createElement('p');
+        description.textContent = suggestion.description;
+        const priority = document.createElement('p');
+        priority.className = 'small';
+        priority.textContent = 'الأولوية المقترحة: ' + suggestion.priority;
+        const approve = document.createElement('button');
+        approve.className = 'btn btn-secondary btn-sm';
+        approve.type = 'button';
+        approve.textContent = 'مراجعة وإضافة كمهمة';
+        approve.addEventListener('click', async () => {
+          if (!window.confirm('هل توافق على إضافة هذه المهمة إلى المشروع؟')) return;
+          approve.disabled = true;
+          try {
+            const payload = BD.getTokenPayload();
+            if (!payload || !payload.email) throw new Error('تعذر التحقق من الحساب. سجّل الدخول مجدداً.');
+            await BD.api('/api/tasks', {
+              method: 'POST',
+              body: JSON.stringify({
+                projectId: projectSelect.value,
+                title: suggestion.title,
+                description: suggestion.description + '\nالأولوية المقترحة: ' + suggestion.priority,
+                assignee: payload.email
+              })
+            });
+            approve.textContent = 'أضيفت المهمة';
+            report('تمت إضافة المهمة بعد موافقتك.', false);
+          } catch (error) {
+            approve.disabled = false;
+            report(error.message, true);
+          }
+        });
+        card.append(title, description, priority, approve);
+        tasks.appendChild(card);
+      });
+      resultPanel.hidden = false;
+      report('هذه اقتراحات فقط. راجع كل مهمة قبل إضافتها.', false);
+    } catch (error) {
+      report(error.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  loadProjects();
+</script>
+</body>
+</html>

@@ -1,5 +1,7 @@
 window.BD_API_BASE = window.BD_API_BASE || (location.hostname === 'localhost' ? 'http://localhost:3000' : '');
 const API = window.BD_API_BASE;
+const storedTheme = localStorage.getItem('bd_theme');
+if (storedTheme === 'light') document.documentElement.dataset.theme = 'light';
 function getToken(){ return localStorage.getItem('bd_token'); }
 function setToken(t){ if(t) localStorage.setItem('bd_token',t); else localStorage.removeItem('bd_token'); }
 async function api(path, opts={}){
@@ -11,6 +13,9 @@ async function api(path, opts={}){
   if (!res.ok) {
   const errorMessages = {
     'email_in_use': 'هذا البريد الإلكتروني مستخدم بالفعل',
+    'username_in_use': 'اسم المستخدم مستخدم بالفعل',
+    'invalid_username': 'اسم المستخدم يجب أن يتكون من 3 إلى 30 حرفاً أو رقماً أو _',
+    'invalid_profile': 'تحقق من الاسم وبيانات السيرة الذاتية',
     'invalid_credentials': 'اسم المستخدم أو كلمة المرور غير صحيحة',
     'invalid_input': 'بيانات إدخال غير صحيحة',
     'invalid_json': 'بيانات غير صحيحة',
@@ -27,9 +32,32 @@ async function api(path, opts={}){
     'already_partners': 'هذا المستخدم شريك بالفعل',
     'invitation_received': 'لديك دعوة شراكة واردة من هذا المستخدم',
     'already_member': 'هذا المستخدم عضو بالفعل في المشروع',
-    'cannot_remove_owner': 'لا يمكن إزالة مالك المشروع'
+    'cannot_remove_owner': 'لا يمكن إزالة مالك المشروع',
+    'invalid_assessment': 'أكمل التقييم واختر إجابة صحيحة لكل سؤال',
+    'invalid_assignee': 'المكلف يجب أن يكون عضواً في المشروع',
+    'ai_unavailable': 'مساعد Ollama غير متاح حالياً. تحقق من تشغيله وإعداد الخادم.',
+    'ollama_offline': 'تعذر الوصول إلى Ollama. شغّل الخدمة وتحقق من عنوان OLLAMA_BASE_URL.',
+    'ollama_model_missing': 'النموذج غير مثبت في Ollama. ثبّت النموذج المحدد في OLLAMA_MODEL.',
+    'ollama_unavailable': 'تعذر على Ollama إكمال الطلب. تحقق من سجلات الخدمة وإصدار النموذج.',
+    'invalid_ollama_response': 'أعاد Ollama استجابة غير صالحة.',
+    'invalid_ai_response': 'أعاد المساعد نتيجة غير صالحة. حاول مرة أخرى.',
+    'invalid_product': 'تحقق من اسم المنتج والسعر والوصف',
+    'invalid_import': 'تعذر قراءة الملف. تحقق من نوعه ومحتواه وحجمه.',
+    'invalid_import_headers': 'يجب أن يحتوي الملف على أعمدة اسم المنتج والسعر',
+    'unsupported_import_format': 'الأنواع المدعومة: CSV وExcel XLSX وPDF وWord DOCX',
+    'provider_disabled': 'التحويل اليدوي غير مفعّل حالياً من إدارة المنصة',
+    'shop_unavailable': 'المتجر غير جاهز لاستقبال الطلبات',
+    'invalid_order': 'بيانات الطلب أو الكمية غير صالحة',
+    'invalid_transfer_reference': 'أدخل مرجع التحويل كما يظهر في تطبيق البنك',
+    'invalid_order_transition': 'حالة الطلب تغيرت أو لا تسمح بهذا الإجراء',
+    'duplicate_reference': 'مرجع التحويل مستخدم في طلب آخر',
+    'invalid_payment_settings': 'إعدادات الدفع أو نسبة العمولة غير صالحة',
+    'import_document_too_large': 'الملف كبير أو يحتوي على بيانات مضغوطة أكثر من المسموح',
+    'import_document_too_long': 'المستند يتجاوز حد الصفحات أو النص المسموح'
   };
-  throw new Error(errorMessages[data.error] || data.error || res.statusText);
+  const error = new Error(errorMessages[data.error] || data.error || res.statusText);
+  error.status = res.status;
+  throw error;
 }
   return data;
 }
@@ -43,7 +71,119 @@ function showToast(message, type='success', duration=3000){
   setTimeout(()=>{toast.classList.remove('show');setTimeout(()=>toast.remove(),300);},duration);
 }
 window.BD = { API, getToken, setToken, api, showToast };
+window.BD.setTheme = function(theme) {
+  const value = theme === 'light' ? 'light' : 'dark';
+  if (value === 'light') document.documentElement.dataset.theme = 'light';
+  else document.documentElement.removeAttribute('data-theme');
+  localStorage.setItem('bd_theme', value);
+};
 function escapeHtml(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function requireAuth(){ if(!getToken()){ location.href='login.html'; } }
 window.BD.requireAuth = requireAuth;
 window.BD.escapeHtml = escapeHtml;
+
+function tokenPayload(){
+  try {
+    const token = getToken();
+    if (!token) return null;
+    const part = token.split('.')[0];
+    return JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));
+  } catch {
+    return null;
+  }
+}
+window.BD.getTokenPayload = tokenPayload;
+
+function createLink(href, label, className){
+  const link = document.createElement('a');
+  link.href = href;
+  link.textContent = label;
+  link.className = className;
+  return link;
+}
+
+async function updatePublicNavigation(){
+  const cta = document.querySelector('.rd-nav-cta');
+  if (!cta) return;
+  const homepageSignup = document.querySelectorAll('.homepage-signup');
+  if (!getToken()) return;
+  homepageSignup.forEach((element) => { element.hidden = true; });
+  const payload = tokenPayload();
+  let name = payload && payload.email ? payload.email.split('@')[0] : 'حسابي';
+  try {
+    const auth = await api('/api/auth/me');
+    if (!auth.user) throw new Error('Authenticated user not returned.');
+    name = auth.user.email.split('@')[0] || name;
+    const data = await api('/api/profile');
+    if (data.profile && data.profile.displayName) name = data.profile.displayName;
+  } catch (error) {
+    if (error.status === 401 || error.status === 403) {
+      setToken(null);
+      homepageSignup.forEach((element) => { element.hidden = false; });
+      return;
+    }
+    console.error('Unable to verify homepage account navigation:', error);
+  }
+  cta.replaceChildren(
+    createLink('projects.html', 'لوحة التحكم', 'rd-btn ghost'),
+    createLink('profile.html', name, 'rd-btn primary'),
+  );
+  const logout = document.createElement('button');
+  logout.type = 'button';
+  logout.className = 'rd-btn ghost';
+  logout.textContent = 'تسجيل الخروج';
+  logout.addEventListener('click', () => {
+    setToken(null);
+    location.href = 'index.html';
+  });
+  cta.appendChild(logout);
+}
+
+function initPageScene(){
+  if (document.getElementById('hero3d') || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const canvas = document.createElement('canvas');
+  canvas.id = 'bdAmbientScene';
+  canvas.setAttribute('aria-hidden', 'true');
+  document.body.prepend(canvas);
+  const path = location.pathname.toLowerCase();
+  const palettes = [
+    [/profile|cv/, 0xf0b95b, 0x8b5cf6],
+    [/assessment|project/, 0x35d5f2, 0x8b5cf6],
+    [/task|assistant/, 0x34d399, 0x35d5f2],
+    [/commerce|order|payment/, 0xf0b95b, 0x35d5f2],
+  ];
+  const palette = palettes.find(([pattern]) => pattern.test(path));
+  const color = palette ? palette[1] : 0x35d5f2;
+  const innerColor = palette ? palette[2] : 0x8b5cf6;
+  import('/src/animations/three-scene.js')
+    .then(({ ThreeSceneManager }) => {
+      const scene = new ThreeSceneManager(canvas, {
+        color,
+        innerColor,
+        particleCount: 48,
+        pixelRatioCap: 1.15,
+        rotationSpeed: 0.00035,
+      });
+      if (!scene.init()) canvas.remove();
+      window.addEventListener('beforeunload', () => scene.dispose(), { once: true });
+    })
+    .catch((error) => {
+      canvas.remove();
+      console.error('Unable to load the page background scene:', error);
+    });
+}
+
+function updateFooterText() {
+  const year = new Date().getFullYear();
+  document.querySelectorAll('.sidebar-footer, .app-footer, .rd-footer').forEach((footer) => {
+    footer.textContent = footer.classList.contains('sidebar-footer')
+      ? '© ' + year + ' Business Discovery'
+      : 'Business Discovery © ' + year + ' — جميع الحقوق محفوظة';
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  updateFooterText();
+  updatePublicNavigation();
+  initPageScene();
+});

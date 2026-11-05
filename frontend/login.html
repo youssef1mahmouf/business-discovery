@@ -18,8 +18,8 @@
       <p class="sub">أهلاً بعودتك. أدخل بياناتك للمتابعة.</p>
       <form id="loginForm" onsubmit="return false;">
         <div class="rd-field">
-          <label class="rd-label" for="email">البريد الإلكتروني</label>
-          <input id="email" class="rd-input" type="email" placeholder="name@example.com" autocomplete="email">
+          <label class="rd-label" for="email">البريد الإلكتروني أو اسم المستخدم</label>
+          <input id="email" class="rd-input" type="text" placeholder="name@example.com أو اسم المستخدم" autocomplete="username">
           <div id="emailErr" class="rd-error"></div>
         </div>
         <div class="rd-field">
@@ -94,7 +94,8 @@
     else { btn.disabled = false; btn.textContent = 'دخول'; }
   }
   function openForgot() {
-    document.getElementById('forgotEmail').value = document.getElementById('email').value.trim();
+    const identifier = document.getElementById('email').value.trim();
+    document.getElementById('forgotEmail').value = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier) ? identifier : '';
     document.getElementById('forgotBackdrop').classList.add('open');
     document.getElementById('forgotEmail').focus();
   }
@@ -162,20 +163,20 @@
     }
   }
   async function login() {
-    const email = document.getElementById('email').value.trim();
+    const identifier = document.getElementById('email').value.trim().toLowerCase();
     const password = document.getElementById('password').value;
     const emailErr = document.getElementById('emailErr');
     const pwErr = document.getElementById('pwErr');
     const msg = document.getElementById('msg');
     emailErr.textContent = ''; pwErr.textContent = ''; msg.textContent = ''; msg.className = 'rd-msg';
     let ok = true;
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { emailErr.textContent = 'بريد إلكتروني غير صالح'; ok = false; }
+    if (!identifier) { emailErr.textContent = 'أدخل بريدك الإلكتروني أو اسم المستخدم'; ok = false; }
     if (password.length < 8) { pwErr.textContent = 'كلمة المرور 8 أحرف على الأقل'; ok = false; }
     if (!ok) return;
     const btn = document.getElementById('loginBtn');
     setLoading(btn, true);
     try {
-      const data = await BD.api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+      const data = await BD.api('/api/auth/login', { method: 'POST', body: JSON.stringify({ identifier, password }) });
       BD.setToken(data.token);
       if (data.user && data.user.mustChangePassword) {
         location.href = 'change-password.html';

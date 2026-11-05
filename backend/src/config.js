@@ -84,7 +84,43 @@ function validateConfig(env = process.env) {
     e.name = 'ConfigValidationError';
     throw e;
   }
-  return { port, mongoUri, tokenSecret: String(tokenSecret), frontendOrigin: String(frontendOrigin), dbName, production, accessTokenTtlSeconds, smtpConfig };
+  const ollamaBaseUrl = String(env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').trim().replace(/\/+$/, '');
+  let ollamaUrl;
+  try { ollamaUrl = new URL(ollamaBaseUrl); } catch {
+    const e = new Error('OLLAMA_BASE_URL must be a valid HTTP(S) URL');
+    e.name = 'ConfigValidationError';
+    throw e;
+  }
+  if (!['http:', 'https:'].includes(ollamaUrl.protocol) || ollamaUrl.username || ollamaUrl.password) {
+    const e = new Error('OLLAMA_BASE_URL must be a valid HTTP(S) URL without embedded credentials');
+    e.name = 'ConfigValidationError';
+    throw e;
+  }
+  const ollamaModel = String(env.OLLAMA_MODEL || 'llama3.2').trim();
+  if (!ollamaModel || ollamaModel.length > 100) {
+    const e = new Error('OLLAMA_MODEL must contain 1 to 100 characters');
+    e.name = 'ConfigValidationError';
+    throw e;
+  }
+  const ollamaTimeoutMs = Number(env.OLLAMA_TIMEOUT_MS || 45000);
+  if (!Number.isInteger(ollamaTimeoutMs) || ollamaTimeoutMs < 1000 || ollamaTimeoutMs > 120000) {
+    const e = new Error('OLLAMA_TIMEOUT_MS must be between 1000 and 120000');
+    e.name = 'ConfigValidationError';
+    throw e;
+  }
+  return {
+    port,
+    mongoUri,
+    tokenSecret: String(tokenSecret),
+    frontendOrigin: String(frontendOrigin),
+    dbName,
+    production,
+    accessTokenTtlSeconds,
+    smtpConfig,
+    ollamaBaseUrl,
+    ollamaModel,
+    ollamaTimeoutMs
+  };
 }
 
 module.exports = { loadEnvFile, validateConfig, ROOT, REPO_ROOT };

@@ -144,6 +144,11 @@ test('project list omits archived projects and includes the member role', async 
     id: String(activeProjectId),
     name: activeProject.name,
     description: '',
+    projectType: '',
+    industry: '',
+    stage: '',
+    targetMarket: '',
+    problem: '',
     role: 'project_manager'
   }]);
 });

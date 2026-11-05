@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1.0.0",
+  "collection": "project_assessments",
+  "purpose": "Project readiness assessments and their answers.",
+  "required": ["projectId", "projectType", "score", "categories", "answers", "createdBy", "createdAt"],
+  "properties": {
+    "version": { "type": "integer" },
+    "projectId": { "type": "string" },
+    "projectType": { "type": "string", "enum": ["saas", "ecommerce", "services", "retail", "marketplace", "other"] },
+    "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "readiness": { "type": "string" },
+    "categories": { "type": "array", "items": { "type": "object" } },
+    "strengths": { "type": "array", "items": { "type": "string" } },
+    "focusAreas": { "type": "array", "items": { "type": "string" } },
+    "answers": { "type": "object", "description": "100 question IDs mapped to integer answers from 1 to 5." },
+    "createdBy": { "type": "string", "format": "email" },
+    "createdAt": { "type": "string", "format": "date-time" }
+  },
+  "indexes": [{ "keys": { "projectId": 1, "createdAt": -1 } }]
+}

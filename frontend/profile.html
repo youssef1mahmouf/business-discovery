@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>السيرة الذاتية | Business Discovery</title>
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="bdSidebar">
+    <div class="sidebar-brand"><div class="brand-icon">BD</div><span class="brand-text">Business Discovery</span></div>
+    <button class="sidebar-toggle" id="bdCollapseBtn" type="button" aria-label="طي القائمة">⇔</button>
+    <nav class="sidebar-nav" id="bdSidebarNav"></nav>
+    <div class="sidebar-footer">© 2026</div>
+  </aside>
+  <div class="sidebar-overlay" id="bdOverlay"></div>
+  <div class="main-area">
+    <header class="topbar" id="bdTopbar">
+      <button class="mobile-menu-btn" id="bdMenuBtn" type="button" aria-label="فتح القائمة">☰</button>
+      <div class="topbar-left"><h1 class="page-title" id="bdPageTitle"></h1></div>
+      <div class="topbar-actions">
+        <a href="notifications.html" class="icon-btn" aria-label="الإشعارات">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
+        <div class="profile-menu">
+          <button class="profile-btn" id="bdProfileBtn" type="button">👤 <span id="bdUserEmail"></span></button>
+          <div class="profile-dropdown" id="bdProfileDropdown">
+            <a href="settings.html">الإعدادات</a>
+            <a href="#" id="bdLogout">تسجيل الخروج</a>
+          </div>
+        </div>
+      </div>
+    </header>
+    <main class="content" id="bdContent">
+      <div class="container">
+        <section class="card" id="profileEditor">
+          <div class="card-header">
+            <div><h2>السيرة الذاتية والملف الشخصي</h2><p>الملف خاص افتراضياً. لا تنشره إلا إذا أنشأت رابط مشاركة.</p></div>
+            <div class="profile-actions flex gap-8">
+              <button class="btn btn-secondary" id="printProfile" type="button">طباعة / حفظ PDF</button>
+              <button class="btn btn-primary" id="saveProfile" type="button">حفظ الملف</button>
+            </div>
+          </div>
+          <form id="profileForm" class="profile-form-grid">
+            <div><label class="label" for="displayName">الاسم</label><input class="input" id="displayName" maxlength="80" required></div>
+            <div><label class="label" for="username">اسم المستخدم</label><input class="input" id="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]{3,30}" aria-describedby="usernameHint" placeholder="اسم المستخدم"><span id="usernameHint" class="small">اختياري للحسابات القديمة؛ فريد ولا يحتوي إلا أحرفاً إنجليزية وأرقاماً و _</span></div>
+            <div><label class="label" for="headline">المسمى المهني</label><input class="input" id="headline" maxlength="120"></div>
+            <div><label class="label" for="location">المدينة / المنطقة</label><input class="input" id="location" maxlength="120"></div>
+            <div><label class="label" for="website">الموقع الشخصي</label><input class="input" id="website" type="url" maxlength="500" placeholder="https://"></div>
+            <div class="wide"><label class="label" for="bio">نبذة مهنية</label><textarea class="input" id="bio" rows="4" maxlength="3000"></textarea></div>
+            <div class="wide"><label class="label" for="skills">المهارات (افصل بينها بفاصلة)</label><input class="input" id="skills" maxlength="2000"></div>
+            <div class="wide"><label class="label" for="experience">الخبرات (سطر لكل خبرة: المسمى | الجهة | الفترة | التفاصيل)</label><textarea class="input" id="experience" rows="5" maxlength="8000"></textarea></div>
+            <div class="wide"><label class="label" for="education">التعليم (سطر لكل مؤهل: المؤهل | المؤسسة | الفترة)</label><textarea class="input" id="education" rows="4" maxlength="4000"></textarea></div>
+          </form>
+          <div class="profile-actions flex items-center gap-12 mt-16">
+            <button class="btn btn-secondary" id="enableShare" type="button">إنشاء رابط مشاركة</button>
+            <button class="btn btn-danger btn-sm" id="disableShare" type="button" hidden>إيقاف الرابط</button>
+            <p class="small" id="profileStatus" role="status" aria-live="polite"></p>
+          </div>
+          <div class="mt-16" id="shareLinkPanel" hidden>
+            <label class="label" for="shareLink">رابط السيرة الذاتية</label>
+            <input class="input" id="shareLink" readonly>
+          </div>
+        </section>
+        <section class="card profile-public" id="publicProfile" hidden aria-live="polite"></section>
+      </div>
+    </main>
+    <footer class="app-footer" id="bdFooter">Business Discovery © 2026 — جميع الحقوق محفوظة</footer>
+  </div>
+</div>
+<script src="assets/js/common.js"></script>
+<script src="assets/js/layout.js"></script>
+<script>
+  const shareToken = new URLSearchParams(location.search).get('share');
+  const editor = document.getElementById('profileEditor');
+  const publicProfile = document.getElementById('publicProfile');
+  const status = document.getElementById('profileStatus');
+
+  function setStatus(message, failed) {
+    status.textContent = message;
+    status.style.color = failed ? 'var(--danger)' : 'var(--text-muted)';
+  }
+
+  function lineValues(value, count) {
+    return String(value || '').split(/\r?\n/).map((line) => line.split('|').map((part) => part.trim()))
+      .filter((parts) => parts.some(Boolean)).map((parts) => {
+        while (parts.length < count) parts.push('');
+        return parts.slice(0, count);
+      });
+  }
+
+  function textElement(tag, value, className) {
+    const element = document.createElement(tag);
+    if (className) element.className = className;
+    element.textContent = value || '';
+    return element;
+  }
+
+  function renderPublic(profile) {
+    editor.hidden = true;
+    publicProfile.hidden = false;
+    publicProfile.replaceChildren();
+    publicProfile.appendChild(textElement('h1', profile.displayName));
+    if (profile.username) publicProfile.appendChild(textElement('p', '@' + profile.username, 'small'));
+    if (profile.headline) publicProfile.appendChild(textElement('p', profile.headline));
+    if (profile.location) publicProfile.appendChild(textElement('p', profile.location, 'small'));
+    if (profile.bio) {
+      publicProfile.appendChild(textElement('h2', 'نبذة'));
+      publicProfile.appendChild(textElement('p', profile.bio));
+    }
+    if (profile.skills && profile.skills.length) {
+      publicProfile.appendChild(textElement('h2', 'المهارات'));
+      const skills = document.createElement('div');
+      skills.className = 'profile-skills';
+      profile.skills.forEach((skill) => skills.appendChild(textElement('span', skill, 'profile-skill')));
+      publicProfile.appendChild(skills);
+    }
+    if (profile.experience && profile.experience.length) {
+      publicProfile.appendChild(textElement('h2', 'الخبرات'));
+      profile.experience.forEach((item) => {
+        const section = document.createElement('section');
+        section.className = 'section';
+        section.appendChild(textElement('h3', item.role));
+        section.appendChild(textElement('p', [item.organization, item.period].filter(Boolean).join(' · ')));
+        if (item.details) section.appendChild(textElement('p', item.details));
+        publicProfile.appendChild(section);
+      });
+    }
+    if (profile.education && profile.education.length) {
+      publicProfile.appendChild(textElement('h2', 'التعليم'));
+      profile.education.forEach((item) => {
+        const section = document.createElement('section');
+        section.className = 'section';
+        section.appendChild(textElement('h3', item.qualification));
+        section.appendChild(textElement('p', [item.institution, item.period].filter(Boolean).join(' · ')));
+        publicProfile.appendChild(section);
+      });
+    }
+    if (profile.website) {
+      const website = document.createElement('a');
+      website.href = profile.website;
+      website.rel = 'noopener noreferrer';
+      website.target = '_blank';
+      website.textContent = 'الموقع الشخصي';
+      publicProfile.appendChild(website);
+    }
+    const print = document.createElement('button');
+    print.className = 'btn btn-secondary profile-actions';
+    print.type = 'button';
+    print.textContent = 'طباعة / حفظ PDF';
+    print.addEventListener('click', () => window.print());
+    publicProfile.appendChild(print);
+  }
+
+  if (shareToken) {
+    BD.api('/api/public/profiles/' + encodeURIComponent(shareToken))
+      .then((data) => renderPublic(data.profile))
+      .catch((error) => {
+        editor.hidden = true;
+        publicProfile.hidden = false;
+        publicProfile.textContent = 'رابط السيرة الذاتية غير متاح أو تم إيقافه.';
+        console.error('Unable to load shared profile:', error);
+      });
+  } else {
+    BD.requireAuth();
+    const form = document.getElementById('profileForm');
+    form.addEventListener('submit', (event) => event.preventDefault());
+    const inputs = ['username', 'displayName', 'headline', 'bio', 'location', 'website'];
+    const sharePanel = document.getElementById('shareLinkPanel');
+
+    BD.api('/api/profile').then((data) => {
+      const profile = data.profile || {};
+      inputs.forEach((key) => { document.getElementById(key).value = profile[key] || ''; });
+      document.getElementById('skills').value = (profile.skills || []).join(', ');
+      document.getElementById('experience').value = (profile.experience || []).map((item) =>
+        [item.role, item.organization, item.period, item.details].join(' | ')).join('\n');
+      document.getElementById('education').value = (profile.education || []).map((item) =>
+        [item.qualification, item.institution, item.period].join(' | ')).join('\n');
+      document.getElementById('disableShare').hidden = !data.shareEnabled;
+    }).catch((error) => setStatus(error.message, true));
+
+    document.getElementById('saveProfile').addEventListener('click', async () => {
+      if (!form.reportValidity()) return;
+      const body = {};
+      inputs.forEach((key) => { body[key] = document.getElementById(key).value.trim(); });
+      body.skills = document.getElementById('skills').value.split(',').map((item) => item.trim()).filter(Boolean);
+      body.experience = lineValues(document.getElementById('experience').value, 4)
+        .map(([role, organization, period, details]) => ({ role, organization, period, details }));
+      body.education = lineValues(document.getElementById('education').value, 3)
+        .map(([qualification, institution, period]) => ({ qualification, institution, period }));
+      try {
+        await BD.api('/api/profile', { method: 'PUT', body: JSON.stringify(body) });
+        setStatus('تم حفظ السيرة الذاتية. تظل خاصة ما لم تنشئ رابط مشاركة.', false);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+
+    document.getElementById('enableShare').addEventListener('click', async () => {
+      try {
+        const data = await BD.api('/api/profile/share', { method: 'POST' });
+        const link = new URL(data.shareUrl, location.href).href;
+        document.getElementById('shareLink').value = link;
+        sharePanel.hidden = false;
+        document.getElementById('disableShare').hidden = false;
+        setStatus('تم إنشاء رابط خاص قابل للإلغاء. شاركه فقط مع من تختار.', false);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+
+    document.getElementById('disableShare').addEventListener('click', async () => {
+      try {
+        await BD.api('/api/profile/share', { method: 'DELETE' });
+        sharePanel.hidden = true;
+        document.getElementById('disableShare').hidden = true;
+        document.getElementById('shareLink').value = '';
+        setStatus('تم إيقاف رابط المشاركة.', false);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+    document.getElementById('printProfile').addEventListener('click', () => window.print());
+  }
+</script>
+</body>
+</html>

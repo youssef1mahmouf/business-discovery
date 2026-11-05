@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "1.0.0",
+  "collection": "orders",
+  "purpose": "Product orders with manually verified InstaPay transfer status.",
+  "required": ["sellerId", "buyerId", "buyerEmail", "productId", "productName", "quantity", "totalMinor", "currency", "provider", "status", "createdAt", "updatedAt"],
+  "properties": {
+    "sellerId": { "type": "string" },
+    "sellerName": { "type": "string" },
+    "buyerId": { "type": "string" },
+    "buyerEmail": { "type": "string", "format": "email" },
+    "productId": { "type": "string" },
+    "productName": { "type": "string" },
+    "unitPriceMinor": { "type": "integer", "minimum": 1 },
+    "quantity": { "type": "integer", "minimum": 1, "maximum": 100 },
+    "totalMinor": { "type": "integer", "minimum": 1 },
+    "currency": { "type": "string", "enum": ["EGP"] },
+    "provider": { "type": "string", "enum": ["instapay_manual"] },
+    "paymentReceiver": { "type": "string" },
+    "paymentInstructions": { "type": "string" },
+    "transferReference": { "type": "string" },
+    "status": { "type": "string", "enum": ["awaiting_transfer", "pending_verification", "paid", "rejected"] },
+    "commissionBps": { "type": "integer", "minimum": 0, "maximum": 3000 },
+    "estimatedFeeMinor": { "type": "integer", "minimum": 0 },
+    "verifiedBy": { "type": "string", "format": "email" },
+    "verifiedAt": { "type": "string", "format": "date-time" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "indexes": [
+    { "keys": { "sellerId": 1, "createdAt": -1 } },
+    { "keys": { "buyerId": 1, "createdAt": -1 } },
+    { "keys": { "sellerId": 1, "transferReference": 1 }, "unique": true, "sparse": true }
+  ]
+}

@@ -5,14 +5,24 @@ function sendJson(res, status, body, origin) {
   res.end(JSON.stringify(body));
 }
 
-function parseBody(req) {
+function parseBody(req, maxBytes = 1024 * 1024) {
   return new Promise((resolve, reject) => {
     let data = '';
+    let tooLarge = false;
     req.on('data', (chunk) => {
+      if (tooLarge) return;
       data += chunk;
-      if (data.length > 1024 * 1024) { reject(new Error('body_too_large')); req.destroy(); }
+      if (data.length > maxBytes) {
+        tooLarge = true;
+        data = '';
+      }
     });
     req.on('end', () => {
+      if (tooLarge) {
+        const error = new Error('body_too_large');
+        error.code = 'body_too_large';
+        return reject(error);
+      }
       if (!data) return resolve({});
       try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
     });

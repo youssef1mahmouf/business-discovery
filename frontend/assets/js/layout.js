@@ -9,13 +9,17 @@
     notifications: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
     chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
     settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82"/></svg>',
-    admin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 2l7 4v6c0 5-3.5 9-7 10-3.5-1-7-5-7-10V6l7-4z"/></svg>'
+    admin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 2l7 4v6c0 5-3.5 9-7 10-3.5-1-7-5-7-10V6l7-4z"/></svg>',
+    profile: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
+    assessment: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+    assistant: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 3v3m0 12v3M3 12h3m12 0h3"/><circle cx="12" cy="12" r="6"/></svg>',
+    commerce: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M3 3h2l2.4 12.2a2 2 0 0 0 2 1.6h8.8a2 2 0 0 0 2-1.6L22 8H6"/><circle cx="10" cy="21" r="1"/><circle cx="18" cy="21" r="1"/></svg>'
   };
   function getTokenPayload() {
     try {
       const t = (window.BD && BD.getToken) ? BD.getToken() : localStorage.getItem('bd_token');
       if (!t) return null;
-      const part = t.split('.')[1];
+      const part = t.split('.')[0];
       return JSON.parse(atob(part.replace(/-/g,'+').replace(/_/g,'/')));
     } catch(e){ return null; }
   }
@@ -27,13 +31,17 @@
   }
   function isAdmin(p){ const r = normalizeRole(p); return r === 'site_admin' || r === 'main_super_admin'; }
   function pageTitles(){
-    const map = { 'index.html':'لوحة التحكم','projects.html':'المشاريع','participants.html':'المشاركون','friends.html':'الأصدقاء','partners.html':'الشركاء','tasks.html':'المهام','notifications.html':'الإشعارات','chat.html':'الدردشة','settings.html':'الإعدادات','admin.html':'الإدارة' };
+    const map = { 'index.html':'لوحة التحكم','projects.html':'المشاريع','participants.html':'المشاركون','friends.html':'الأصدقاء','partners.html':'الشركاء','tasks.html':'المهام','notifications.html':'الإشعارات','chat.html':'الدردشة','settings.html':'الإعدادات','admin.html':'الإدارة','profile.html':'السيرة الذاتية','assessment.html':'تقييم المشروع','assistant.html':'مساعد الأعمال','commerce.html':'المنتجات والمدفوعات','register.html':'إنشاء حساب' };
     const name = (location.pathname.split('/').pop() || 'index.html');
     return map[name] || document.title || 'Business Discovery';
   }
   document.addEventListener('DOMContentLoaded', function(){
     const shell = document.getElementById('appShell');
     if (!shell) return;
+    if (new URLSearchParams(location.search).has('share')) {
+      document.body.classList.add('public-profile-mode');
+      return;
+    }
     const payload = getTokenPayload();
     const admin = isAdmin(payload);
     const nav = document.getElementById('bdSidebarNav');
@@ -46,7 +54,11 @@
       {href:'tasks.html', label:'المهام', icon:'tasks'},
       {href:'notifications.html', label:'الإشعارات', icon:'notifications'},
       {href:'chat.html', label:'الدردشة', icon:'chat'},
-      {href:'settings.html', label:'الإعدادات', icon:'settings'}
+      {href:'settings.html', label:'الإعدادات', icon:'settings'},
+      {href:'profile.html', label:'السيرة الذاتية', icon:'profile'},
+      {href:'assessment.html', label:'تقييم المشروع', icon:'assessment'},
+      {href:'assistant.html', label:'مساعد الأعمال', icon:'assistant'},
+      {href:'commerce.html', label:'المنتجات والمدفوعات', icon:'commerce'}
     ];
     if (admin) items.push({href:'admin.html', label:'الإدارة', icon:'admin'});
     const current = (location.pathname.split('/').pop() || 'index.html');
@@ -58,6 +70,11 @@
     if (titleEl) titleEl.textContent = pageTitles();
     const emailEl = document.getElementById('bdUserEmail');
     if (emailEl && payload && payload.email) emailEl.textContent = payload.email;
+    if (emailEl && window.BD && BD.api) {
+      BD.api('/api/profile').then(function(data){
+        if (data.profile && data.profile.displayName) emailEl.textContent = data.profile.displayName;
+      }).catch(function(error){ console.error('Unable to load current profile name:', error); });
+    }
     const menuBtn = document.getElementById('bdMenuBtn');
     const sidebar = document.getElementById('bdSidebar');
     const overlay = document.getElementById('bdOverlay');
@@ -98,4 +115,3 @@
     }
   });
 })();
-

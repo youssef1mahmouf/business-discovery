@@ -2,6 +2,7 @@ const { hashPassword, verifyPassword, signToken, normalizeRole } = require('../s
 const { sendJson, parseBody } = require('../middleware/http');
 const { rateLimit } = require('../middleware/rateLimit');
 const { requireAuth } = require('../middleware/auth');
+const { normalizeProfile } = require('../services/profile');
 
 function register(router, ctx) {
   const origin = ctx.config.frontendOrigin === '*' ? '*' : ctx.config.frontendOrigin;
@@ -18,18 +19,34 @@ function register(router, ctx) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 8) {
       return sendJson(res, 400, { error: 'invalid_input' }, origin);
     }
+    let username;
+    let profile;
+    if (body.username !== undefined || body.profile !== undefined) {
+      username = String(body.username || body.profile && body.profile.username || '').trim().toLowerCase();
+      if (!/^[a-z0-9_]{3,30}$/.test(username)) return sendJson(res, 400, { error: 'invalid_username' }, origin);
+      profile = normalizeProfile({ ...(body.profile || {}), username });
+      if (!profile || !profile.displayName) return sendJson(res, 400, { error: 'invalid_profile' }, origin);
+    }
     const users = ctx.db.get('users');
     const role = 'regular_user';
-    const user = { email, passwordHash: hashPassword(password), role, createdAt: new Date().toISOString() };
+    const user = {
+      email,
+      passwordHash: hashPassword(password),
+      role,
+      ...(username ? { username, displayName: profile.displayName, profile } : {}),
+      createdAt: new Date().toISOString()
+    };
     try {
       const r = await users.insertOne(user);
       user._id = r.insertedId;
     } catch (e) {
-      if (e && e.code === 11000) return sendJson(res, 409, { error: 'email_in_use' }, origin);
+      if (e && e.code === 11000) {
+        return sendJson(res, 409, { error: e.keyPattern && e.keyPattern.username ? 'username_in_use' : 'email_in_use' }, origin);
+      }
       throw e;
     }
     const token = signToken({ sub: String(user._id), email: user.email, role: normalizeRole(user) }, ctx.config.tokenSecret, ctx.config.accessTokenTtlSeconds);
-    return sendJson(res, 200, { token, user: { id: String(user._id), email: user.email, role: normalizeRole(user) } }, origin);
+    return sendJson(res, 200, { token, user: { id: String(user._id), email: user.email, username: user.username, role: normalizeRole(user) } }, origin);
   });
 
   router.post('/api/auth/login', async (req, res) => {
@@ -39,10 +56,10 @@ function register(router, ctx) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       return sendJson(res, 400, { error: 'invalid_input' }, origin);
     }
-    const email = String(body.email || '').trim().toLowerCase();
+    const identifier = String(body.identifier || body.email || body.username || '').trim().toLowerCase();
     const password = String(body.password || '');
     const users = ctx.db.get('users');
-    const user = await users.findOne({ email });
+    const user = await users.findOne({ email: identifier }) || await users.findOne({ username: identifier });
     if (!user || !verifyPassword(password, user.passwordHash)) {
       return sendJson(res, 401, { error: 'invalid_credentials' }, origin);
     }

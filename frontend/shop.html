@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>المتجر | Business Discovery</title>
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+<main class="container" style="max-width:900px">
+  <header class="card">
+    <a href="index.html">Business Discovery</a>
+    <h1 id="shopName">المتجر</h1>
+    <p>الطلب والتحويل يتطلبان تسجيل الدخول. لا يتم تأكيد الدفع تلقائياً.</p>
+  </header>
+  <section class="card"><div id="shopProducts" aria-live="polite"></div></section>
+  <section class="card" id="shopCheckout" hidden aria-live="polite"></section>
+  <p id="shopStatus" class="small" role="status" aria-live="polite"></p>
+</main>
+<script src="assets/js/common.js"></script>
+<script>
+  const sellerId = new URLSearchParams(location.search).get('sellerId');
+  const productsHost = document.getElementById('shopProducts');
+  const checkout = document.getElementById('shopCheckout');
+  const status = document.getElementById('shopStatus');
+  let currentShop;
+
+  function make(tag, text, className) {
+    const element = document.createElement(tag);
+    if (text !== undefined) element.textContent = text;
+    if (className) element.className = className;
+    return element;
+  }
+
+  function money(minor) {
+    return new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EGP' }).format(minor / 100);
+  }
+
+  async function showCheckout(product) {
+    if (!BD.getToken()) {
+      location.href = 'login.html';
+      return;
+    }
+    const quantity = Number(document.getElementById('quantity-' + product.id).value);
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) {
+      status.textContent = 'اختر كمية صحيحة من 1 إلى 100.';
+      return;
+    }
+    try {
+      const data = await BD.api('/api/orders', {
+        method: 'POST',
+        body: JSON.stringify({ productId: product.id, quantity })
+      });
+      checkout.replaceChildren(
+        make('h2', 'طلبك بانتظار التحويل'),
+        make('p', 'المبلغ المطلوب: ' + money(data.order.totalMinor)),
+        make('p', 'عنوان الاستلام: ' + data.payment.receiver),
+        make('p', data.payment.instructions || 'أرسل المبلغ عبر تطبيق البنك إلى عنوان الاستلام أعلاه.'),
+        make('p', 'التحويل يدوي ولا يُعتمد حتى يراجعه البائع.')
+      );
+      const form = document.createElement('form');
+      form.className = 'flex-col gap-12 mt-16';
+      const input = document.createElement('input');
+      input.className = 'input';
+      input.placeholder = 'مرجع التحويل بعد إتمامه';
+      input.minLength = 4;
+      input.maxLength = 120;
+      input.required = true;
+      const submit = make('button', 'إرسال المرجع للمراجعة', 'btn btn-primary');
+      submit.type = 'submit';
+      form.append(input, submit);
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        try {
+          await BD.api('/api/orders/' + encodeURIComponent(data.order._id) + '/transfer-reference', {
+            method: 'POST',
+            body: JSON.stringify({ reference: input.value })
+          });
+          status.textContent = 'أُرسل المرجع. انتظر التحقق اليدوي من البائع.';
+          submit.disabled = true;
+        } catch (error) {
+          status.textContent = error.message;
+          status.style.color = 'var(--danger)';
+        }
+      });
+      checkout.appendChild(form);
+      checkout.hidden = false;
+      checkout.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (error) {
+      status.textContent = error.message;
+      status.style.color = 'var(--danger)';
+    }
+  }
+
+  async function loadShop() {
+    if (!sellerId) {
+      status.textContent = 'رابط المتجر غير صالح.';
+      return;
+    }
+    try {
+      currentShop = await BD.api('/api/public/shops/' + encodeURIComponent(sellerId));
+      document.getElementById('shopName').textContent = currentShop.shop.name;
+      productsHost.replaceChildren();
+      if (!currentShop.products.length) productsHost.appendChild(make('p', 'لا توجد منتجات منشورة.'));
+      currentShop.products.forEach((product) => {
+        const card = make('article', undefined, 'card');
+        card.append(make('h2', product.name), make('p', product.description || ''), make('p', money(product.priceMinor)));
+        const quantity = document.createElement('input');
+        quantity.className = 'input';
+        quantity.type = 'number';
+        quantity.min = '1';
+        quantity.max = '100';
+        quantity.value = '1';
+        quantity.id = 'quantity-' + product.id;
+        quantity.setAttribute('aria-label', 'الكمية');
+        const button = make('button', 'إنشاء طلب', 'btn btn-primary mt-16');
+        button.type = 'button';
+        button.addEventListener('click', () => showCheckout(product));
+        card.append(quantity, button);
+        productsHost.appendChild(card);
+      });
+    } catch (error) {
+      productsHost.textContent = error.message;
+      status.textContent = 'المتجر غير متاح حالياً.';
+    }
+  }
+
+  loadShop();
+</script>
+</body>
+</html>

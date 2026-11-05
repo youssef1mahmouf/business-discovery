@@ -10,6 +10,10 @@ const taskRoutes = require('./routes/tasks');
 const adminRoutes = require('./routes/admin');
 const chatRoutes = require('./routes/chat');
 const publicRoutes = require('./routes/public');
+const profileRoutes = require('./routes/profile');
+const assessmentRoutes = require('./routes/assessments');
+const assistantRoutes = require('./routes/assistant');
+const commerceRoutes = require('./routes/commerce');
 
 const FRONTEND_DIR = path.resolve(__dirname, '..', '..', 'frontend');
 const MIME = {
@@ -26,15 +30,36 @@ const MIME = {
 };
 
 function serveStatic(req, res) {
-  const url = req.url.split('?')[0];
   if (req.method !== 'GET') return false;
-  let filePath = path.join(FRONTEND_DIR, url === '/' ? 'index.html' : url);
-  // prevent path traversal
-  if (!filePath.startsWith(FRONTEND_DIR)) return false;
-  if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
-    filePath = path.join(FRONTEND_DIR, 'index.html');
-    if (!fs.existsSync(filePath)) return false;
+  let urlPath;
+  try {
+    urlPath = decodeURIComponent(req.url.split('?')[0]);
+  } catch {
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Invalid URL path');
+    return true;
   }
+  const relativePath = urlPath.replace(/^[/\\]+/, '') || 'index.html';
+  const filePath = path.resolve(FRONTEND_DIR, relativePath);
+  const resolvedRelativePath = path.relative(FRONTEND_DIR, filePath);
+  if (path.isAbsolute(resolvedRelativePath) ||
+      resolvedRelativePath === '..' ||
+      resolvedRelativePath.startsWith('..' + path.sep)) {
+    return sendStaticNotFound(res);
+  }
+
+  let stat;
+  try {
+    stat = fs.statSync(filePath);
+  } catch (error) {
+    if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return sendStaticNotFound(res);
+    console.error('Unable to inspect frontend file:', error.code || error.name || 'Error');
+    res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Unable to read frontend file');
+    return true;
+  }
+  if (!stat.isFile()) return sendStaticNotFound(res);
+
   const ext = path.extname(filePath).toLowerCase();
   const mime = MIME[ext] || 'application/octet-stream';
   try {
@@ -42,9 +67,25 @@ function serveStatic(req, res) {
     res.writeHead(200, { 'Content-Type': mime });
     res.end(data);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    console.error('Unable to read frontend file:', error.code || error.name || 'Error');
+    res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Unable to read frontend file');
+    return true;
   }
+}
+
+function sendStaticNotFound(res) {
+  const notFoundPath = path.join(FRONTEND_DIR, '404.html');
+  try {
+    res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(fs.readFileSync(notFoundPath));
+  } catch (error) {
+    console.error('Unable to load frontend 404 page:', error.code || error.name || 'Error');
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Not found');
+  }
+  return true;
 }
 
 function createApp(ctx) {
@@ -56,6 +97,10 @@ function createApp(ctx) {
   adminRoutes.register(router, ctx);
   chatRoutes.register(router, ctx);
   publicRoutes.register(router, ctx);
+  profileRoutes.register(router, ctx);
+  assessmentRoutes.register(router, ctx);
+  assistantRoutes.register(router, ctx);
+  commerceRoutes.register(router, ctx);
 
   const origin = ctx.config.frontendOrigin === '*' ? '*' : ctx.config.frontendOrigin;
 

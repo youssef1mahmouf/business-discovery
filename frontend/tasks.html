@@ -62,13 +62,13 @@
   let currentEmail = '';
   try {
     const token = BD.getToken();
-    currentEmail = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).email || '';
+    currentEmail = JSON.parse(atob(token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/'))).email || '';
   } catch (error) {
     currentEmail = '';
   }
 
   function statusLabel(status) {
-    return ({ open: 'مفتوحة', in_progress: 'قيد التنفيذ', done: 'مكتملة' })[status] || status;
+    return ({ open: 'مفتوحة', in_progress: 'قيد التنفيذ', pending_approval: 'بانتظار اعتماد المسؤول', done: 'مكتملة' })[status] || status;
   }
 
   function emptyState(message) {
@@ -101,7 +101,7 @@
       const title = document.createElement('h3');
       title.textContent = task.title || 'بدون عنوان';
       const badge = document.createElement('span');
-      badge.className = task.status === 'done' ? 'badge badge-success' : 'badge badge-blue';
+      badge.className = task.status === 'done' ? 'badge badge-success' : task.status === 'pending_approval' ? 'badge warning' : 'badge badge-blue';
       badge.textContent = statusLabel(task.status || 'open');
       header.append(title, badge);
       card.appendChild(header);
@@ -120,18 +120,20 @@
       const status = document.createElement('select');
       status.className = 'input';
       status.setAttribute('aria-label', 'حالة المهمة');
-      [['open', 'مفتوحة'], ['in_progress', 'قيد التنفيذ'], ['done', 'مكتملة']].forEach(([value, label]) => {
+      [['pending_approval', 'بانتظار اعتماد المسؤول'], ['open', 'مفتوحة'], ['in_progress', 'قيد التنفيذ'], ['done', task.projectId && !task.canApprove ? 'طلب اعتماد الإكمال' : task.canApprove ? 'اعتماد الإكمال' : 'مكتملة']].forEach(([value, label]) => {
         const option = document.createElement('option');
         option.value = value;
         option.textContent = label;
         option.selected = (task.status || 'open') === value;
+        option.disabled = value === 'pending_approval';
         status.appendChild(option);
       });
+      if (task.status === 'pending_approval' && !task.canApprove) status.disabled = true;
       status.addEventListener('change', async () => {
         status.disabled = true;
         try {
-          await BD.api('/api/tasks/' + encodeURIComponent(task._id), { method: 'PUT', body: JSON.stringify({ status: status.value }) });
-          BD.showToast('تم تحديث حالة المهمة');
+          const result = await BD.api('/api/tasks/' + encodeURIComponent(task._id), { method: 'PUT', body: JSON.stringify({ status: status.value }) });
+          BD.showToast(result.approvalRequested ? 'تم إرسال طلب الإكمال إلى مدير المشروع' : 'تم تحديث حالة المهمة');
           await load();
         } catch (error) {
           BD.showToast(error.message, 'error');

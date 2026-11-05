@@ -18,10 +18,12 @@ async function connect(config) {
     throw error;
   }
   db = client.db(config.dbName);
-  const names = ['users','user_states','friend_requests','friendships','partner_invites','partnerships','app_settings','projects','project_members','participants','tasks','notifications','conversations','messages','ai_conversations'];
+  const names = ['users','user_states','friend_requests','friendships','partner_invites','partnerships','app_settings','projects','project_members','participants','tasks','notifications','conversations','messages','ai_conversations','project_assessments','products','orders'];
   for (const n of names) collections[n] = db.collection(n);
   await collections.users.createIndex({ email: 1 }, { unique: true });
+  await collections.users.createIndex({ username: 1 }, { unique: true, sparse: true });
   await collections.friend_requests.createIndex({ from: 1, to: 1, type: 1 }, { unique: true });
+  await collections.ai_conversations.createIndex({ userEmail: 1, projectId: 1, type: 1, createdAt: -1 });
   return { client, db, collections };
 }
 

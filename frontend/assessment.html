@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>تقييم المشروع | Business Discovery</title>
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="bdSidebar">
+    <div class="sidebar-brand"><div class="brand-icon">BD</div><span class="brand-text">Business Discovery</span></div>
+    <button class="sidebar-toggle" id="bdCollapseBtn" type="button" aria-label="طي القائمة">⇔</button>
+    <nav class="sidebar-nav" id="bdSidebarNav"></nav>
+    <div class="sidebar-footer">© 2026</div>
+  </aside>
+  <div class="sidebar-overlay" id="bdOverlay"></div>
+  <div class="main-area">
+    <header class="topbar" id="bdTopbar">
+      <button class="mobile-menu-btn" id="bdMenuBtn" type="button" aria-label="فتح القائمة">☰</button>
+      <div class="topbar-left"><h1 class="page-title" id="bdPageTitle"></h1></div>
+      <div class="topbar-actions">
+        <a href="notifications.html" class="icon-btn" aria-label="الإشعارات">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
+        <div class="profile-menu">
+          <button class="profile-btn" id="bdProfileBtn" type="button">👤 <span id="bdUserEmail"></span></button>
+          <div class="profile-dropdown" id="bdProfileDropdown"><a href="settings.html">الإعدادات</a><a href="#" id="bdLogout">تسجيل الخروج</a></div>
+        </div>
+      </div>
+    </header>
+    <main class="content" id="bdContent">
+      <div class="container">
+        <section class="card" id="assessmentSetup">
+          <div class="card-header"><div><h2>تقييم جاهزية المشروع</h2><p>١٠٠ سؤال في ٥ محاور متساوية. أجب وفق الأدلة المتاحة، لا التوقعات.</p></div></div>
+          <div class="profile-form-grid">
+            <div><label class="label" for="assessmentProject">المشروع</label><select class="input" id="assessmentProject" required><option value="">جارٍ تحميل المشاريع…</option></select></div>
+            <div><label class="label" for="projectType">نوع المشروع</label><select class="input" id="projectType"><option value="saas">خدمة برمجية</option><option value="ecommerce">تجارة إلكترونية</option><option value="services">خدمات</option><option value="retail">تجارة / متجر</option><option value="marketplace">منصة وساطة</option><option value="other">نوع آخر</option></select></div>
+          </div>
+          <p class="small mt-16">١ = غير متحقق، ٢ = ضعيف، ٣ = متوسط، ٤ = جيد، ٥ = متحقق بالكامل.</p>
+          <button class="btn btn-primary mt-16" id="startAssessment" type="button">بدء التقييم</button>
+          <p id="assessmentStatus" class="small mt-8" role="status" aria-live="polite"></p>
+        </section>
+        <section class="card" id="questionPanel" hidden>
+          <div class="card-header"><h2 id="questionCategory"></h2><span id="questionCount" class="badge badge-blue"></span></div>
+          <div class="assessment-progress" aria-hidden="true"><span id="progressBar"></span></div>
+          <div class="small mt-8" id="progressLabel"></div>
+          <div id="questionList" class="mt-16"></div>
+          <div class="flex justify-between gap-12 mt-16">
+            <button class="btn btn-secondary" id="previousPage" type="button">السابق</button>
+            <button class="btn btn-primary" id="nextPage" type="button">التالي</button>
+            <button class="btn btn-primary" id="submitAssessment" type="button" hidden>حفظ النتيجة</button>
+          </div>
+        </section>
+        <section class="card" id="assessmentResult" hidden aria-live="polite"></section>
+        <section class="card" id="assessmentHistory" hidden>
+          <div class="card-header"><h2>التقييمات السابقة</h2></div>
+          <div id="assessmentHistoryList"></div>
+        </section>
+      </div>
+    </main>
+    <footer class="app-footer" id="bdFooter">Business Discovery © 2026 — جميع الحقوق محفوظة</footer>
+  </div>
+</div>
+<script src="assets/js/common.js"></script>
+<script src="assets/js/layout.js"></script>
+<script>
+  BD.requireAuth();
+  const setup = document.getElementById('assessmentSetup');
+  const questionPanel = document.getElementById('questionPanel');
+  const questionList = document.getElementById('questionList');
+  const resultPanel = document.getElementById('assessmentResult');
+  const historyPanel = document.getElementById('assessmentHistory');
+  const status = document.getElementById('assessmentStatus');
+  const projectSelect = document.getElementById('assessmentProject');
+  let questionnaire;
+  let answers = {};
+  let page = 0;
+  const PAGE_SIZE = 10;
+
+  function report(message, failed) {
+    status.textContent = message;
+    status.style.color = failed ? 'var(--danger)' : 'var(--text-muted)';
+  }
+
+  async function loadProjects() {
+    try {
+      const data = await BD.api('/api/projects?limit=50');
+      projectSelect.replaceChildren(new Option('اختر مشروعاً', ''));
+      const managerRoles = new Set(['owner', 'project_manager', 'project_assistant']);
+      (data.projects || []).filter((project) => managerRoles.has(project.role))
+        .forEach((project) => projectSelect.add(new Option(project.name, project.id)));
+      const requested = new URLSearchParams(location.search).get('projectId');
+      if (requested && [...projectSelect.options].some((option) => option.value === requested)) projectSelect.value = requested;
+    } catch (error) {
+      projectSelect.replaceChildren(new Option('تعذر تحميل المشاريع', ''));
+      report(error.message, true);
+    }
+  }
+
+  function renderResult(result, host) {
+    host.replaceChildren();
+    host.hidden = false;
+    const title = document.createElement('h2');
+    title.textContent = 'نتيجة الجاهزية: ' + result.score + '/100 — ' + result.readiness;
+    host.appendChild(title);
+    const description = document.createElement('p');
+    description.textContent = 'المحاور لها الوزن نفسه. النتيجة مؤشر للنقاش والتخطيط وليست ضماناً للنجاح.';
+    host.appendChild(description);
+    result.categories.forEach((category) => {
+      const row = document.createElement('div');
+      row.className = 'score-row';
+      const label = document.createElement('span');
+      label.textContent = category.label;
+      const track = document.createElement('div');
+      track.className = 'assessment-progress';
+      const bar = document.createElement('span');
+      bar.style.width = category.score + '%';
+      track.appendChild(bar);
+      const score = document.createElement('strong');
+      score.textContent = category.score + '%';
+      row.append(label, track, score);
+      host.appendChild(row);
+    });
+    const focus = document.createElement('p');
+    focus.textContent = result.focusAreas.length
+      ? 'محاور تحتاج إلى عمل: ' + result.focusAreas.join('، ')
+      : 'لا توجد محاور أقل من 60%. راجع الافتراضات قبل التوسع.';
+    host.appendChild(focus);
+    if (result.strengths.length) host.appendChild(Object.assign(document.createElement('p'), {
+      textContent: 'نقاط قوة: ' + result.strengths.join('، ')
+    }));
+  }
+
+  async function loadHistory() {
+    const projectId = projectSelect.value;
+    if (!projectId) return;
+    try {
+      const data = await BD.api('/api/projects/' + encodeURIComponent(projectId) + '/assessments');
+      historyPanel.hidden = !(data.assessments || []).length;
+      const list = document.getElementById('assessmentHistoryList');
+      list.replaceChildren();
+      (data.assessments || []).forEach((item) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn btn-secondary btn-sm';
+        button.textContent = new Date(item.createdAt).toLocaleString() + ' — ' + item.score + '/100';
+        button.addEventListener('click', () => renderResult(item, resultPanel));
+        list.appendChild(button);
+      });
+    } catch (error) {
+      historyPanel.hidden = true;
+      report(error.message, true);
+    }
+  }
+
+  function renderQuestions() {
+    const questions = questionnaire.questions.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+    const category = questionnaire.categories.find((item) => item.id === questions[0].category);
+    document.getElementById('questionCategory').textContent = category.label;
+    document.getElementById('questionCount').textContent = (page * PAGE_SIZE + 1) + '–' + (page + 1) * PAGE_SIZE + ' / 100';
+    document.getElementById('progressLabel').textContent = 'المحور ' + (page + 1) + ' من 10';
+    document.getElementById('progressBar').style.width = ((page + 1) * 10) + '%';
+    questionList.replaceChildren();
+    questions.forEach((question, index) => {
+      const fieldset = document.createElement('fieldset');
+      fieldset.className = 'assessment-question';
+      const legend = document.createElement('legend');
+      legend.className = 'label';
+      legend.textContent = (page * PAGE_SIZE + index + 1) + '. ' + question.text;
+      fieldset.appendChild(legend);
+      const options = document.createElement('div');
+      options.className = 'assessment-options';
+      questionnaire.scale.forEach((choice) => {
+        const label = document.createElement('label');
+        label.className = 'assessment-option';
+        const input = document.createElement('input');
+        input.type = 'radio';
+        input.name = question.id;
+        input.value = String(choice.value);
+        input.checked = answers[question.id] === choice.value;
+        input.addEventListener('change', () => { answers[question.id] = choice.value; });
+        label.append(input, document.createTextNode(choice.value + ' — ' + choice.label));
+        options.appendChild(label);
+      });
+      fieldset.appendChild(options);
+      questionList.appendChild(fieldset);
+    });
+    document.getElementById('previousPage').disabled = page === 0;
+    document.getElementById('nextPage').hidden = page === 9;
+    document.getElementById('submitAssessment').hidden = page !== 9;
+  }
+
+  function validatePage() {
+    const current = questionnaire.questions.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+    const missing = current.filter((question) => !answers[question.id]);
+    if (missing.length) {
+      report('أجب عن الأسئلة العشرة في هذه الصفحة قبل المتابعة.', true);
+      return false;
+    }
+    report('', false);
+    return true;
+  }
+
+  document.getElementById('startAssessment').addEventListener('click', async () => {
+    if (!projectSelect.value) {
+      report('اختر مشروعاً أولاً.', true);
+      return;
+    }
+    try {
+      const response = await fetch('assets/data/assessment-questions.json');
+      if (!response.ok) throw new Error('تعذر تحميل أسئلة التقييم.');
+      questionnaire = await response.json();
+      if (!questionnaire || questionnaire.questions.length !== 100) throw new Error('بنك الأسئلة غير مكتمل.');
+      answers = {};
+      page = 0;
+      setup.hidden = true;
+      resultPanel.hidden = true;
+      questionPanel.hidden = false;
+      renderQuestions();
+    } catch (error) {
+      report(error.message, true);
+    }
+  });
+
+  document.getElementById('previousPage').addEventListener('click', () => {
+    if (page > 0) { page -= 1; renderQuestions(); }
+  });
+  document.getElementById('nextPage').addEventListener('click', () => {
+    if (validatePage()) { page += 1; renderQuestions(); }
+  });
+  document.getElementById('submitAssessment').addEventListener('click', async () => {
+    if (!validatePage()) return;
+    const button = document.getElementById('submitAssessment');
+    button.disabled = true;
+    try {
+      const data = await BD.api('/api/projects/' + encodeURIComponent(projectSelect.value) + '/assessments', {
+        method: 'POST',
+        body: JSON.stringify({ projectType: document.getElementById('projectType').value, answers })
+      });
+      questionPanel.hidden = true;
+      renderResult(data.assessment, resultPanel);
+      report('تم حفظ التقييم بنجاح.', false);
+      await loadHistory();
+    } catch (error) {
+      report(error.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+  projectSelect.addEventListener('change', loadHistory);
+
+  Promise.all([loadProjects(), fetch('assets/data/assessment-questions.json').then((response) => {
+    if (!response.ok) throw new Error('تعذر تحميل أسئلة التقييم.');
+    return response.json();
+  })]).then(([, data]) => {
+    questionnaire = data;
+    if (projectSelect.value) loadHistory();
+  }).catch((error) => report(error.message, true));
+</script>
+</body>
+</html>

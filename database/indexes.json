@@ -1,5 +1,7 @@
 [
   { "collection": "users", "keys": { "email": 1 }, "unique": true },
+  { "collection": "users", "keys": { "username": 1 }, "unique": true, "sparse": true },
+  { "collection": "ai_conversations", "keys": { "userEmail": 1, "projectId": 1, "type": 1, "createdAt": -1 } },
   { "collection": "project_members", "keys": { "projectId": 1, "email": 1 }, "unique": true },
   { "collection": "project_members", "keys": { "email": 1 } },
   { "collection": "projects", "keys": { "owner": 1 } },
@@ -12,5 +14,11 @@
   { "collection": "app_settings", "keys": { "key": 1 }, "unique": true },
   { "collection": "notifications", "keys": { "userEmail": 1, "createdAt": -1 } },
   { "collection": "conversations", "keys": { "members": 1 } },
-  { "collection": "messages", "keys": { "conversationId": 1, "createdAt": 1 } }
+  { "collection": "messages", "keys": { "conversationId": 1, "createdAt": 1 } },
+  { "collection": "users", "keys": { "profileShareTokenHash": 1 }, "unique": true, "sparse": true },
+  { "collection": "project_assessments", "keys": { "projectId": 1, "createdAt": -1 } },
+  { "collection": "products", "keys": { "ownerId": 1, "updatedAt": -1 } },
+  { "collection": "orders", "keys": { "sellerId": 1, "createdAt": -1 } },
+  { "collection": "orders", "keys": { "buyerId": 1, "createdAt": -1 } },
+  { "collection": "orders", "keys": { "sellerId": 1, "transferReference": 1 }, "unique": true, "sparse": true }
 ]

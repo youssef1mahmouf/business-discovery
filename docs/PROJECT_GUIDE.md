@@ -15,7 +15,7 @@ Current scope verified from source code:
 
 Frontend:
 
-- Static HTML pages (12 pages, all using the Premium Futuristic 3D Creative SaaS design identity)
+- Static HTML pages (18 pages, using the Premium Futuristic 3D Creative SaaS design identity)
 - Vanilla JavaScript (`frontend/assets/js/common.js`, `frontend/assets/js/layout.js`)
 - CSS (`frontend/assets/css/main.css`) — centralized design system with CSS variables, glassmorphism, and reusable components
 - Vendor libraries: GSAP, Lenis, Three.js, Lucide, SplitType
@@ -83,7 +83,7 @@ Frontend pages call the backend REST API using `fetch`. The backend validates th
 
 ### Frontend Design System
 
-All 12 frontend pages share a unified design system defined in `frontend/assets/css/main.css`:
+All 18 frontend pages share a unified design system defined in `frontend/assets/css/main.css`:
 
 - **Color tokens**: Deep Navy (#080B18), Secondary (#0D1224), Surface (#141B31), Electric Blue (#397BFF), Purple (#8B5CF6), Cyan (#35D5F2)
 - **Glassmorphism**: `--glass` / `--glass-strong` with backdrop-filter blur and subtle glowing borders
@@ -123,6 +123,8 @@ Registration:
 
 - `POST /api/auth/register`
 - Creates a user with role `regular_user`.
+- Accepts a unique 3–30 character username and optional profile/CV details.
+- Signup may also create the user's first project through the authenticated projects API.
 - Passwords are hashed with `scrypt`.
 - Email must be unique.
 
@@ -156,6 +158,8 @@ Main Super Admin provisioning:
 - Requires `ADMIN_EMAIL` (or `MAIN_SUPER_ADMIN_EMAIL`) and `ADMIN_PROVISION_CONFIRM=yes`.
 - Promotes an existing user only; never creates an account.
 - Does not run automatically.
+- Register the administrator email through the normal signup flow first; then set the two one-time environment values and run `npm run provision:super-admin --prefix backend`.
+- Public registration always creates a `regular_user`, even if a caller submits a role field.
 
 Logout:
 
@@ -184,6 +188,9 @@ Collections used by code:
 - `conversations`
 - `messages`
 - `ai_conversations`
+- `project_assessments`
+- `products`
+- `orders`
 
 Important relationships:
 
@@ -249,6 +256,8 @@ Tasks:
 - `PUT /api/tasks/:id`
 - `DELETE /api/tasks/:id`
 
+For project-linked tasks, an assignee's attempt to set `done` creates a `pending_approval` request and notifies project managers. A manager can approve by setting the status to `done` or return the task to `open`. The backend enforces this flow; client controls are not authorization.
+
 Notifications:
 
 - `GET /api/notifications`
@@ -277,7 +286,46 @@ Chat:
 - `POST /api/conversations`
 - `GET /api/conversations/:id/messages`
 - `POST /api/conversations/:id/messages`
-- `POST /api/ai/chat`
+- `GET /api/ai/status`
+- `POST /api/ai/projects/:id/plan`
+- `GET /api/ai/projects/:id/chat`
+- `POST /api/ai/projects/:id/chat`
+
+Profiles and assessments:
+
+- `GET /api/profile`
+- `PUT /api/profile`
+- `POST /api/profile/share`
+- `DELETE /api/profile/share`
+- `GET /api/public/profiles/:shareToken`
+- `GET /api/projects/:id/assessments`
+- `POST /api/projects/:id/assessments`
+
+Registration and the profile editor save the username, display name, professional headline, location, website, bio, skills, experience, and education to the user's private profile. Username is unique and appears on the public CV only when that profile is explicitly shared.
+
+Products, imports, and orders:
+
+- `GET /api/commerce/settings`
+- `PUT /api/commerce/settings`
+- `GET /api/products`
+- `POST /api/products`
+- `PUT /api/products/:id`
+- `DELETE /api/products/:id`
+- `POST /api/products/import-preview`
+- `POST /api/products/import-commit`
+- `GET /api/public/shops/:sellerId`
+- `GET /api/orders`
+- `POST /api/orders`
+- `POST /api/orders/:id/transfer-reference`
+- `PUT /api/orders/:id/verify`
+- `GET /api/commerce/summary`
+- `GET /api/admin/payment-settings`
+- `PUT /api/admin/payment-settings`
+- `GET /api/admin/commerce/summary`
+
+The assessment bank is `frontend/assets/data/assessment-questions.json`: 100 questions, 20 per category, with answers from 1 to 5. All five category scores contribute equally to the normalized 0–100 result. Only project owners, managers, and assistants can save or view assessment history.
+
+Ollama status checks the configured server and confirms the configured model is installed. Planning and project chat read only the selected project, its latest 100-question assessment, and recent tasks; chat history is isolated by project and user. The assistant returns analysis and reviewable suggestions; it never creates tasks or performs payment, deletion, role, or external-message actions. A project manager must explicitly accept a suggested task.
 
 Admin:
 
@@ -288,7 +336,7 @@ Admin:
 
 ## 8. Frontend
 
-Main pages:
+Main pages (18 functional HTML files; `404.html` is the not-found page):
 
 - `index.html` — landing page
 - `login.html`, `register.html` — authentication
@@ -297,8 +345,15 @@ Main pages:
 - `tasks.html` — task creation, status updates, and owner deletion
 - `notifications.html` — notification filtering and read state
 - `chat.html` — conversation and message workflows
-- `settings.html` — user settings
+- `settings.html` — user appearance preferences and role-aware shortcuts for profile, projects, assessments, AI chat, products, orders, payments, and admin tools
 - `admin.html` — administration
+- `change-password.html` — password change
+- `profile.html` — private CV/profile editing and optional share links
+- `register.html` — account details, CV/profile information, and optional first-project creation
+- `assessment.html` — the 100-question project assessment
+- `assistant.html` — project-scoped Ollama chat and recommendations
+- `commerce.html` — products, import drafts, seller settings, orders, and payment administration
+- `shop.html` — public seller storefront and manual-transfer checkout
 
 Authentication state:
 
@@ -325,6 +380,9 @@ Environment:
 
 - Copy `backend/.env.example` to `backend/.env`.
 - Configure values without committing secrets.
+- `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, and `OLLAMA_TIMEOUT_MS` configure the local Ollama model used for project suggestions and PDF/DOCX import extraction.
+- Start the Ollama service and install the configured model (for example, `ollama serve` and `ollama pull llama3.2`) on the machine reachable from the backend. The assistant page reports server/model status.
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` configure password-recovery email delivery.
 
 Start backend:
 ```
@@ -360,9 +418,14 @@ node --check backend/src/server.js
 - Token stored in browser localStorage.
 - No automated database integration tests.
 - Chat is request/response based, not real-time.
-- AI chat endpoint returns unavailable/not implemented.
+- Project chat and analysis require a reachable Ollama server and installed model. The AI uses project fields and the latest assessment; no external web-research provider is configured, so users must provide sources for market claims.
 - Admin user search uses regex input without escaping.
 - Password recovery email delivery depends on configured SMTP; delivery has not been verified.
+- Product imports are limited to 1 MiB and 50 rows. CSV/XLSX parsing is local; PDF/DOCX extraction sends extracted text to the configured Ollama endpoint. Imports remain unpublished drafts until reviewed.
+- PDF/DOCX extraction has not been verified end to end against representative documents; review extracted prices and descriptions before committing any draft.
+- InstaPay is a manual transfer workflow with seller/admin verification, not a payment-provider integration. Order commissions are estimates only; no automatic collection, split, or settlement occurs.
+- A super-admin role is not created by registration or by setting an email in configuration. Provisioning only promotes an existing account through the protected script.
+- Unknown frontend paths return a branded 404 page; check local HTML links and asset paths rather than relying on a homepage fallback.
 
 ## 12. AI Development Instructions
 
@@ -380,12 +443,10 @@ Every future AI client must:
 
 These are future ideas only and are not currently implemented:
 
-- Modern visual redesign with a clean, minimal interface.
-- Minimal login and registration experience.
-- Modern translucent/glass visual style and animated background.
-- Final product branding/name is still undecided.
-- A real AI assistant with model selection and model management.
-- Controlled AI access to project data and permissions.
+- Verified payment-provider integration, merchant onboarding, and commission settlement.
+- Broader AI chat with user-scoped data access, model selection, rate limits, and auditable actions.
+- Super-admin auditing and session/token revocation.
+- End-to-end tests against a disposable MongoDB instance.
 
 ## 14. Frontend Redesign (3D Creative)
 

@@ -6,12 +6,30 @@
   "properties": {
     "_id": { "type": "objectId" },
     "email": { "type": "string", "format": "email", "unique": true },
+    "username": { "type": "string", "pattern": "^[a-z0-9_]{3,30}$", "unique": true },
     "passwordHash": { "type": "string", "sensitive": true },
     "role": { "type": "string", "enum": ["main_super_admin", "site_admin", "regular_user"] },
     "displayName": { "type": "string" },
+    "profile": {
+      "type": "object",
+      "properties": {
+        "username": { "type": "string", "pattern": "^[a-z0-9_]{3,30}$" },
+        "displayName": { "type": "string", "maxLength": 80 },
+        "headline": { "type": "string", "maxLength": 120 },
+        "location": { "type": "string", "maxLength": 120 },
+        "website": { "type": "string", "maxLength": 500 },
+        "bio": { "type": "string", "maxLength": 3000 },
+        "skills": { "type": "array", "maxItems": 30, "items": { "type": "string", "maxLength": 60 } },
+        "experience": { "type": "array", "maxItems": 15, "items": { "type": "object" } },
+        "education": { "type": "array", "maxItems": 15, "items": { "type": "object" } }
+      }
+    },
     "status": { "type": "string", "enum": ["active", "disabled"], "default": "active" },
     "createdAt": { "type": "string", "format": "date-time" },
     "updatedAt": { "type": "string", "format": "date-time" }
   },
-  "indexes": [{ "keys": { "email": 1 }, "unique": true }]
+  "indexes": [
+    { "keys": { "email": 1 }, "unique": true },
+    { "keys": { "username": 1 }, "unique": true, "sparse": true }
+  ]
 }

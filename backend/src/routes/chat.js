@@ -72,12 +72,6 @@ function register(router, ctx) {
     if (Object.keys(inc).length) await convs.updateOne({ _id: c._id }, { $inc: inc });
     return sendJson(res,201,{ message: doc },origin);
   });
-  router.post('/api/ai/chat', async (req,res) => {
-    const u = await requireAuth(req,res,ctx,origin); if(!u) return;
-    const key = process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
-    if (!key) return sendJson(res,503,{ error:'ai_unavailable', message:'No AI provider configured' },origin);
-    return sendJson(res,503,{ error:'ai_not_implemented' },origin);
-  });
 }
 
 module.exports = { register };

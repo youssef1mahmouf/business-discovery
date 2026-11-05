@@ -1,19 +1,23 @@
 {
   "name": "business-discovery-backend",
   "version": "2.0.0",
-  "description": "Business Discovery backend (Express + MongoDB)",
+  "description": "Business Discovery backend (Node.js HTTP + MongoDB)",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "test": "node --test",
-    "lint:syntax": "node --check src/server.js"
+    "lint:syntax": "node --check src/server.js",
+    "provision:super-admin": "node scripts/promote-super-admin.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.21.2",
+    "exceljs": "^4.4.0",
     "helmet": "^8.0.0",
-    "mongodb": "^6.21.0"
+    "mammoth": "^1.9.0",
+    "mongodb": "^6.21.0",
+    "pdfjs-dist": "^5.4.394"
   },
   "devDependencies": {
     "playwright": "^1.64.1",

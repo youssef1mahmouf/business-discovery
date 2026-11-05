@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>المنتجات والمدفوعات | Business Discovery</title>
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="bdSidebar">
+    <div class="sidebar-brand"><div class="brand-icon">BD</div><span class="brand-text">Business Discovery</span></div>
+    <button class="sidebar-toggle" id="bdCollapseBtn" type="button" aria-label="طي القائمة">⇔</button>
+    <nav class="sidebar-nav" id="bdSidebarNav"></nav>
+    <div class="sidebar-footer">© 2026</div>
+  </aside>
+  <div class="sidebar-overlay" id="bdOverlay"></div>
+  <div class="main-area">
+    <header class="topbar" id="bdTopbar">
+      <button class="mobile-menu-btn" id="bdMenuBtn" type="button" aria-label="فتح القائمة">☰</button>
+      <div class="topbar-left"><h1 class="page-title" id="bdPageTitle"></h1></div>
+      <div class="topbar-actions">
+        <a href="notifications.html" class="icon-btn" aria-label="الإشعارات">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
+        <div class="profile-menu">
+          <button class="profile-btn" id="bdProfileBtn" type="button">👤 <span id="bdUserEmail"></span></button>
+          <div class="profile-dropdown" id="bdProfileDropdown"><a href="settings.html">الإعدادات</a><a href="#" id="bdLogout">تسجيل الخروج</a></div>
+        </div>
+      </div>
+    </header>
+    <main class="content" id="bdContent">
+      <div class="container">
+        <section class="card" id="salesSummary">
+          <div class="card-header"><div><h2>ملخص المبيعات</h2><p>يعتمد على التحويلات التي راجعها البائع يدوياً فقط.</p></div></div>
+          <div id="commerceSummary" aria-live="polite">جارٍ تحميل الملخص…</div>
+        </section>
+        <section class="card" id="sellerPaymentSettings">
+          <div class="card-header"><h2>إعدادات الاستلام</h2><span class="badge badge-warning">InstaPay يدوي فقط</span></div>
+          <p>الموقع الرسمي لا يوثق واجهة تاجر أو تأكيداً آلياً. يرسل المشتري التحويل بنفسه، ثم يراجع البائع المرجع. لا تدخل أرقام البطاقات أو كلمات المرور هنا.</p>
+          <form id="sellerSettingsForm" class="profile-form-grid">
+            <div><label class="label" for="instapayAddress">عنوان InstaPay IPA</label><input class="input" id="instapayAddress" placeholder="name@instapay" maxlength="80"></div>
+            <div><label class="label" for="acceptingOrders">استقبال الطلبات</label><select class="input" id="acceptingOrders"><option value="false">متوقف</option><option value="true">مفعّل بعد تهيئة الوسيلة</option></select></div>
+            <div class="wide"><label class="label" for="paymentInstructions">تعليمات التحويل للمشتري</label><textarea class="input" id="paymentInstructions" rows="3" maxlength="500"></textarea></div>
+            <div><button class="btn btn-primary" type="submit">حفظ إعدادات الاستلام</button></div>
+          </form>
+          <p id="sellerSettingsStatus" class="small" role="status" aria-live="polite"></p>
+          <div class="mt-16"><label class="label" for="shopLink">رابط المتجر</label><div class="flex gap-8"><input class="input" id="shopLink" readonly><button class="btn btn-secondary" id="copyShopLink" type="button">نسخ</button></div></div>
+        </section>
+        <section class="card" id="products">
+          <div class="card-header"><h2>منتجاتي</h2><span id="productCount" class="badge badge-blue">0</span></div>
+          <div id="productList" aria-live="polite"></div>
+          <h3 class="mt-16">إضافة منتج</h3>
+          <form id="productForm" class="profile-form-grid">
+            <div><label class="label" for="productName">اسم المنتج</label><input class="input" id="productName" maxlength="160" required></div>
+            <div><label class="label" for="productPrice">السعر بالجنيه المصري</label><input class="input" id="productPrice" type="number" min="0.01" step="0.01" required></div>
+            <div class="wide"><label class="label" for="productDescription">الوصف</label><textarea class="input" id="productDescription" rows="3" maxlength="2000"></textarea></div>
+            <div><button class="btn btn-primary" type="submit">إضافة المنتج</button></div>
+          </form>
+          <p id="productStatus" class="small" role="status" aria-live="polite"></p>
+        </section>
+        <section class="card" id="productImport">
+          <div class="card-header"><h2>استيراد منتجات للمراجعة</h2></div>
+          <p>الملفات مدعومة بصيغ CSV وExcel XLSX وPDF وWord DOCX، بحد أقصى 1 ميغابايت و50 منتجاً. تُحلل داخل الخادم، ولا يُحفظ الملف أو المنتجات حتى تراجع المسودات وتضغط موافق.</p>
+          <label class="label" for="productImportFile">اختر ملف المنتجات</label>
+          <input class="input" id="productImportFile" type="file" accept=".csv,.xlsx,.pdf,.docx">
+          <p class="small">يجب أن يحتوي CSV/Excel على أعمدة اسم المنتج والسعر، والوصف اختياري. يستخدم PDF/Word نموذج Ollama المحلي لاستخراج مسودات، ويجب تدقيق الأسعار.</p>
+          <p id="importStatus" class="small" role="status" aria-live="polite"></p>
+          <div id="importPreview" class="import-preview" hidden></div>
+          <button class="btn btn-primary mt-16" id="commitImport" type="button" hidden>أوافق على حفظ المسودات</button>
+        </section>
+        <section class="card" id="orders">
+          <div class="card-header"><h2>الطلبات والتحويلات</h2></div>
+          <p>حالة «بانتظار التحقق» لا تعني أن الدفع تم. اعتمد الطلب فقط بعد التحقق من التحويل في تطبيق البنك.</p>
+          <div id="ordersList" aria-live="polite"></div>
+        </section>
+        <section class="card" id="platformPaymentSettings" hidden>
+          <div class="card-header"><h2>تحكم المنصة بالدفع والعمولة</h2><span class="badge badge-purple">المسؤول الرئيسي فقط</span></div>
+          <p>العمولة تُحسب كتقدير على الطلبات الجديدة. التحويل اليدوي لا يجمعها ولا يقسمها؛ يلزم عقد ومزود يدعم التسوية قبل اعتبارها محصلة.</p>
+          <form id="adminPaymentForm" class="profile-form-grid">
+            <div><label class="label" for="providerEnabled">تفعيل InstaPay اليدوي</label><select class="input" id="providerEnabled"><option value="false">متوقف</option><option value="true">مفعّل</option></select></div>
+            <div><label class="label" for="commissionRate">عمولة المنصة (%) — 0 إلى 30</label><input class="input" id="commissionRate" type="number" min="0" max="30" step="0.01" required></div>
+            <div><button class="btn btn-primary" type="submit">حفظ إعدادات المنصة</button></div>
+          </form>
+          <p id="adminPaymentStatus" class="small" role="status" aria-live="polite"></p>
+          <div id="adminCommerceSummary" class="mt-16"></div>
+          <p class="small">بوابات البطاقات والمحافظ والتحويلات الأخرى غير مفعّلة لعدم وجود موصل معتمد أو حساب تاجر متحقق. ستظهر كخيارات بعد بناء واختبار كل موصل في بلد البائع.</p>
+        </section>
+      </div>
+    </main>
+    <footer class="app-footer" id="bdFooter">Business Discovery © 2026 — جميع الحقوق محفوظة</footer>
+  </div>
+</div>
+<script src="assets/js/common.js"></script>
+<script src="assets/js/layout.js"></script>
+<script>
+  BD.requireAuth();
+  const authPayload = BD.getTokenPayload();
+  if (!authPayload || !authPayload.sub) location.href = 'login.html';
+  const sellerId = authPayload ? authPayload.sub : '';
+  const formatMoney = (minor) => new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EGP' }).format((minor || 0) / 100);
+  const productList = document.getElementById('productList');
+  const ordersList = document.getElementById('ordersList');
+  const importPreview = document.getElementById('importPreview');
+  const importStatus = document.getElementById('importStatus');
+  let importedDrafts = [];
+
+  function setMessage(id, message, failed) {
+    const element = document.getElementById(id);
+    element.textContent = message;
+    element.style.color = failed ? 'var(--danger)' : 'var(--text-muted)';
+  }
+
+  function make(tag, text, className) {
+    const element = document.createElement(tag);
+    if (text !== undefined) element.textContent = text;
+    if (className) element.className = className;
+    return element;
+  }
+
+  function renderSummary(summary, host) {
+    host.replaceChildren(
+      make('p', 'الطلبات المؤكدة يدوياً: ' + summary.paidOrders),
+      make('p', 'إجمالي المبيعات المؤكدة: ' + formatMoney(summary.grossMinor)),
+      make('p', 'عمولة المنصة المقدرة — غير محصلة: ' + formatMoney(summary.estimatedFeeMinor))
+    );
+    if (summary.feeSettlement !== 'manual_not_collected') host.appendChild(make('p', 'تعذر التحقق من حالة التسوية.', 'small'));
+  }
+
+  async function loadSummary() {
+    try {
+      const { summary } = await BD.api('/api/commerce/summary');
+      renderSummary(summary, document.getElementById('commerceSummary'));
+    } catch (error) {
+      document.getElementById('commerceSummary').textContent = error.message;
+    }
+  }
+
+  async function loadSellerSettings() {
+    try {
+      const data = await BD.api('/api/commerce/settings');
+      document.getElementById('instapayAddress').value = data.seller.instapayAddress || '';
+      document.getElementById('paymentInstructions').value = data.seller.instructions || '';
+      document.getElementById('acceptingOrders').value = String(data.seller.acceptingOrders === true);
+      setMessage('sellerSettingsStatus', data.providers[0].enabled
+        ? 'المزود اليدوي مفعّل؛ الدفع يتطلب تحققاً بشرياً.'
+        : 'المزود متوقف من إدارة المنصة حالياً.', false);
+    } catch (error) {
+      setMessage('sellerSettingsStatus', error.message, true);
+    }
+  }
+
+  async function loadProducts() {
+    try {
+      const data = await BD.api('/api/products');
+      document.getElementById('productCount').textContent = String(data.products.length);
+      productList.replaceChildren();
+      if (!data.products.length) productList.appendChild(make('p', 'لا توجد منتجات بعد.'));
+      data.products.forEach((product) => {
+        const card = make('article', undefined, 'card');
+        card.append(make('h3', product.name), make('p', product.description || 'لا يوجد وصف'));
+        card.append(make('p', formatMoney(product.priceMinor) + ' · ' + (product.active ? 'منشور' : 'مسودة / متوقف')));
+        if (product.importState) card.appendChild(make('p', 'مسودة مستوردة؛ راجعها قبل النشر.', 'small'));
+        const actions = make('div', undefined, 'flex gap-8');
+        const toggle = make('button', product.active ? 'إيقاف النشر' : 'نشر المنتج', 'btn btn-secondary btn-sm');
+        toggle.type = 'button';
+        toggle.addEventListener('click', async () => {
+          toggle.disabled = true;
+          try {
+            await BD.api('/api/products/' + encodeURIComponent(product._id), {
+              method: 'PUT',
+              body: JSON.stringify({ name: product.name, description: product.description, priceMinor: product.priceMinor, active: !product.active })
+            });
+            await loadProducts();
+          } catch (error) {
+            toggle.disabled = false;
+            setMessage('productStatus', error.message, true);
+          }
+        });
+        const edit = make('button', 'تعديل', 'btn btn-secondary btn-sm');
+        edit.type = 'button';
+        edit.addEventListener('click', () => renderEditForm(card, product));
+        actions.append(toggle, edit);
+        card.appendChild(actions);
+        productList.appendChild(card);
+      });
+    } catch (error) {
+      productList.textContent = error.message;
+    }
+  }
+
+  function renderEditForm(card, product) {
+    const form = document.createElement('form');
+    form.className = 'profile-form-grid mt-16';
+    const name = document.createElement('input');
+    name.className = 'input';
+    name.value = product.name;
+    name.maxLength = 160;
+    name.required = true;
+    const price = document.createElement('input');
+    price.className = 'input';
+    price.type = 'number';
+    price.min = '0.01';
+    price.step = '0.01';
+    price.value = String(product.priceMinor / 100);
+    price.required = true;
+    const description = document.createElement('textarea');
+    description.className = 'input wide';
+    description.maxLength = 2000;
+    description.value = product.description;
+    const activeLabel = document.createElement('label');
+    activeLabel.className = 'assessment-option';
+    const active = document.createElement('input');
+    active.type = 'checkbox';
+    active.checked = product.active;
+    activeLabel.append(active, document.createTextNode('منشور'));
+    const save = make('button', 'حفظ', 'btn btn-primary');
+    save.type = 'submit';
+    const cancel = make('button', 'إلغاء', 'btn btn-secondary');
+    cancel.type = 'button';
+    cancel.addEventListener('click', () => card.removeChild(form));
+    form.append(name, price, description, activeLabel, save, cancel);
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        await BD.api('/api/products/' + encodeURIComponent(product._id), {
+          method: 'PUT',
+          body: JSON.stringify({ name: name.value, description: description.value, priceMinor: Math.round(Number(price.value) * 100), active: active.checked })
+        });
+        await loadProducts();
+      } catch (error) {
+        setMessage('productStatus', error.message, true);
+      }
+    });
+    card.appendChild(form);
+  }
+
+  async function loadOrders() {
+    try {
+      const data = await BD.api('/api/orders');
+      ordersList.replaceChildren();
+      if (!data.orders.length) ordersList.appendChild(make('p', 'لا توجد طلبات بعد.'));
+      data.orders.forEach((order) => {
+        const card = make('article', undefined, 'card');
+        const isSeller = order.sellerId === sellerId;
+        const statusLabels = {
+          awaiting_transfer: 'بانتظار التحويل',
+          pending_verification: 'بانتظار التحقق اليدوي',
+          paid: 'تم التحقق يدوياً',
+          rejected: 'مرفوض'
+        };
+        card.append(
+          make('h3', order.productName),
+          make('p', 'الكمية: ' + order.quantity + ' · الإجمالي: ' + formatMoney(order.totalMinor)),
+          make('p', 'الحالة: ' + (statusLabels[order.status] || order.status))
+        );
+        if (isSeller) card.appendChild(make('p', 'المشتري: ' + order.buyerEmail));
+        if (order.transferReference) card.appendChild(make('p', 'مرجع التحويل: ' + order.transferReference));
+        if (!isSeller && order.status !== 'paid' && order.paymentReceiver) {
+          card.append(make('p', 'عنوان الاستلام: ' + order.paymentReceiver),
+            make('p', order.paymentInstructions || 'تعليمات التحويل محفوظة مع الطلب.'));
+        }
+        if (isSeller && order.status === 'pending_verification') {
+          const actions = make('div', undefined, 'flex gap-8');
+          [['paid', 'تأكيد التحويل بعد المراجعة'], ['rejected', 'رفض التحويل']].forEach(([status, label]) => {
+            const button = make('button', label, 'btn btn-secondary btn-sm');
+            button.type = 'button';
+            button.addEventListener('click', async () => {
+              if (!window.confirm('هل راجعت التحويل في تطبيق البنك واخترت الإجراء الصحيح؟')) return;
+              try {
+                await BD.api('/api/orders/' + encodeURIComponent(order._id) + '/verify', {
+                  method: 'PUT',
+                  body: JSON.stringify({ status })
+                });
+                await Promise.all([loadOrders(), loadSummary()]);
+              } catch (error) {
+                setMessage('sellerSettingsStatus', error.message, true);
+              }
+            });
+            actions.appendChild(button);
+          });
+          card.appendChild(actions);
+        }
+        if (!isSeller && order.status === 'awaiting_transfer') {
+          const form = document.createElement('form');
+          form.className = 'profile-form-grid mt-16';
+          const reference = document.createElement('input');
+          reference.className = 'input';
+          reference.placeholder = 'مرجع التحويل من التطبيق البنكي';
+          reference.minLength = 4;
+          reference.maxLength = 120;
+          reference.required = true;
+          const submit = make('button', 'إرسال المرجع للمراجعة', 'btn btn-primary');
+          submit.type = 'submit';
+          form.append(reference, submit);
+          form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            try {
+              await BD.api('/api/orders/' + encodeURIComponent(order._id) + '/transfer-reference', {
+                method: 'POST',
+                body: JSON.stringify({ reference: reference.value })
+              });
+              await loadOrders();
+            } catch (error) {
+              setMessage('sellerSettingsStatus', error.message, true);
+            }
+          });
+          card.appendChild(form);
+        }
+        ordersList.appendChild(card);
+      });
+    } catch (error) {
+      ordersList.textContent = error.message;
+    }
+  }
+
+  function renderImportDrafts(drafts) {
+    importedDrafts = drafts;
+    importPreview.replaceChildren();
+    importedDrafts.forEach((draft, index) => {
+      const row = make('div', undefined, 'profile-form-grid card');
+      const name = document.createElement('input');
+      name.className = 'input';
+      name.maxLength = 160;
+      name.value = draft.name;
+      name.setAttribute('aria-label', 'اسم المنتج ' + (index + 1));
+      const price = document.createElement('input');
+      price.className = 'input';
+      price.type = 'number';
+      price.min = '0.01';
+      price.step = '0.01';
+      price.value = draft.priceMinor == null ? '' : String(draft.priceMinor / 100);
+      price.setAttribute('aria-label', 'السعر بالجنيه ' + (index + 1));
+      const description = document.createElement('textarea');
+      description.className = 'input wide';
+      description.value = draft.description || '';
+      description.maxLength = 2000;
+      description.setAttribute('aria-label', 'وصف المنتج ' + (index + 1));
+      row.append(name, price, description);
+      importPreview.appendChild(row);
+      draft.inputs = { name, price, description };
+    });
+    importPreview.hidden = false;
+    document.getElementById('commitImport').hidden = !drafts.length;
+  }
+
+  document.getElementById('sellerSettingsForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+      const data = await BD.api('/api/commerce/settings', {
+        method: 'PUT',
+        body: JSON.stringify({
+          instapayAddress: document.getElementById('instapayAddress').value,
+          instructions: document.getElementById('paymentInstructions').value,
+          acceptingOrders: document.getElementById('acceptingOrders').value === 'true'
+        })
+      });
+      setMessage('sellerSettingsStatus', data.seller.acceptingOrders ? 'تم حفظ إعدادات المتجر.' : 'تم حفظ الإعدادات؛ استقبال الطلبات متوقف.', false);
+    } catch (error) {
+      setMessage('sellerSettingsStatus', error.message, true);
+    }
+  });
+
+  document.getElementById('productForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    try {
+      await BD.api('/api/products', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: document.getElementById('productName').value,
+          description: document.getElementById('productDescription').value,
+          priceMinor: Math.round(Number(document.getElementById('productPrice').value) * 100)
+        })
+      });
+      form.reset();
+      setMessage('productStatus', 'تمت إضافة المنتج.', false);
+      await loadProducts();
+    } catch (error) {
+      setMessage('productStatus', error.message, true);
+    }
+  });
+
+  document.getElementById('productImportFile').addEventListener('change', async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    if (file.size > 1024 * 1024) {
+      setMessage('importStatus', 'الحد الأقصى لحجم الملف 1 ميغابايت.', true);
+      event.target.value = '';
+      return;
+    }
+    try {
+      const contentBase64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+        reader.onerror = () => reject(new Error('تعذر قراءة الملف محلياً.'));
+        reader.readAsDataURL(file);
+      });
+      const data = await BD.api('/api/products/import-preview', {
+        method: 'POST',
+        body: JSON.stringify({ filename: file.name, contentBase64 })
+      });
+      renderImportDrafts(data.drafts);
+      setMessage('importStatus', data.message, false);
+    } catch (error) {
+      importPreview.hidden = true;
+      document.getElementById('commitImport').hidden = true;
+      setMessage('importStatus', error.message, true);
+    } finally {
+      event.target.value = '';
+    }
+  });
+
+  document.getElementById('commitImport').addEventListener('click', async () => {
+    const products = importedDrafts.map((draft) => ({
+      name: draft.inputs.name.value,
+      description: draft.inputs.description.value,
+      priceMinor: Math.round(Number(draft.inputs.price.value) * 100)
+    }));
+    try {
+      const result = await BD.api('/api/products/import-commit', {
+        method: 'POST',
+        body: JSON.stringify({ products })
+      });
+      setMessage('importStatus', 'حُفظت ' + result.imported + ' مسودة غير منشورة. راجعها قبل النشر.', false);
+      importedDrafts = [];
+      importPreview.replaceChildren();
+      importPreview.hidden = true;
+      document.getElementById('commitImport').hidden = true;
+      await loadProducts();
+    } catch (error) {
+      setMessage('importStatus', error.message, true);
+    }
+  });
+
+  document.getElementById('copyShopLink').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(document.getElementById('shopLink').value);
+      setMessage('sellerSettingsStatus', 'تم نسخ رابط المتجر.', false);
+    } catch (error) {
+      setMessage('sellerSettingsStatus', 'انسخ الرابط يدوياً من الحقل.', true);
+      console.error('Unable to access the clipboard:', error);
+    }
+  });
+
+  document.getElementById('shopLink').value = new URL('shop.html?sellerId=' + encodeURIComponent(sellerId), location.href).href;
+  document.getElementById('adminPaymentForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+      const settings = {
+        instapayEnabled: document.getElementById('providerEnabled').value === 'true',
+        commissionBps: Math.round(Number(document.getElementById('commissionRate').value) * 100)
+      };
+      await BD.api('/api/admin/payment-settings', { method: 'PUT', body: JSON.stringify(settings) });
+      setMessage('adminPaymentStatus', 'تم حفظ إعدادات المنصة. تظل جميع التحويلات يدوية.', false);
+    } catch (error) {
+      setMessage('adminPaymentStatus', error.message, true);
+    }
+  });
+
+  async function loadAdminControls() {
+    try {
+      const data = await BD.api('/api/admin/payment-settings');
+      document.getElementById('platformPaymentSettings').hidden = false;
+      document.getElementById('providerEnabled').value = String(data.settings.instapayEnabled);
+      document.getElementById('commissionRate').value = String(data.settings.commissionBps / 100);
+      const summary = await BD.api('/api/admin/commerce/summary');
+      renderSummary(summary.summary, document.getElementById('adminCommerceSummary'));
+    } catch (error) {
+      if (error.message !== 'ليس لديك صلاحية تنفيذ هذا الإجراء') console.error('Unable to load platform payment controls:', error);
+    }
+  }
+
+  Promise.all([loadSummary(), loadSellerSettings(), loadProducts(), loadOrders(), loadAdminControls()]);
+</script>
+</body>
+</html>

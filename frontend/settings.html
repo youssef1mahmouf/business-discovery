@@ -1,21 +1,28 @@
-<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>الإعدادات | Business Discovery</title><link rel="stylesheet" href="assets/css/main.css"></head><body>
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>الإعدادات | Business Discovery</title>
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
 <div class="app-shell" id="appShell">
   <aside class="sidebar" id="bdSidebar">
     <div class="sidebar-brand"><div class="brand-icon">BD</div><span class="brand-text">Business Discovery</span></div>
-    <button class="sidebar-toggle" id="bdCollapseBtn">⇔</button>
+    <button class="sidebar-toggle" id="bdCollapseBtn" type="button" aria-label="طي القائمة">⇔</button>
     <nav class="sidebar-nav" id="bdSidebarNav"></nav>
-    <div class="sidebar-footer">© 2026</div>
+    <div class="sidebar-footer">Business Discovery</div>
   </aside>
   <div class="sidebar-overlay" id="bdOverlay"></div>
   <div class="main-area">
     <header class="topbar" id="bdTopbar">
-      <button class="mobile-menu-btn" id="bdMenuBtn">☰</button>
+      <button class="mobile-menu-btn" id="bdMenuBtn" type="button" aria-label="فتح القائمة">☰</button>
       <div class="topbar-left"><h1 class="page-title" id="bdPageTitle"></h1></div>
-      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث..."></div>
       <div class="topbar-actions">
-        <a href="notifications.html" class="icon-btn">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
+        <a href="notifications.html" class="icon-btn" aria-label="الإشعارات">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
         <div class="profile-menu">
-          <button class="profile-btn" id="bdProfileBtn">👤 <span id="bdUserEmail"></span></button>
+          <button class="profile-btn" id="bdProfileBtn" type="button">👤 <span id="bdUserEmail"></span></button>
           <div class="profile-dropdown" id="bdProfileDropdown">
             <a href="settings.html">الإعدادات</a>
             <a href="#" id="bdLogout">تسجيل الخروج</a>
@@ -25,30 +32,113 @@
     </header>
     <main class="content" id="bdContent">
       <div class="container">
-        <div class="card">
-          <div class="card-header"><h2>إعدادات التطبيق</h2></div>
-          <div class="gap-16 flex-col">
-            <div>
-              <label class="label" for="val">قيم الإعدادات (JSON)</label>
-              <textarea id="val" class="input" rows="8" spellcheck="false"></textarea>
-            </div>
-            <div class="flex gap-8 justify-start">
-              <button class="btn btn-primary" onclick="save()">حفظ الإعدادات</button>
-            </div>
-            <p id="msg" class="small mt-8"></p>
+        <section class="card">
+          <div class="card-header"><div><h2>إعداداتك ومساحات العمل</h2><p class="small">انتقل مباشرة إلى أدوات حسابك ومشروعك ومتجرك.</p></div></div>
+          <div class="settings-preferences">
+            <label class="label" for="themePreference">مظهر الموقع</label>
+            <select class="input" id="themePreference">
+              <option value="dark">داكن</option>
+              <option value="light">فاتح</option>
+            </select>
+            <span class="small">يُحفظ المظهر على هذا الجهاز.</span>
           </div>
-        </div>
+        </section>
+
+        <section class="settings-card-grid" aria-label="إعدادات الحساب والمشروع">
+          <a class="card settings-card" href="profile.html"><span class="settings-card-icon">👤</span><h2>السيرة الذاتية</h2><p>أنشئ ملفك المهني وعدّل بياناتك ومهاراتك.</p><span class="settings-card-action">فتح الملف ←</span></a>
+          <a class="card settings-card" href="projects.html"><span class="settings-card-icon">📁</span><h2>المشاريع</h2><p>أنشئ مشروعاً أو عدّل معلوماته وأعضاءه.</p><span class="settings-card-action">إدارة المشاريع ←</span></a>
+          <a class="card settings-card" href="assessment.html"><span class="settings-card-icon">✅</span><h2>تقييم المشروع — 100 سؤال</h2><p>قيّم السوق والعملاء والمنتج والمال والفريق لتغذية تحليل المساعد.</p><span class="settings-card-action">بدء التقييم ←</span></a>
+          <a class="card settings-card" href="assistant.html#aiChat"><span class="settings-card-icon">✦</span><h2>محادثة وتحليل Ollama</h2><p>تحدث عن المشروع، راجع المخاطر، واحصل على اقتراحات تتطلب موافقتك.</p><span class="settings-card-action">فتح المساعد ←</span></a>
+          <a class="card settings-card" href="chat.html"><span class="settings-card-icon">💬</span><h2>محادثات الفريق</h2><p>تواصل مع أعضاء المشاريع والمجموعات.</p><span class="settings-card-action">فتح الدردشة ←</span></a>
+        </section>
+
+        <section class="card">
+          <div class="card-header"><div><h2>المتجر والعمليات</h2><p class="small">روابط مباشرة لإضافة المنتجات، ومراجعة الطلبات وإعدادات الاستلام.</p></div></div>
+          <div class="settings-card-grid">
+            <a class="card settings-card" href="commerce.html#productForm"><span class="settings-card-icon">＋</span><h3>إضافة منتج</h3><p>أضف منتجاً جديداً إلى متجرك.</p><span class="settings-card-action">إضافة منتج ←</span></a>
+            <a class="card settings-card" href="commerce.html#products"><span class="settings-card-icon">▦</span><h3>إدارة المنتجات</h3><p>راجع المنتجات واستيراد المسودات.</p><span class="settings-card-action">عرض المنتجات ←</span></a>
+            <a class="card settings-card" href="commerce.html#orders"><span class="settings-card-icon">▤</span><h3>الطلبات والمبيعات</h3><p>تابع الطلبات والتحويلات التي تحتاج إلى تحقق يدوي.</p><span class="settings-card-action">عرض الطلبات ←</span></a>
+            <a class="card settings-card" href="commerce.html#salesSummary"><span class="settings-card-icon">↗</span><h3>ملخص المبيعات</h3><p>راجع ملخص المبيعات المؤكدة يدوياً.</p><span class="settings-card-action">عرض الملخص ←</span></a>
+            <a class="card settings-card" href="commerce.html#sellerPaymentSettings"><span class="settings-card-icon">↔</span><h3>إعدادات استلام المدفوعات</h3><p>أدر عنوان الاستلام وتعليمات التحويل اليدوي.</p><span class="settings-card-action">إعدادات الاستلام ←</span></a>
+            <a class="card settings-card" href="shop.html"><span class="settings-card-icon">🛍</span><h3>المتجر العام</h3><p>شاهد المنتجات المنشورة في المتجر.</p><span class="settings-card-action">فتح المتجر ←</span></a>
+          </div>
+          <p class="small mt-16">لا يجمع الموقع بيانات البطاقات أو يؤكد التحويل تلقائياً؛ تحقّق من الدفع يدوياً مع مزود الخدمة.</p>
+        </section>
+
+        <section class="card" id="adminSettings" hidden>
+          <div class="card-header"><div><h2>إدارة المنصة</h2><p class="small">تظهر روابط الإدارة فقط للحسابات التي لديها صلاحية إدارية.</p></div></div>
+          <div class="settings-card-grid">
+            <a class="card settings-card" href="admin.html"><span class="settings-card-icon">⚙</span><h3>لوحة الإدارة والمستخدمون</h3><p>تابع إحصاءات المنصة وحسابات المستخدمين.</p><span class="settings-card-action">فتح لوحة الإدارة ←</span></a>
+            <a class="card settings-card" href="commerce.html#platformPaymentSettings" id="platformPaymentLink" hidden><span class="settings-card-icon">⇄</span><h3>دفع وعمولة المنصة</h3><p>إعدادات الدفع والعمولة الرئيسية.</p><span class="settings-card-action">فتح إعدادات الدفع ←</span></a>
+          </div>
+          <details class="settings-system-details mt-16" id="systemSettings">
+            <summary>إعدادات النظام المتقدمة</summary>
+            <p class="small">هذه القيم عامة للمنصة وليست تفضيلات شخصية. عدّلها فقط إذا كنت مسؤولاً وتعرف أثرها.</p>
+            <label class="label" for="systemSettingsValue">إعدادات النظام (JSON)</label>
+            <textarea id="systemSettingsValue" class="input" rows="8" spellcheck="false"></textarea>
+            <div class="flex gap-8 mt-16">
+              <button class="btn btn-primary" id="saveSystemSettings" type="button">حفظ إعدادات النظام</button>
+              <span class="small" id="systemSettingsStatus" role="status" aria-live="polite"></span>
+            </div>
+          </details>
+        </section>
       </div>
     </main>
-    <footer class="app-footer" id="bdFooter">Business Discovery © 2026 — جميع الحقوق محفوظة</footer>
+    <footer class="app-footer" id="bdFooter">Business Discovery — جميع الحقوق محفوظة</footer>
   </div>
 </div>
 <script src="assets/js/common.js"></script>
 <script src="assets/js/layout.js"></script>
 <script>
-BD.requireAuth();
-async function load(){ try{ const d=await BD.api('/api/settings'); document.getElementById('val').value=JSON.stringify(d.settings,null,2); }catch(e){ document.getElementById('msg').textContent=e.message; document.getElementById('msg').style.color='var(--danger)';} }
-async function save(){ const msg=document.getElementById('msg'); msg.textContent=''; try{ let parsed; try { parsed = JSON.parse(document.getElementById('val').value); } catch(e){ msg.textContent='JSON غير صالح'; msg.style.color='var(--danger)'; return; } await BD.api('/api/settings',{method:'PUT',body:JSON.stringify(parsed)}); msg.textContent='تم الحفظ بنجاح'; msg.style.color='var(--success)'; showToast('تم حفظ الإعدادات','success'); }catch(e){ msg.textContent=e.message; msg.style.color='var(--danger)';} }
-function showToast(message,type){ const t=document.createElement('div'); t.className='toast '+type; t.textContent=message; document.body.appendChild(t); setTimeout(()=>t.classList.add('show'),10); setTimeout(()=>{ t.classList.remove('show'); setTimeout(()=>t.remove(),300);},3000); }
-load();
-</script></body></html>
+  BD.requireAuth();
+  const themePreference = document.getElementById('themePreference');
+  themePreference.value = localStorage.getItem('bd_theme') === 'light' ? 'light' : 'dark';
+  themePreference.addEventListener('change', () => BD.setTheme(themePreference.value));
+
+  const adminSettings = document.getElementById('adminSettings');
+  const systemSettingsValue = document.getElementById('systemSettingsValue');
+  const systemSettingsStatus = document.getElementById('systemSettingsStatus');
+
+  async function loadSystemSettings() {
+    try {
+      const data = await BD.api('/api/settings');
+      systemSettingsValue.value = JSON.stringify(data.settings, null, 2);
+    } catch (error) {
+      systemSettingsStatus.textContent = error.message;
+      systemSettingsStatus.style.color = 'var(--danger)';
+    }
+  }
+
+  document.getElementById('saveSystemSettings').addEventListener('click', async () => {
+    systemSettingsStatus.textContent = '';
+    let settings;
+    try {
+      settings = JSON.parse(systemSettingsValue.value);
+    } catch {
+      systemSettingsStatus.textContent = 'صيغة JSON غير صالحة.';
+      systemSettingsStatus.style.color = 'var(--danger)';
+      return;
+    }
+    try {
+      await BD.api('/api/settings', { method: 'PUT', body: JSON.stringify(settings) });
+      systemSettingsStatus.textContent = 'تم حفظ إعدادات النظام.';
+      systemSettingsStatus.style.color = 'var(--success)';
+    } catch (error) {
+      systemSettingsStatus.textContent = error.message;
+      systemSettingsStatus.style.color = 'var(--danger)';
+    }
+  });
+
+  BD.api('/api/auth/me').then(({ user }) => {
+    if (!user || !['site_admin', 'main_super_admin'].includes(user.role)) return;
+    adminSettings.hidden = false;
+    document.getElementById('platformPaymentLink').hidden = user.role !== 'main_super_admin';
+    loadSystemSettings();
+  }).catch((error) => {
+    if (error.status !== 401 && error.status !== 403) {
+      console.error('Unable to verify settings permissions:', error);
+    }
+  });
+</script>
+</body>
+</html>

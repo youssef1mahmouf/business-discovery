@@ -1,21 +1,29 @@
-<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>الإدارة | Business Discovery</title><link rel="stylesheet" href="assets/css/main.css"></head><body>
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>الإدارة | Business Discovery</title>
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
 <div class="app-shell" id="appShell">
   <aside class="sidebar" id="bdSidebar">
     <div class="sidebar-brand"><div class="brand-icon">BD</div><span class="brand-text">Business Discovery</span></div>
-    <button class="sidebar-toggle" id="bdCollapseBtn">⇔</button>
+    <button class="sidebar-toggle" id="bdCollapseBtn" type="button" aria-label="طي القائمة">⇔</button>
     <nav class="sidebar-nav" id="bdSidebarNav"></nav>
-    <div class="sidebar-footer">© 2026</div>
+    <div class="sidebar-footer">Business Discovery</div>
   </aside>
   <div class="sidebar-overlay" id="bdOverlay"></div>
   <div class="main-area">
     <header class="topbar" id="bdTopbar">
-      <button class="mobile-menu-btn" id="bdMenuBtn">☰</button>
+      <button class="mobile-menu-btn" id="bdMenuBtn" type="button" aria-label="فتح القائمة">☰</button>
       <div class="topbar-left"><h1 class="page-title" id="bdPageTitle"></h1></div>
-      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث عن مستخدم..."></div>
+      <div class="topbar-search"><input type="search" id="bdSearch" placeholder="بحث عن مستخدم..." aria-label="بحث عن مستخدم"></div>
       <div class="topbar-actions">
-        <a href="notifications.html" class="icon-btn">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
+        <a href="notifications.html" class="icon-btn" aria-label="الإشعارات">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a>
         <div class="profile-menu">
-          <button class="profile-btn" id="bdProfileBtn">👤 <span id="bdUserEmail"></span></button>
+          <button class="profile-btn" id="bdProfileBtn" type="button">👤 <span id="bdUserEmail"></span></button>
           <div class="profile-dropdown" id="bdProfileDropdown">
             <a href="settings.html">الإعدادات</a>
             <a href="#" id="bdLogout">تسجيل الخروج</a>
@@ -25,37 +33,161 @@
     </header>
     <main class="content" id="bdContent">
       <div class="container">
-        <div class="card">
+        <section class="card">
           <div class="card-header">
-            <h2>لوحة الإدارة</h2>
-            <span id="adminBadge" class="badge badge-purple">Main Super Admin</span>
+            <div><h2>لوحة الإدارة</h2><p id="adminRole" class="small">إحصاءات المنصة</p></div>
+            <a class="btn btn-secondary btn-sm" href="register.html">فتح صفحة التسجيل</a>
           </div>
-          <div id="stats"></div>
-        </div>
-        <div class="card">
-          <div class="card-header"><h3>إدارة المستخدمين</h3></div>
-          <div class="gap-16 flex-col">
-            <div>
-              <label class="label" for="q">البحث عن مستخدم</label>
-              <input id="q" class="input" type="search" placeholder="أدخل البريد الإلكتروني...">
-            </div>
-            <div class="flex gap-8 justify-start">
-              <button class="btn btn-primary" onclick="search()">بحث</button>
-            </div>
-            <p id="msg" class="small mt-8"></p>
-            <div id="users" class="mt-16"></div>
+          <div id="stats" class="settings-card-grid" aria-live="polite"></div>
+        </section>
+        <section class="card">
+          <div class="card-header"><h2>إدارة المستخدمين</h2><span id="userTotal" class="badge badge-blue">0</span></div>
+          <div class="flex gap-8">
+            <label class="sr-only" for="q">البحث بالبريد أو اسم المستخدم</label>
+            <input id="q" class="input" type="search" placeholder="البريد الإلكتروني أو اسم المستخدم أو الاسم">
+            <button id="searchUsers" class="btn btn-primary" type="button" onclick="search()">بحث</button>
           </div>
-        </div>
+          <p id="msg" class="small mt-8" role="status" aria-live="polite"></p>
+          <div id="users" class="mt-16"></div>
+          <div class="flex gap-8 mt-16" id="userPagination" hidden>
+            <button id="previousPage" class="btn btn-secondary btn-sm" type="button">السابق</button>
+            <span id="pageInfo" class="small"></span>
+            <button id="nextPage" class="btn btn-secondary btn-sm" type="button">التالي</button>
+          </div>
+        </section>
       </div>
     </main>
-    <footer class="app-footer" id="bdFooter">Business Discovery © 2026 — جميع الحقوق محفوظة</footer>
+    <footer class="app-footer" id="bdFooter">Business Discovery — جميع الحقوق محفوظة</footer>
   </div>
 </div>
 <script src="assets/js/common.js"></script>
 <script src="assets/js/layout.js"></script>
 <script>
-BD.requireAuth();
-async function loadStats(){ try{ const d=await BD.api('/api/admin/stats'); document.getElementById('stats').innerHTML='<pre style="color:var(--text-muted);font-size:13px;background:var(--surface);padding:12px;border-radius:var(--radius-sm);border:1px solid var(--border);overflow:auto">'+JSON.stringify(d.stats,null,2)+'</pre>'; document.getElementById('adminBadge').innerHTML='<span class="badge badge-purple">Main Super Admin</span>'; }catch(e){ document.getElementById('stats').textContent=e.message; document.getElementById('stats').style.color='var(--danger)'; document.getElementById('adminBadge').textContent=''; } }
-async function search(){ const q=document.getElementById('q'); const msg=document.getElementById('msg'); const users=document.getElementById('users'); msg.textContent=''; users.textContent=''; try{ const d=await BD.api('/api/admin/users?q='+encodeURIComponent(q.value)); if(!d.users||!d.users.length){ users.innerHTML='<div class="empty-state"><span class="empty-icon">🔍</span><h3>لا يوجد مستخدمون</h3><p>لا تتطابق نتائج البحث.</p></div>'; return;} const wrap=document.createElement('div'); wrap.className='table-wrap'; const table=document.createElement('table'); const thead=document.createElement('thead'); const trh=document.createElement('tr'); ['البريد الإلكتروني','الدور'].forEach(htext=>{ const th=document.createElement('th'); th.textContent=htext; trh.appendChild(th); }); thead.appendChild(trh); table.appendChild(thead); const tbody=document.createElement('tbody'); (d.users||[]).forEach(u=>{ const tr=document.createElement('tr'); const td1=document.createElement('td'); td1.style.fontWeight='700'; td1.style.color='var(--text)'; td1.textContent=u.email||'—'; tr.appendChild(td1); const td2=document.createElement('td'); td2.style.color='var(--text-muted)'; td2.textContent=u.role||'regular_user'; tr.appendChild(td2); tbody.appendChild(tr); }); table.appendChild(tbody); wrap.appendChild(table); users.appendChild(wrap); }catch(e){ msg.textContent=e.message; msg.style.color='var(--danger)'; users.innerHTML='<div class="empty-state"><span class="empty-icon">⚠️</span><h3>حدث خطأ</h3><p>'+e.message+'</p></div>';} }
-loadStats(); search();
-</script></body></html>
+  BD.requireAuth();
+  let userPage = 1;
+  let previousQuery = '';
+
+  function displayStats(stats) {
+    const container = document.getElementById('stats');
+    container.replaceChildren();
+    [['المستخدمون', stats.users], ['المشاريع', stats.projects], ['المهام', stats.tasks]].forEach(([label, value]) => {
+      const card = document.createElement('article');
+      card.className = 'card settings-card';
+      const heading = document.createElement('h3');
+      heading.textContent = label;
+      const count = document.createElement('p');
+      count.className = 'admin-stat-value';
+      count.textContent = String(value);
+      card.append(heading, count);
+      container.appendChild(card);
+    });
+  }
+
+  async function loadStats() {
+    try {
+      const data = await BD.api('/api/admin/stats');
+      displayStats(data.stats);
+    } catch (error) {
+      document.getElementById('stats').textContent = error.message;
+    }
+  }
+
+  function roleLabel(role) {
+    return ({
+      main_super_admin: 'المسؤول الرئيسي',
+      site_admin: 'مسؤول الموقع',
+      regular_user: 'مستخدم'
+    })[role] || 'مستخدم';
+  }
+
+  function renderUsers(users) {
+    const container = document.getElementById('users');
+    container.replaceChildren();
+    if (!users.length) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      const title = document.createElement('h3');
+      title.textContent = 'لا يوجد مستخدمون';
+      const description = document.createElement('p');
+      description.textContent = 'لا تتطابق نتائج البحث.';
+      empty.append(title, description);
+      container.appendChild(empty);
+      return;
+    }
+    const wrap = document.createElement('div');
+    wrap.className = 'table-wrap';
+    const table = document.createElement('table');
+    const head = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    ['الاسم', 'اسم المستخدم', 'البريد الإلكتروني', 'الدور', 'تاريخ التسجيل'].forEach((label) => {
+      const th = document.createElement('th');
+      th.textContent = label;
+      headerRow.appendChild(th);
+    });
+    head.appendChild(headerRow);
+    table.appendChild(head);
+    const body = document.createElement('tbody');
+    users.forEach((user) => {
+      const row = document.createElement('tr');
+      const values = [
+        user.displayName || '—',
+        user.username || '—',
+        user.email || '—',
+        roleLabel(user.role),
+        user.createdAt ? new Date(user.createdAt).toLocaleDateString('ar') : '—'
+      ];
+      values.forEach((value) => {
+        const cell = document.createElement('td');
+        cell.textContent = value;
+        row.appendChild(cell);
+      });
+      body.appendChild(row);
+    });
+    table.appendChild(body);
+    wrap.appendChild(table);
+    container.appendChild(wrap);
+  }
+
+  async function search() {
+    const query = document.getElementById('q').value.trim();
+    const message = document.getElementById('msg');
+    message.textContent = '';
+    if (query !== previousQuery) userPage = 1;
+    previousQuery = query;
+    try {
+      const data = await BD.api('/api/admin/users?q=' + encodeURIComponent(query) + '&page=' + userPage);
+      document.getElementById('userTotal').textContent = String(data.total);
+      renderUsers(data.users || []);
+      const pagination = document.getElementById('userPagination');
+      pagination.hidden = data.pages < 2;
+      document.getElementById('pageInfo').textContent = 'الصفحة ' + data.page + ' من ' + data.pages;
+      document.getElementById('previousPage').disabled = data.page <= 1;
+      document.getElementById('nextPage').disabled = data.page >= data.pages;
+    } catch (error) {
+      message.textContent = error.message;
+      message.style.color = 'var(--danger)';
+      document.getElementById('users').replaceChildren();
+    }
+  }
+
+  document.getElementById('q').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') search();
+  });
+  document.getElementById('previousPage').addEventListener('click', () => {
+    if (userPage > 1) { userPage -= 1; search(); }
+  });
+  document.getElementById('nextPage').addEventListener('click', () => {
+    userPage += 1;
+    search();
+  });
+
+  BD.api('/api/auth/me').then(({ user }) => {
+    document.getElementById('adminRole').textContent = user.role === 'main_super_admin'
+      ? 'المسؤول الرئيسي'
+      : 'مسؤول الموقع';
+  }).catch((error) => console.error('Unable to verify administrator role:', error));
+  loadStats();
+  search();
+</script>
+</body>
+</html>

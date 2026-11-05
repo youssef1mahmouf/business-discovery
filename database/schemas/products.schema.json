@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0.0",
+  "collection": "products",
+  "purpose": "Seller-owned product listings and unpublished import drafts.",
+  "required": ["name", "description", "priceMinor", "currency", "ownerId", "active", "createdAt", "updatedAt"],
+  "properties": {
+    "name": { "type": "string", "maxLength": 160 },
+    "description": { "type": "string", "maxLength": 2000 },
+    "priceMinor": { "type": "integer", "minimum": 1 },
+    "currency": { "type": "string", "enum": ["EGP"] },
+    "ownerId": { "type": "string" },
+    "active": { "type": "boolean" },
+    "importState": { "type": "string", "enum": ["reviewed_draft"] },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "indexes": [{ "keys": { "ownerId": 1, "updatedAt": -1 } }]
+}
