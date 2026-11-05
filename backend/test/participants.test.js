@@ -10,6 +10,9 @@ function matches(document, query) {
     if (expected && typeof expected === 'object' && '$in' in expected) {
       return expected.$in.some((value) => String(document[key]) === String(value));
     }
+    if (expected && typeof expected === 'object' && '$ne' in expected) {
+      return document[key] !== expected.$ne;
+    }
     return String(document[key]) === String(expected);
   });
 }
@@ -110,4 +113,37 @@ test('participant routes enforce project membership and management roles', async
   });
   assert.equal(created.status, 201);
   assert.equal((await created.json()).participant.projectId, String(projectId));
+});
+
+test('project list omits archived projects and includes the member role', async (t) => {
+  const userId = new ObjectId();
+  const activeProjectId = new ObjectId();
+  const archivedProjectId = new ObjectId();
+  const user = { _id: userId, email: 'member@example.com', role: 'regular_user' };
+  const activeProject = { _id: activeProjectId, name: 'Active project' };
+  const archivedProject = { _id: archivedProjectId, name: 'Archived project', archived: true };
+  const collections = {
+    users: makeCollection([user]),
+    projects: makeCollection([activeProject, archivedProject]),
+    project_members: makeCollection([
+      { projectId: String(activeProjectId), email: user.email, role: 'project_manager' },
+      { projectId: String(archivedProjectId), email: user.email, role: 'owner' }
+    ])
+  };
+  const config = { frontendOrigin: '*', tokenSecret: 'test-secret-with-more-than-32-characters' };
+  const server = createApp({ config, db: { get: (name) => collections[name] } });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const token = signToken({ sub: String(userId), email: user.email }, config.tokenSecret);
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/projects`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).projects, [{
+    id: String(activeProjectId),
+    name: activeProject.name,
+    description: '',
+    role: 'project_manager'
+  }]);
 });

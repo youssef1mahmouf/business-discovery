@@ -70,7 +70,7 @@ Current scope verified from source code:
 ### Testing
 - Node built-in test runner (node --test).
 - Tests in backend/test/.
-- 30/30 backend tests passing.
+- 32/32 backend tests passing.
 
 ---
 

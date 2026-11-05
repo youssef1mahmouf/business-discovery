@@ -403,7 +403,7 @@ Design system additions in `frontend/assets/css/main.css`:
 
 Dependencies:
 
-- Uses existing vendored `three.module.js`, `lenis.mjs`, and copied `gsap.js` (minified UMD) from root `node_modules/gsap`.
+- Uses vendored `three.module.js` and its `three.core.js` dependency (MIT license at `frontend/assets/vendor/THREE-LICENSE.txt`), `lenis.mjs`, and copied `gsap.js` (minified UMD) from the root dependencies.
 - No new npm dependencies installed.
 
 Animation architecture:
