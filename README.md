@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 ﻿# Business Discovery — Master Documentation
+=======
+# Business Discovery — Master Documentation
+>>>>>>> 6578d99ec4a6cb1bf309e31425a47f3230903736
 
 *Authoritative reference for all future development.*
 
