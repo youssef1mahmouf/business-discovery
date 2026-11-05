@@ -68,6 +68,15 @@ function validateConfig(env = process.env) {
     throw e;
   }
 
+  // SMTP email configuration (optional; required for password recovery)
+  const smtpConfig = {
+    host: String(env.SMTP_HOST || '').trim(),
+    port: Number(env.SMTP_PORT || 587),
+    user: String(env.SMTP_USER || '').trim(),
+    pass: String(env.SMTP_PASS || '').trim(),
+    from: String(env.SMTP_FROM || '').trim(),
+  };
+
   const dbName = String(env.MONGODB_DB_NAME || '').trim() || 'business_discovery';
   const port = Number(env.PORT || 3000);
   if (!Number.isInteger(port) || port <= 0) {
@@ -75,7 +84,7 @@ function validateConfig(env = process.env) {
     e.name = 'ConfigValidationError';
     throw e;
   }
-  return { port, mongoUri, tokenSecret: String(tokenSecret), frontendOrigin: String(frontendOrigin), dbName, production, accessTokenTtlSeconds };
+  return { port, mongoUri, tokenSecret: String(tokenSecret), frontendOrigin: String(frontendOrigin), dbName, production, accessTokenTtlSeconds, smtpConfig };
 }
 
 module.exports = { loadEnvFile, validateConfig, ROOT, REPO_ROOT };

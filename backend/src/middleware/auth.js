@@ -28,7 +28,7 @@ async function authenticate(req, ctx) {
     // Token subject/email mismatch: reject stale or tampered tokens.
     return null;
   }
-  return { id: String(user._id), email: user.email, role };
+  return { id: String(user._id), email: user.email, role, mustChangePassword: !!user.mustChangePassword };
 }
 
 async function requireAuth(req, res, ctx, origin) {
