@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" style="direction: rtl;">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>تقرير إدراري يومي</title>
+  <style>
+    body { font-family: 'Cairo', Tahoma, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; }
+    .header { background: #f8f9fa; padding: 20px; text-align: center; border-bottom: 4px solid #007bff; }
+    .section { margin: 20px 0; }
+    .section-title { color: #007bff; border-bottom: 2px solid #e9ecef; padding-bottom: 10px; margin-bottom: 15px; }
+    .table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+    .table th, .table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    .table th { background: #f0f8ff; }
+    .total-row { font-weight: bold; background: #e9ecef; }
+    .footer { font-size: 12px; color: #666; text-align: center; padding: 20px; border-top: 1px solid #eee; margin-top: 30px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>تقرير إدراري يومي</h1>
+    <p>التاريخ: {{date}} | وقت الإنشاء: {{time}}</p>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">طلبات جديدة</div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>رقم الطلب</th>
+          <th>العميل</th>
+          <th>المبلغ</th>
+          <th>الحالة</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each newOrders}}
+        <tr>
+          <td>{{orderId}}</td>
+          <td>{{customerName}}</td>
+          <td>{{total}}</td>
+          <td>{{status}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">مبيعات已完成</div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>رقم الطلب</th>
+          <th>العميل</th>
+          <th>المبلغ</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each completedSales}}
+        <tr>
+          <td>{{orderId}}</td>
+          <td>{{customerName}}</td>
+          <td>{{amount}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">ملخص الدفع</div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>الحالة</th>
+          <th>العدد</th>
+          <th>المبلغ</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>已验证</td>
+          <td>{{verifiedCount}}</td>
+          <td>{{verifiedAmount}}</td>
+        </tr>
+        <tr>
+          <td>Pending</td>
+          <td>{{pendingCount}}</td>
+          <td>{{pendingAmount}}</td>
+        </tr>
+        <tr>
+          <td>Failed</td>
+          <td>{{failedCount}}</td>
+          <td>{{failedAmount}}</td>
+        </tr>
+        <tr>
+          <td>Refunded</td>
+          <td>{{refundedCount}}</td>
+          <td>{{refundedAmount}}</td>
+        </tr>
+        <tr>
+          <td>Cancelled</td>
+          <td>{{cancelledCount}}</td>
+          <td>{{cancelledAmount}}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">عملاء جدد</div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>العدد</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>{{newUserCount}}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">أفضل المنتجات مبيعاً</div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>اسم المنتج</th>
+          <th>الوحدات المباعة</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each bestSellingProducts}}
+        <tr>
+          <td>{{name}}</td>
+          <td>{{unitsSold}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">تنبيهات المخزون</div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Low Stock</th>
+          <th>Out of Stock</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>{{lowStockCount}}</td>
+          <td>{{outOfStockCount}}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">طلبات اتصال هامة</div>
+    <p>{{contactRequestCount}} طلب جديد</p>
+  </div>
+  
+  <div class="footer">
+    <p>&copy; {{year}} Business Discovery. جميع الحقوق محفوظة.</p>
+  </div>
+</body>
+</html>

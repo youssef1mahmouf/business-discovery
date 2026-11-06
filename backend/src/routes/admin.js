@@ -34,13 +34,36 @@ function register(router, ctx) {
     } },origin);
   });
 
-  router.get('/api/admin/storage-status', async (req,res) => {
-    const u = await requireAdmin(req,res,ctx,origin); if(!u) return;
-    if (typeof ctx.db.getStatus !== 'function') {
-      return sendJson(res,503,{error:'storage_status_unavailable'},origin);
-    }
-    return sendJson(res,200,{ status: await ctx.db.getStatus() },origin);
-  });
+  router.get('/api/admin/daily-report', async (req, res) => {
+  const u = await requireAdmin(req, res, ctx, origin); if(!u) return;
+  const adminEmails = process.env.ADMIN_EMAILS ? process.env.ADMIN_EMAILS.split(',') : [];
+  if (adminEmails.length === 0) {
+    return sendJson(res, 400, { error: 'no_admin_emails_configured' }, origin);
+  }
+  const reportData = await ctx.db.get('orders').aggregate([...]).toArray();
+  await sendDailyReport(reportData, adminEmails);
+  sendJson(res, 200, { ok: true, message: 'Daily report scheduled' }, origin);
+});
+
+router.get('/api/admin/monthly-report', async (req, res) => {
+  const u = await requireAdmin(req, res, ctx, origin); if(!u) return;
+  const adminEmails = process.env.ADMIN_EMAILS ? process.env.ADMIN_EMAILS.split(',') : [];
+  if (adminEmails.length === 0) {
+    return sendJson(res, 400, { error: 'no_admin_emails_configured' }, origin);
+  }
+  const endDate = new Date();
+  const startDate = new Date(endDate.getFullYear(), endDate.getMonth() - 1, 1);
+  const period = { startDate: startDate.toISOString(), endDate: endDate.toISOString() };
+  await sendMonthlyReport(reportData, adminEmails, period);
+  sendJson(res, 200, { ok: true, message: 'Monthly report scheduled' }, origin);
+});
+
+router.get('/api/admin/inventory-alerts', async (req, res) => {
+  const u = await requireAdmin(req, res, ctx, origin); if(!u) return;
+  const products = await ctx.db.get('products').find().toArray();
+  await checkInventoryAlerts(products, ctx.db.get);
+  sendJson(res, 200, { ok: true, message: 'Inventory alerts checked' }, origin);
+});
 
   router.post('/api/admin/storage-sync/retry', async (req,res) => {
     const u = await requireAdmin(req,res,ctx,origin); if(!u) return;

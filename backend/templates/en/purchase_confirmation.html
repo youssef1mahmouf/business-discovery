@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Purchase Confirmation</title>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 700px; margin: 0 auto; }
+    .header { background: #f8f9fa; padding: 20px; text-align: center; }
+    .content { padding: 20px; }
+    .order-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+    .order-table th, .order-table td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    .order-table th { background: #f0f8ff; }
+    .footer { font-size: 12px; color: #666; text-align: center; padding: 20px; border-top: 1px solid #eee; }
+    .btn { display: inline-block; padding: 10px 20px; background: #007bff; color: #fff; text-decoration: none; border-radius: 4px; }
+    .total { font-size: 18px; font-weight: bold; color: #333; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Purchase Confirmation</h1>
+  </div>
+  <div class="content">
+    <p>Thank you for your purchase! Your order has been successfully placed.</p>
+    
+    <table class="order-table">
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>Quantity</th>
+          <th>Price</th>
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each items}}
+        <tr>
+          <td>{{name}}</td>
+          <td>{{quantity}}</td>
+          <td>{{price}}</td>
+          <td>{{subtotal}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+    
+    <p class="total">Total: {{totalAmount}} {{currency}}</p>
+    
+    {{#if discount}}
+    <p>Discount: {{discount}} {{currency}}</p>
+    {{/if}}
+    
+    {{#if taxes}}
+    <p>Taxes: {{taxes}} {{currency}}</p>
+    {{/if}}
+    
+    <p>Order Reference: {{orderReference}}</p>
+    <p>Purchase Date: {{purchaseDate}}</p>
+    
+    {{#if trackingLink}}
+    <p>Track your order: <a href="{{trackingLink}}">View Order Status</a></p>
+    {{/if}}
+    
+    <p>Payment Status: {{paymentStatus}}</p>
+    <p>Order Status: {{orderStatus}}</p>
+    
+    <p>If you have any questions, please contact our support team.</p>
+  </div>
+  <div class="footer">
+    <p>&copy; {{year}} Business Discovery. All rights reserved.</p>
+  </div>
+</body>
+</html>

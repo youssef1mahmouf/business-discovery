@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" style="direction: rtl;">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>تحديث حالة الطلب</title>
+  <style>
+    body { font-family: 'Cairo', Tahoma, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; }
+    .header { background: #f8f9fa; padding: 20px; text-align: center; }
+    .content { padding: 20px; }
+    .order-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+    .order-table th, .order-table td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    .order-table th { background: #f0f8ff; }
+    .status-badge { padding: 5px 10px; border-radius: 4px; font-weight: bold; }
+    .status-pending { background: #ffc107; color: #000; }
+    .status-verified { background: #28a745; color: #fff; }
+    .status-rejected { background: #dc3545; color: #fff; }
+    .footer { font-size: 12px; color: #666; text-align: center; padding: 20px; border-top: 1px solid #eee; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>تحديث حالة الطلب</h1>
+  </div>
+  <div class="content">
+    <p>تم تحديث حالة طلبك.</p>
+    
+    <table class="order-table">
+      <thead>
+        <tr>
+          <th>اسم المنتج</th>
+          <th>الكمية</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each items}}
+        <tr>
+          <td>{{name}}</td>
+          <td>{{quantity}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+    
+    <p><strong>الحالة الجديدة: {{status}}</strong></p>
+    <p><strong>الحالة السابقة: {{previousStatus}}</strong></p>
+    
+    {{#if trackingLink}}
+    <p>تتبع طلبك: <a href="{{trackingLink">عرض حالة الطلب</a></p>
+    {{/if}}
+    
+    <p>إذا كان لديك أي استفسارات، يرجى التواصل مع فريق الدعم لدينا.</p>
+  </div>
+  <div class="footer">
+    <p>&copy; {{year}} Business Discovery. جميع الحقوق محفوظة.</p>
+  </div>
+</body>
+</html>

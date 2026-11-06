@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monthly Admin Report</title>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; }
+    .header { background: #f8f9fa; padding: 20px; text-align: center; border-bottom: 4px solid #007bff; }
+    .section { margin: 20px 0; }
+    .section-title { color: #007bff; border-bottom: 2px solid #e9ecef; padding-bottom: 10px; margin-bottom: 15px; }
+    .table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+    .table th, .table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    .table th { background: #f0f8ff; }
+    .total-row { font-weight: bold; background: #e9ecef; }
+    .currency { font-family: monospace; }
+    .footer { font-size: 12px; color: #666; text-align: center; padding: 20px; border-top: 1px solid #eee; margin-top: 30px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Monthly Admin Report</h1>
+    <p>Period: {{startDate}} - {{endDate}}</p>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">Sales Overview</div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Metric</th>
+          <th>Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Total Orders</td>
+          <td>{{totalOrders}}</td>
+        </tr>
+        <tr>
+          <td>Completed Sales</td>
+          <td>{{completedSalesCount}}</td>
+        </tr>
+        <tr>
+          <td>Verified Revenue</td>
+          <td>{{verifiedRevenue}} {{currency}}</td>
+        </tr>
+        <tr>
+          <td>Refunded Amount</td>
+          <td>{{refundedAmount}} {{currency}}</td>
+        </tr>
+        <tr>
+          <td>Cancelled Amount</td>
+          <td>{{cancelledAmount}} {{currency}}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">Revenue by Currency</div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Currency</th>
+          <th>Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each revenueByCurrency}}
+        <tr>
+          <td>{{currency}}</td>
+          <td>{{amount}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">Payment Status Breakdown</div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>Count</th>
+          <th>Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each paymentStatusBreakdown}}
+        <tr>
+          <td>{{status}}</td>
+          <td>{{count}}</td>
+          <td>{{amount}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">Comparison with Previous Month</div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Metric</th>
+          <th>Current Month</th>
+          <th>Previous Month</th>
+          <th>Change %</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each monthComparison}}
+        <tr>
+          <td>{{metric}}</td>
+          <td>{{current}}</td>
+          <td>{{previous}}</td>
+          <td>{{changePercent}}%</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">New Customers</div>
+    <p>{{newCustomerCount}} new customers</p>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">Active Customers</div>
+    <p>{{activeCustomerCount}} active customers</p>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">Best-Selling Products</div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>Units Sold</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each bestSellingProducts}}
+        <tr>
+          <td>{{name}}</td>
+          <td>{{unitsSold}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">Inventory Status</div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Low Stock</th>
+          <th>Out of Stock</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>{{lowStockCount}}</td>
+          <td>{{outOfStockCount}}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="footer">
+    <p>&copy; {{year}} Business Discovery. All rights reserved.</p>
+  </div>
+</body>
+</html>

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" style="direction: rtl;">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>تأكيد عملية الشراء</title>
+  <style>
+    body { font-family: 'Cairo', Tahoma, sans-serif; line-height: 1.6; color: #333; max-width: 700px; margin: 0 auto; }
+    .header { background: #f8f9fa; padding: 20px; text-align: center; }
+    .content { padding: 20px; }
+    .order-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+    .order-table th, .order-table td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    .order-table th { background: #f0f8ff; }
+    .footer { font-size: 12px; color: #666; text-align: center; padding: 20px; border-top: 1px solid #eee; }
+    .btn { display: inline-block; padding: 10px 20px; background: #007bff; color: #fff; text-decoration: none; border-radius: 4px; }
+    .total { font-size: 18px; font-weight: bold; color: #333; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>تأكيد عملية الشراء</h1>
+  </div>
+  <div class="content">
+    <p>شكراً لشرائك! تم تسجيل طلبك بنجاح.</p>
+    
+    <table class="order-table">
+      <thead>
+        <tr>
+          <th>اسم المنتج</th>
+          <th>الكمية</th>
+          <th>السعر</th>
+          <th>الإجمالي</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each items}}
+        <tr>
+          <td>{{name}}</td>
+          <td>{{quantity}}</td>
+          <td>{{price}}</td>
+          <td>{{subtotal}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+    
+    <p class="total">الإجمالي: {{totalAmount}} {{currency}}</p>
+    
+    {{#if discount}}
+    <p>خصم: {{discount}} {{currency}}</p>
+    {{/if}}
+    
+    {{#if taxes}}
+    <p>ضرائب: {{taxes}} {{currency}}</p>
+    {{/if}}
+    
+    <p>مرجع الطلب: {{orderReference}}</p>
+    <p>تاريخ الشراء: {{purchaseDate}}</p>
+    
+    {{#if trackingLink}}
+    <p> verfolgen طلبك: <a href="{{trackingLink">عرض حالة الطلب</a></p>
+    {{/if}}
+    
+    <p>حالة الدفع: {{paymentStatus}}</p>
+    <p>حالة الطلب: {{orderStatus}}</p>
+    
+    <p>إذا كان لديك أي استفسارات، يرجى التواصل مع فريق الدعم لدينا.</p>
+  </div>
+  <div class="footer">
+    <p>&copy; {{year}} Business Discovery. جميع الحقوق محفوظة.</p>
+  </div>
+</body>
+</html>
