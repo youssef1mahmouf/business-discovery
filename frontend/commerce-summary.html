@@ -20,10 +20,31 @@
         <div class="card-header"><div><h2>ملخص المبيعات</h2><p>يعتمد على التحويلات التي راجعها البائع يدوياً فقط.</p></div></div>
         <div id="commerceSummary" aria-live="polite">جارٍ تحميل الملخص…</div>
       </section>
+      <section class="card card-3d">
+        <div class="card-header"><div><h2>ملخص المبيعات 3D</h2><p>تفاعلية ثلاثية الأبعاد لبيانات المبيعات</p></div></div>
+        <div class="card-body-3d"><canvas id="commerceSummary3D"></canvas></div>
+      </section>
     </div></main>
     <footer class="app-footer">Business Discovery</footer>
   </div>
 </div>
 <script src="assets/js/common.js"></script><script src="assets/js/layout.js"></script><script src="assets/js/commerce.js"></script>
+  <script>
+    // Initialize 3D scene for sales summary
+    document.addEventListener('DOMContentLoaded', function() {
+      try {
+        const canvas = document.getElementById('commerceSummary3D');
+        if (canvas) {
+          initHero3D(canvas, {
+            variant: 'business',
+            pointerTracking: true,
+            rotationSpeed: 0.002
+          });
+        }
+      } catch (error) {
+        console.error('Failed to initialize 3D scene:', error);
+      }
+    });
+  </script>
 </body>
 </html>
