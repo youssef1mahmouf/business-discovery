@@ -85,9 +85,9 @@ export class ThreeSceneManager {
       new THREE.MeshStandardMaterial({
         color: 0x101a3c,
         emissive: this.options.innerColor,
-        emissiveIntensity: 0.28,
+        emissiveIntensity: 0.42,
         metalness: 0.42,
-        roughness: 0.24,
+        roughness: 0.2,
         transparent: true,
         opacity: 0.96,
       }),
@@ -100,7 +100,7 @@ export class ThreeSceneManager {
         color: this.options.color,
         wireframe: true,
         transparent: true,
-        opacity: 0.32,
+        opacity: 0.42,
       }),
     );
     this.group.add(shell);
@@ -158,6 +158,43 @@ export class ThreeSceneManager {
       ring.rotation.set(index * 0.82, index * 0.94, index * 0.34);
       this.rings.push(ring);
       this.group.add(ring);
+    });
+
+    const satellites = [
+      { position: [1.82, 0.48, 0.08], color: this.options.color },
+      { position: [-1.76, 0.18, 0.38], color: this.options.innerColor },
+      { position: [0.26, -1.84, 0.28], color: 0xa2b9ff },
+    ];
+    satellites.forEach(({ position, color }) => {
+      const point = new THREE.Vector3(...position);
+      const connectorGeometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        point,
+      ]);
+      this.group.add(new THREE.Line(
+        connectorGeometry,
+        new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.45 }),
+      ));
+
+      const node = new THREE.Group();
+      node.position.copy(point);
+      node.add(new THREE.Mesh(
+        new THREE.SphereGeometry(0.075, 20, 16),
+        new THREE.MeshStandardMaterial({
+          color,
+          emissive: color,
+          emissiveIntensity: 0.75,
+          metalness: 0.25,
+          roughness: 0.22,
+        }),
+      ));
+      const halo = new THREE.Mesh(
+        new THREE.TorusGeometry(0.13, 0.006, 6, 48),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7 }),
+      );
+      halo.rotation.x = Math.PI / 2.7;
+      node.add(halo);
+      this.group.add(node);
     });
   }
 

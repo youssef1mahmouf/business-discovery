@@ -207,7 +207,7 @@ function register(router, ctx) {
             headers: { 'Content-Type': 'application/json' },
             signal: AbortSignal.timeout(ctx.config.ollamaTimeoutMs || 45000),
             body: JSON.stringify({
-              model: ctx.config.ollamaModel || 'llama3.2',
+              model: ctx.config.ollamaModel || 'qwen3:4b',
               stream: false,
               format: 'json',
               options: { temperature: 0, num_predict: 1500 },

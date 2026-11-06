@@ -125,7 +125,7 @@ async function updatePublicNavigation(){
     console.error('Unable to verify homepage account navigation:', error);
   }
   cta.replaceChildren(
-    createLink('projects.html', 'لوحة التحكم', 'rd-btn ghost'),
+    createLink('dashboard.html', 'لوحة التحكم', 'rd-btn ghost'),
     createLink('profile.html', name, 'rd-btn primary'),
   );
   const logout = document.createElement('button');

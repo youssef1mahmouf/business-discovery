@@ -16,34 +16,32 @@
     <div class="rd-logo"><span class="rd-logo-mark">BD</span><span>Business Discovery</span></div>
     <div class="rd-nav-links">
       <a href="index.html">الرئيسية</a>
-      <a href="projects.html">المشاريع</a>
-      <a href="friends.html">الأصدقاء</a>
-      <a href="tasks.html">المهام</a>
-      <a href="notifications.html">الإشعارات</a>
+      <a href="#features">المنصة</a>
+      <a href="#workflow">كيف تعمل</a>
+      <a href="#stats">إحصاءات حقيقية</a>
     </div>
     <div class="rd-nav-cta">
       <a class="rd-btn ghost" href="login.html">تسجيل الدخول</a>
-      <a class="rd-btn primary" href="register.html">ابدأ مجاناً</a>
     </div>
   </nav>
   <main class="rd-container">
     <section class="rd-hero">
       <div class="rd-hero-text">
         <span class="rd-badge">✨ منصة اكتشاف الأعمال</span>
-        <h1>اكتشف أعمالك وشراكاتك بذكاء</h1>
-        <p>منصة متكاملة لإدارة المشاريع، الأصدقاء، المهام، والإشعارات مع لوحة إدارة متقدمة وتجربة مستخدم فاخرة.</p>
+        <h1>حوّل فكرتك إلى خطة عمل واضحة</h1>
+        <p>نظّم تفاصيل مشروعك، افهم احتياجاته خطوة بخطوة، وتعاون مع فريقك في مساحة واحدة. ابدأ بمشروع أو أنشئ سيرتك الذاتية فقط.</p>
         <div class="rd-hero-actions">
           <a class="rd-btn primary homepage-signup" href="register.html">ابدأ الآن</a>
-          <a class="rd-btn ghost" href="projects.html">استكشف المشاريع</a>
+          <a class="rd-btn ghost" href="#workflow">اكتشف طريقة العمل</a>
         </div>
       </div>
       <div class="rd-hero-visual">
         <canvas id="hero3d"></canvas>
-        <div class="rd-float-card c1">📊 مساحة واحدة لإدارة مشاريعك</div>
-        <div class="rd-float-card c2">🤝 تعاون أوضح مع فريقك</div>
+        <div class="rd-float-card c1">01 · مساحة مشروعك<small>الفكرة، السوق، والمرحلة</small></div>
+        <div class="rd-float-card c2">02 · تحليل منظّم<small>معلوماتك تبقى ضمن صلاحيات فريقك</small></div>
       </div>
     </section>
-    <section class="rd-section">
+    <section class="rd-section" id="features">
       <div class="rd-section-title">
         <h2>كل ما تحتاجه في مكان واحد</h2>
         <p>أدوات قوية لإدارة أعمالك وشراكاتك</p>
@@ -55,7 +53,7 @@
         <div class="rd-feature"><div class="rd-feature-icon">🔔</div><h3>الإشعارات</h3><p>إشعارات فورية للأحداث المهمة.</p></div>
       </div>
     </section>
-    <section class="rd-section">
+    <section class="rd-section" id="stats">
       <div class="rd-stats">
         <div class="rd-stat"><div class="num" id="publicUsers">—</div><div class="lbl">عضو مسجل</div></div>
         <div class="rd-stat"><div class="num" id="publicProjects">—</div><div class="lbl">مشروع نشط</div></div>
@@ -64,11 +62,17 @@
       </div>
       <p id="publicStatsStatus" class="small text-center" role="status" aria-live="polite"></p>
     </section>
-    <div class="rd-cta homepage-signup">
-      <h2 style="margin:0 0 12px;">جاهز للبدء؟</h2>
-      <p style="color:var(--muted);margin:0 0 24px;">أنشئ حسابك مجاناً في ثوانٍ.</p>
-      <a class="rd-btn primary" href="register.html">إنشاء حساب</a>
-    </div>
+    <section class="rd-section" id="workflow">
+      <div class="rd-section-title">
+        <h2>ابدأ بالخطوة المناسبة لك</h2>
+        <p>إنشاء مشروع اختياري؛ يمكنك استخدام حسابك وسيرتك الذاتية دون مشروع.</p>
+      </div>
+      <div class="rd-process">
+        <article class="rd-process-step"><strong>١ · أنشئ حسابك</strong><p>أضف بياناتك المهنية إذا رغبت، أو ابدأ بحساب عميل بسيط.</p></article>
+        <article class="rd-process-step"><strong>٢ · أضف مشروعاً عند الجاهزية</strong><p>تظهر أدوات المشروع والتقييم والتحليل بعد إضافة مشروع تملكه أو الانضمام إليه.</p></article>
+        <article class="rd-process-step"><strong>٣ · تابع بياناتك الفعلية</strong><p>لوحات الحساب تعرض معلوماتك المصرح بها، ولوحة الإدارة تعرض أرقام المنصة الحقيقية.</p></article>
+      </div>
+    </section>
   </main>
   <footer class="rd-footer">Business Discovery &copy; 2026 — جميع الحقوق محفوظة</footer>
 </div>
@@ -84,7 +88,7 @@
 
   const hero = initHero3D('hero3d', { color: 0x35D5F2, innerColor: 0x8B5CF6, particleCount: 150 });
 
-  initLenis({ duration: 1.2 });
+  if (!reduce) initLenis({ duration: 1.2 });
   loadPublicStats();
 
   if (!reduce && window.gsap) {
@@ -99,7 +103,7 @@
     el.appendChild(icon);
   });
 
-  if (window.gsap) {
+  if (!reduce && window.gsap) {
     try {
       window.gsap.from('.rd-hero-text > :not(h1)', { opacity: 0, y: 30, duration: 0.8, stagger: 0.12, ease: 'power3.out' });
       window.gsap.from('.rd-feature', { opacity: 0, y: 40, duration: 0.7, stagger: 0.1, delay: 0.3, ease: 'power3.out' });

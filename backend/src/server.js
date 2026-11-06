@@ -20,7 +20,14 @@ async function start() {
   loadEnvFile();
   const config = validateConfig();
   const conn = await db.connect(config);
-  const ctx = { config, db: { get: (name) => conn.collections[name] } };
+  const ctx = {
+    config,
+    db: {
+      get: (name) => conn.collections[name],
+      getStatus: conn.getStatus,
+      retrySync: conn.retrySync
+    }
+  };
 
   const server = createApp(ctx);
   await new Promise((resolve, reject) => {

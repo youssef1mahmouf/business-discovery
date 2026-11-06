@@ -78,6 +78,12 @@ function validateConfig(env = process.env) {
   };
 
   const dbName = String(env.MONGODB_DB_NAME || '').trim() || 'business_discovery';
+  const fallbackDirectory = String(
+    env.JSON_FALLBACK_DIR || path.join(__dirname, '..', 'data', 'fallback')
+  ).trim();
+  const jsonFallbackDir = path.isAbsolute(fallbackDirectory)
+    ? fallbackDirectory
+    : path.resolve(__dirname, '..', '..', fallbackDirectory);
   const port = Number(env.PORT || 3000);
   if (!Number.isInteger(port) || port <= 0) {
     const e = new Error('PORT must be a positive integer');
@@ -96,7 +102,7 @@ function validateConfig(env = process.env) {
     e.name = 'ConfigValidationError';
     throw e;
   }
-  const ollamaModel = String(env.OLLAMA_MODEL || 'llama3.2').trim();
+  const ollamaModel = String(env.OLLAMA_MODEL || 'qwen3:4b').trim();
   if (!ollamaModel || ollamaModel.length > 100) {
     const e = new Error('OLLAMA_MODEL must contain 1 to 100 characters');
     e.name = 'ConfigValidationError';
@@ -114,6 +120,7 @@ function validateConfig(env = process.env) {
     tokenSecret: String(tokenSecret),
     frontendOrigin: String(frontendOrigin),
     dbName,
+    jsonFallbackDir,
     production,
     accessTokenTtlSeconds,
     smtpConfig,

@@ -203,6 +203,7 @@
             await BD.api('/api/projects/' + encodeURIComponent(project.id), { method: 'DELETE' });
             BD.showToast('تمت أرشفة المشروع');
             await load();
+            window.dispatchEvent(new Event('bd:projects-changed'));
           } catch (error) {
             archive.disabled = false;
             BD.showToast(error.message, 'error');
@@ -246,6 +247,7 @@
       event.currentTarget.reset();
       BD.showToast('تم إنشاء المشروع');
       await load();
+      window.dispatchEvent(new Event('bd:projects-changed'));
     } catch (error) {
       message.textContent = error.message;
       message.style.color = 'var(--danger)';

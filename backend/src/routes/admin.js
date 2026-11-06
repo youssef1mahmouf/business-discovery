@@ -1,6 +1,15 @@
 const { sendJson, parseBody } = require('../middleware/http');
 const { requireAdmin } = require('../middleware/auth');
 
+function distribution(rows, allowedStages) {
+  const counts = Object.fromEntries(allowedStages.map((stage) => [stage, 0]));
+  for (const row of rows) {
+    const key = Object.hasOwn(counts, row._id) ? row._id : 'unspecified';
+    counts[key] += Number(row.count) || 0;
+  }
+  return counts;
+}
+
 function register(router, ctx) {
   const origin = ctx.config.frontendOrigin === '*' ? '*' : ctx.config.frontendOrigin;
   const users = ctx.db.get('users');
@@ -8,10 +17,37 @@ function register(router, ctx) {
 
   router.get('/api/admin/stats', async (req,res) => {
     const u = await requireAdmin(req,res,ctx,origin); if(!u) return;
-    const userCount = await users.countDocuments();
-    const projectCount = await ctx.db.get('projects').countDocuments();
-    const taskCount = await ctx.db.get('tasks').countDocuments();
-    return sendJson(res,200,{ stats: { users: userCount, projects: projectCount, tasks: taskCount } },origin);
+    const userCount = await users.countDocuments({});
+    const projects = ctx.db.get('projects');
+    const projectCount = await projects.countDocuments({});
+    const taskCount = await ctx.db.get('tasks').countDocuments({});
+    const [stageRows, typeRows] = await Promise.all([
+      projects.aggregate([{ $group: { _id: '$stage', count: { $sum: 1 } } }]).toArray(),
+      projects.aggregate([{ $group: { _id: '$projectType', count: { $sum: 1 } } }]).toArray()
+    ]);
+    return sendJson(res,200,{ stats: {
+      users: userCount,
+      projects: projectCount,
+      tasks: taskCount,
+      projectStages: distribution(stageRows, ['idea', 'validation', 'mvp', 'launched', 'growth', 'unspecified']),
+      projectTypes: distribution(typeRows, ['saas', 'ecommerce', 'services', 'retail', 'marketplace', 'other', 'unspecified'])
+    } },origin);
+  });
+
+  router.get('/api/admin/storage-status', async (req,res) => {
+    const u = await requireAdmin(req,res,ctx,origin); if(!u) return;
+    if (typeof ctx.db.getStatus !== 'function') {
+      return sendJson(res,503,{error:'storage_status_unavailable'},origin);
+    }
+    return sendJson(res,200,{ status: await ctx.db.getStatus() },origin);
+  });
+
+  router.post('/api/admin/storage-sync/retry', async (req,res) => {
+    const u = await requireAdmin(req,res,ctx,origin); if(!u) return;
+    if (typeof ctx.db.retrySync !== 'function') {
+      return sendJson(res,503,{error:'storage_sync_unavailable'},origin);
+    }
+    return sendJson(res,200,{ status: await ctx.db.retrySync() },origin);
   });
 
   router.get('/api/admin/users', async (req,res) => {

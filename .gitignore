@@ -15,3 +15,4 @@ backend/startup.err
 backend/startup.log
 backend/.browser-open.lock
 
+/backend/data/fallback/

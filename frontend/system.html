@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>معلومات النظام | Business Discovery</title>
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="bdSidebar">
+    <div class="sidebar-brand"><div class="brand-icon">BD</div><span class="brand-text">Business Discovery</span></div>
+    <button class="sidebar-toggle" id="bdCollapseBtn" type="button" aria-label="طي القائمة">⇔</button>
+    <nav class="sidebar-nav" id="bdSidebarNav"></nav>
+    <div class="sidebar-footer">© 2026</div>
+  </aside>
+  <div class="sidebar-overlay" id="bdOverlay"></div>
+  <div class="main-area">
+    <header class="topbar" id="bdTopbar">
+      <button class="mobile-menu-btn" id="bdMenuBtn" type="button" aria-label="فتح القائمة">☰</button>
+      <div class="topbar-left"><h1 class="page-title" id="bdPageTitle"></h1></div>
+      <div class="topbar-actions">
+        <div class="profile-menu">
+          <button class="profile-btn" id="bdProfileBtn" type="button">👤 <span id="bdUserEmail"></span></button>
+          <div class="profile-dropdown" id="bdProfileDropdown">
+            <a href="profile.html">السيرة الذاتية</a>
+            <a href="settings.html">الإعدادات</a>
+            <a href="#" id="bdLogout">تسجيل الخروج</a>
+          </div>
+        </div>
+      </div>
+    </header>
+    <main class="content">
+      <div class="container">
+        <section class="card system-intro">
+          <span class="rd-badge">حالة الخدمات</span>
+          <h2>معلومات النظام</h2>
+          <p>تعرض هذه الصفحة حالة الخدمة التي يمكن التحقق منها الآن. لا تعرض أسرار الاتصال أو إعدادات الخادم الخاصة.</p>
+        </section>
+        <section class="system-status-grid" aria-live="polite">
+          <article class="card system-status-card">
+            <span class="system-status-icon" aria-hidden="true">◉</span>
+            <div><h3>واجهة التطبيق</h3><p id="frontendStatus">متاحة — هذه الصفحة تعمل.</p></div>
+          </article>
+          <article class="card system-status-card">
+            <span class="system-status-icon" id="apiIcon" aria-hidden="true">…</span>
+            <div><h3>واجهة الخدمة</h3><p id="apiStatus">جارٍ التحقق…</p></div>
+          </article>
+        </section>
+        <section class="card" id="adminStoragePanel" hidden>
+          <div class="card-header">
+            <div><h2>تخزين المنصة</h2><p class="small">تفاصيل تشغيلية مختصرة للمسؤولين فقط.</p></div>
+            <button class="btn btn-secondary btn-sm" id="retryStorageSync" type="button">إعادة محاولة المزامنة</button>
+          </div>
+          <div class="system-storage-grid" id="storageStatus" aria-live="polite">
+            <p class="small">جارٍ قراءة حالة التخزين…</p>
+          </div>
+          <p id="storageMessage" class="small" role="status" aria-live="polite"></p>
+        </section>
+        <p id="systemPageStatus" class="small" role="status" aria-live="polite"></p>
+      </div>
+    </main>
+    <footer class="app-footer" id="bdFooter">Business Discovery — جميع الحقوق محفوظة</footer>
+  </div>
+</div>
+<script src="assets/js/common.js"></script>
+<script src="assets/js/layout.js"></script>
+<script>
+  BD.requireAuth();
+
+  function makeStatus(label, value) {
+    const item = document.createElement('div');
+    item.className = 'system-storage-item';
+    const title = document.createElement('span');
+    title.className = 'small';
+    title.textContent = label;
+    const detail = document.createElement('strong');
+    detail.textContent = value;
+    item.append(title, detail);
+    return item;
+  }
+
+  async function loadStorageStatus() {
+    const host = document.getElementById('storageStatus');
+    try {
+      const { status } = await BD.api('/api/admin/storage-status');
+      host.replaceChildren(
+        makeStatus('قاعدة البيانات متصلة', status.mongoConnected ? 'نعم' : 'لا'),
+        makeStatus('التخزين المستخدم', status.storage === 'mongodb' ? 'MongoDB' : 'نسخة JSON المحلية'),
+        makeStatus('سجلات بانتظار المزامنة', String(status.pendingRecords)),
+        makeStatus('سجلات تحتاج مراجعة', String(status.conflictedRecords))
+      );
+      if (status.lastSyncAt) host.appendChild(makeStatus('آخر مزامنة مؤكدة', new Date(status.lastSyncAt).toLocaleString('ar')));
+    } catch (error) {
+      host.replaceChildren(makeStatus('حالة التخزين', 'غير متاحة'));
+      document.getElementById('storageMessage').textContent = error.message || 'تعذر تحميل حالة التخزين.';
+      document.getElementById('storageMessage').style.color = 'var(--danger)';
+      console.error('Unable to load administrator storage status:', error);
+    }
+  }
+
+  async function loadSystemInfo() {
+    try {
+      const [{ user }, health] = await Promise.all([
+        BD.api('/api/auth/me'),
+        fetch(BD.API + '/api/health').then((response) => {
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+          return response.json();
+        })
+      ]);
+      if (!user) throw new Error('لم يتم التحقق من الحساب.');
+      document.getElementById('apiStatus').textContent =
+        health.ok ? 'متاحة — اتصال ناجح بخدمة ' + health.service + '.' : 'الخدمة لا تؤكد جاهزيتها.';
+      document.getElementById('apiIcon').textContent = health.ok ? '✓' : '!';
+      if (['site_admin', 'main_super_admin'].includes(user.role)) {
+        document.getElementById('adminStoragePanel').hidden = false;
+        await loadStorageStatus();
+      }
+    } catch (error) {
+      document.getElementById('apiStatus').textContent = 'غير متاحة حالياً. حاول تحديث الصفحة لاحقاً.';
+      document.getElementById('apiIcon').textContent = '!';
+      document.getElementById('apiIcon').classList.add('system-status-error');
+      document.getElementById('systemPageStatus').textContent = error.message || 'تعذر التحقق من جميع الخدمات.';
+      document.getElementById('systemPageStatus').style.color = 'var(--danger)';
+      console.error('Unable to load system information:', error);
+    }
+  }
+
+  document.getElementById('retryStorageSync').addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    const message = document.getElementById('storageMessage');
+    button.disabled = true;
+    message.textContent = '';
+    try {
+      await BD.api('/api/admin/storage-sync/retry', { method: 'POST' });
+      message.textContent = 'اكتملت محاولة المزامنة؛ راجع الحالة الحالية أدناه.';
+      await loadStorageStatus();
+    } catch (error) {
+      message.textContent = error.message || 'تعذرت إعادة محاولة المزامنة.';
+      message.style.color = 'var(--danger)';
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  loadSystemInfo();
+</script>
+</body>
+</html>

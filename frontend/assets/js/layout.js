@@ -23,17 +23,67 @@
       return JSON.parse(atob(part.replace(/-/g,'+').replace(/_/g,'/')));
     } catch(e){ return null; }
   }
-  function normalizeRole(p){
-    if (!p) return 'regular_user';
-    const r = p.role;
-    if (r === 'main_super_admin' || r === 'site_admin') return r;
-    return 'regular_user';
-  }
-  function isAdmin(p){ const r = normalizeRole(p); return r === 'site_admin' || r === 'main_super_admin'; }
   function pageTitles(){
-    const map = { 'index.html':'لوحة التحكم','projects.html':'المشاريع','participants.html':'المشاركون','friends.html':'الأصدقاء','partners.html':'الشركاء','tasks.html':'المهام','notifications.html':'الإشعارات','chat.html':'الدردشة','settings.html':'الإعدادات','admin.html':'الإدارة','profile.html':'السيرة الذاتية','assessment.html':'تقييم المشروع','assistant.html':'مساعد الأعمال','commerce.html':'المنتجات والمدفوعات','register.html':'إنشاء حساب' };
+    const map = { 'index.html':'الرئيسية','dashboard.html':'لوحة التحكم','projects.html':'المشاريع','participants.html':'المشاركون','friends.html':'الأصدقاء','partners.html':'الشركاء','tasks.html':'المهام','notifications.html':'الإشعارات','chat.html':'الدردشة','settings.html':'الإعدادات','system.html':'معلومات النظام','admin.html':'الإدارة','profile.html':'السيرة الذاتية','assessment.html':'تقييم المشروع','assistant.html':'مساعد الأعمال','commerce.html':'المنتجات والمدفوعات','register.html':'إنشاء حساب' };
     const name = (location.pathname.split('/').pop() || 'index.html');
     return map[name] || document.title || 'Business Discovery';
+  }
+  async function renderNavigation(nav) {
+    if (!nav || !window.BD || !BD.api) return;
+    const coreItems = [
+      {href:'dashboard.html', label:'لوحة التحكم', icon:'dashboard'},
+      {href:'projects.html', label:'المشاريع', icon:'projects'},
+      {href:'profile.html', label:'السيرة الذاتية', icon:'profile'},
+      {href:'commerce.html', label:'المنتجات والمدفوعات', icon:'commerce'},
+      {href:'settings.html', label:'الإعدادات', icon:'settings'},
+      {href:'system.html', label:'معلومات النظام', icon:'admin'}
+    ];
+    const projectItems = [
+      {href:'participants.html', label:'المشاركون', icon:'participants'},
+      {href:'friends.html', label:'الأصدقاء', icon:'friends'},
+      {href:'partners.html', label:'الشركاء', icon:'partners'},
+      {href:'tasks.html', label:'المهام', icon:'tasks'},
+      {href:'notifications.html', label:'الإشعارات', icon:'notifications'},
+      {href:'chat.html', label:'الدردشة', icon:'chat'},
+      {href:'assessment.html', label:'تقييم المشروع', icon:'assessment'},
+      {href:'assistant.html', label:'مساعد الأعمال', icon:'assistant'}
+    ];
+    let items = coreItems;
+    try {
+      const { user } = await BD.api('/api/auth/me');
+      const profile = await BD.api('/api/profile');
+      const emailEl = document.getElementById('bdUserEmail');
+      if (emailEl) emailEl.textContent = profile.profile && profile.profile.displayName || user.email;
+      const admin = user.role === 'site_admin' || user.role === 'main_super_admin';
+      let hasProjects = admin;
+      if (!admin) {
+        try {
+          const result = await BD.api('/api/projects?limit=1');
+          hasProjects = result.total > 0;
+        } catch (error) {
+          console.error('Unable to determine project navigation:', error);
+        }
+      }
+      document.querySelectorAll('a[href="notifications.html"].icon-btn').forEach((link) => {
+        link.hidden = !hasProjects;
+      });
+      items = coreItems.concat(hasProjects ? projectItems : []);
+      if (admin) items.push({href:'admin.html', label:'الإدارة', icon:'admin'});
+    } catch (error) {
+      if (error.status === 401 || error.status === 403) {
+        BD.setToken(null);
+        location.href = 'login.html';
+        return;
+      }
+      console.error('Unable to load role-aware navigation:', error);
+    }
+
+    const current = (location.pathname.split('/').pop() || 'dashboard.html');
+    nav.innerHTML = items.map((item) => {
+      const active = item.href === current ? 'active' : '';
+      return '<a class="nav-item ' + active + '" href="' + item.href + '"><span class="nav-icon">' +
+        icons[item.icon] + '</span><span class="nav-label">' + item.label + '</span></a>';
+    }).join('');
   }
   document.addEventListener('DOMContentLoaded', function(){
     const shell = document.getElementById('appShell');
@@ -42,38 +92,15 @@
       document.body.classList.add('public-profile-mode');
       return;
     }
-    const payload = getTokenPayload();
-    const admin = isAdmin(payload);
     const nav = document.getElementById('bdSidebarNav');
-    const items = [
-      {href:'index.html', label:'لوحة التحكم', icon:'dashboard'},
-      {href:'projects.html', label:'المشاريع', icon:'projects'},
-      {href:'participants.html', label:'المشاركون', icon:'participants'},
-      {href:'friends.html', label:'الأصدقاء', icon:'friends'},
-      {href:'partners.html', label:'الشركاء', icon:'partners'},
-      {href:'tasks.html', label:'المهام', icon:'tasks'},
-      {href:'notifications.html', label:'الإشعارات', icon:'notifications'},
-      {href:'chat.html', label:'الدردشة', icon:'chat'},
-      {href:'settings.html', label:'الإعدادات', icon:'settings'},
-      {href:'profile.html', label:'السيرة الذاتية', icon:'profile'},
-      {href:'assessment.html', label:'تقييم المشروع', icon:'assessment'},
-      {href:'assistant.html', label:'مساعد الأعمال', icon:'assistant'},
-      {href:'commerce.html', label:'المنتجات والمدفوعات', icon:'commerce'}
-    ];
-    if (admin) items.push({href:'admin.html', label:'الإدارة', icon:'admin'});
-    const current = (location.pathname.split('/').pop() || 'index.html');
-    if (nav) nav.innerHTML = items.map(it => {
-      const active = it.href === current ? 'active' : '';
-      return '<a class="nav-item '+active+'" href="'+it.href+'"><span class="nav-icon">'+icons[it.icon]+'</span><span class="nav-label">'+it.label+'</span></a>';
-    }).join('');
+    renderNavigation(nav);
+    window.addEventListener('bd:projects-changed', function(){ renderNavigation(nav); });
     const titleEl = document.getElementById('bdPageTitle');
     if (titleEl) titleEl.textContent = pageTitles();
     const emailEl = document.getElementById('bdUserEmail');
-    if (emailEl && payload && payload.email) emailEl.textContent = payload.email;
-    if (emailEl && window.BD && BD.api) {
-      BD.api('/api/profile').then(function(data){
-        if (data.profile && data.profile.displayName) emailEl.textContent = data.profile.displayName;
-      }).catch(function(error){ console.error('Unable to load current profile name:', error); });
+    const payload = getTokenPayload();
+    if (emailEl && payload && payload.email) {
+      emailEl.textContent = payload.email;
     }
     const menuBtn = document.getElementById('bdMenuBtn');
     const sidebar = document.getElementById('bdSidebar');

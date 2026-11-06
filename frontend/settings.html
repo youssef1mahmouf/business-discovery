@@ -46,10 +46,11 @@
 
         <section class="settings-card-grid" aria-label="إعدادات الحساب والمشروع">
           <a class="card settings-card" href="profile.html"><span class="settings-card-icon">👤</span><h2>السيرة الذاتية</h2><p>أنشئ ملفك المهني وعدّل بياناتك ومهاراتك.</p><span class="settings-card-action">فتح الملف ←</span></a>
+          <a class="card settings-card" href="change-password.html"><span class="settings-card-icon">🔐</span><h2>كلمة المرور والحماية</h2><p>غيّر كلمة مرور حسابك.</p><span class="settings-card-action">تغيير كلمة المرور ←</span></a>
           <a class="card settings-card" href="projects.html"><span class="settings-card-icon">📁</span><h2>المشاريع</h2><p>أنشئ مشروعاً أو عدّل معلوماته وأعضاءه.</p><span class="settings-card-action">إدارة المشاريع ←</span></a>
-          <a class="card settings-card" href="assessment.html"><span class="settings-card-icon">✅</span><h2>تقييم المشروع — 100 سؤال</h2><p>قيّم السوق والعملاء والمنتج والمال والفريق لتغذية تحليل المساعد.</p><span class="settings-card-action">بدء التقييم ←</span></a>
-          <a class="card settings-card" href="assistant.html#aiChat"><span class="settings-card-icon">✦</span><h2>محادثة وتحليل Ollama</h2><p>تحدث عن المشروع، راجع المخاطر، واحصل على اقتراحات تتطلب موافقتك.</p><span class="settings-card-action">فتح المساعد ←</span></a>
-          <a class="card settings-card" href="chat.html"><span class="settings-card-icon">💬</span><h2>محادثات الفريق</h2><p>تواصل مع أعضاء المشاريع والمجموعات.</p><span class="settings-card-action">فتح الدردشة ←</span></a>
+          <a class="card settings-card" href="assessment.html" data-project-feature hidden><span class="settings-card-icon">✅</span><h2>تقييم المشروع — 100 سؤال</h2><p>قيّم السوق والعملاء والمنتج والمال والفريق لتغذية تحليل المساعد.</p><span class="settings-card-action">بدء التقييم ←</span></a>
+          <a class="card settings-card" href="assistant.html#aiChat" data-project-feature hidden><span class="settings-card-icon">✦</span><h2>محادثة وتحليل Ollama</h2><p>تحدث عن المشروع، راجع المخاطر، واحصل على اقتراحات تتطلب موافقتك.</p><span class="settings-card-action">فتح المساعد ←</span></a>
+          <a class="card settings-card" href="chat.html" data-project-feature hidden><span class="settings-card-icon">💬</span><h2>محادثات الفريق</h2><p>تواصل مع أعضاء المشاريع والمجموعات.</p><span class="settings-card-action">فتح الدردشة ←</span></a>
         </section>
 
         <section class="card">
@@ -98,6 +99,12 @@
   const adminSettings = document.getElementById('adminSettings');
   const systemSettingsValue = document.getElementById('systemSettingsValue');
   const systemSettingsStatus = document.getElementById('systemSettingsStatus');
+
+  BD.api('/api/projects?limit=1').then(({ total }) => {
+    if (total > 0) document.querySelectorAll('[data-project-feature]').forEach((element) => { element.hidden = false; });
+  }).catch((error) => {
+    console.error('Unable to verify project-specific settings:', error);
+  });
 
   async function loadSystemSettings() {
     try {

@@ -62,6 +62,12 @@ function collection(documents = []) {
       items.forEach((item) => { item._id = item._id || new ObjectId(); documents.push(item); });
       return { insertedCount: items.length };
     },
+    async deleteOne(query) {
+      const index = documents.findIndex((document) => matches(document, query));
+      if (index < 0) return { deletedCount: 0 };
+      documents.splice(index, 1);
+      return { deletedCount: 1 };
+    },
     async updateOne(query, update, options = {}) {
       let document = documents.find((item) => matches(item, query));
       if (!document && options.upsert) {
@@ -85,17 +91,29 @@ function collection(documents = []) {
       for (const stage of pipeline) {
         if (stage.$match) items = items.filter((item) => matches(item, stage.$match));
         if (stage.$group) {
-          const sums = {};
-          for (const [key, expression] of Object.entries(stage.$group)) {
-            if (key === '_id') continue;
-            sums[key] = items.reduce((total, item) => {
+          const groups = new Map();
+          for (const item of items) {
+            const groupId = typeof stage.$group._id === 'string' && stage.$group._id.startsWith('$')
+              ? getPath(item, stage.$group._id.slice(1))
+              : stage.$group._id;
+            const key = JSON.stringify(groupId);
+            if (!groups.has(key)) {
+              const group = { _id: groupId };
+              for (const [field, expression] of Object.entries(stage.$group)) {
+                if (field !== '_id' && expression.$sum !== undefined) group[field] = 0;
+              }
+              groups.set(key, group);
+            }
+            const group = groups.get(key);
+            for (const [field, expression] of Object.entries(stage.$group)) {
+              if (field === '_id') continue;
               const value = typeof expression.$sum === 'string'
                 ? getPath(item, expression.$sum.slice(1))
                 : expression.$sum;
-              return total + (Number(value) || 0);
-            }, 0);
+              group[field] += Number(value) || 0;
+            }
           }
-          items = items.length ? [{ _id: null, ...sums }] : [];
+          items = Array.from(groups.values());
         }
       }
       return { toArray: async () => items };
@@ -223,6 +241,20 @@ test('regular users and main super admins can create projects with their own mem
   ]);
 });
 
+test('failed owner membership does not leave an inaccessible project behind', async (t) => {
+  const owner = { _id: new ObjectId(), email: 'owner@example.com', role: 'regular_user' };
+  const app = await setup(t, { users: [owner] });
+  app.collections.project_members.insertOne = async () => {
+    throw new Error('membership storage unavailable');
+  };
+  const response = await app.request(app.tokenFor(owner), '/api/projects', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Incomplete project' })
+  });
+  assert.equal(response.status, 500);
+  assert.deepEqual(app.collections.projects.documents, []);
+});
+
 test('Ollama status and project chat use assessment answers and stay private to project members', async (t) => {
   const owner = { _id: new ObjectId(), email: 'owner@example.com', role: 'regular_user' };
   const outsider = { _id: new ObjectId(), email: 'outsider@example.com', role: 'regular_user' };
@@ -272,6 +304,18 @@ test('Ollama status and project chat use assessment answers and stay private to 
   assert.deepEqual((await history.json()).messages.map((message) => message.role), ['user', 'assistant']);
 });
 
+test('Ollama status reports when the configured model is not installed', async (t) => {
+  const owner = { _id: new ObjectId(), email: 'owner@example.com', role: 'regular_user' };
+  const app = await setup(t, { users: [owner] }, {
+    fetch: async () => ({ ok: true, status: 200, json: async () => ({ models: [] }) })
+  });
+  const response = await app.request(app.tokenFor(owner), '/api/ai/status');
+  const status = await response.json();
+  assert.equal(status.reachable, true);
+  assert.equal(status.modelAvailable, false);
+  assert.equal(status.error, 'ollama_model_missing');
+});
+
 test('administrator user search includes usernames and never returns profile documents', async (t) => {
   const admin = { _id: new ObjectId(), email: 'admin@example.com', role: 'main_super_admin' };
   const user = {
@@ -292,6 +336,45 @@ test('administrator user search includes usernames and never returns profile doc
   assert.equal(result.users[0].displayName, 'Youssef Mahmouf');
   assert.equal('profile' in result.users[0], false);
   assert.equal('passwordHash' in result.users[0], false);
+});
+
+test('administrator dashboard stats include real project stage and type distributions', async (t) => {
+  const admin = { _id: new ObjectId(), email: 'admin@example.com', role: 'main_super_admin' };
+  const app = await setup(t, {
+    users: [admin],
+    projects: [
+      { _id: new ObjectId(), stage: 'idea', projectType: 'saas' },
+      { _id: new ObjectId(), stage: 'idea', projectType: 'saas' },
+      { _id: new ObjectId(), stage: 'launched', projectType: 'retail' },
+      { _id: new ObjectId() }
+    ],
+    tasks: [{ _id: new ObjectId() }]
+  });
+
+  const response = await app.request(app.tokenFor(admin), '/api/admin/stats');
+  assert.equal(response.status, 200);
+  const { stats } = await response.json();
+  assert.equal(stats.users, 1);
+  assert.equal(stats.projects, 4);
+  assert.equal(stats.tasks, 1);
+  assert.deepEqual(stats.projectStages, {
+    idea: 2, validation: 0, mvp: 0, launched: 1, growth: 0, unspecified: 1
+  });
+  assert.deepEqual(stats.projectTypes, {
+    saas: 2, ecommerce: 0, services: 0, retail: 1, marketplace: 0, other: 0, unspecified: 1
+  });
+});
+
+test('role dashboards and system information are served as dedicated pages', async (t) => {
+  const app = await setup(t);
+  for (const [pathname, content] of [
+    ['/dashboard.html', 'dashboardStatus'],
+    ['/system.html', 'adminStoragePanel']
+  ]) {
+    const response = await app.request(null, pathname);
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), new RegExp(content));
+  }
 });
 
 test('missing frontend paths return a real 404 page instead of the homepage', async (t) => {

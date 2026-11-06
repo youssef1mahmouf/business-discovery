@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>لوحة التحكم | Business Discovery</title>
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="bdSidebar">
+    <div class="sidebar-brand"><div class="brand-icon">BD</div><span class="brand-text">Business Discovery</span></div>
+    <button class="sidebar-toggle" id="bdCollapseBtn" type="button" aria-label="طي القائمة">⇔</button>
+    <nav class="sidebar-nav" id="bdSidebarNav"></nav>
+    <div class="sidebar-footer">© 2026</div>
+  </aside>
+  <div class="sidebar-overlay" id="bdOverlay"></div>
+  <div class="main-area">
+    <header class="topbar" id="bdTopbar">
+      <button class="mobile-menu-btn" id="bdMenuBtn" type="button" aria-label="فتح القائمة">☰</button>
+      <div class="topbar-left"><h1 class="page-title" id="bdPageTitle"></h1></div>
+      <div class="topbar-actions">
+        <div class="profile-menu">
+          <button class="profile-btn" id="bdProfileBtn" type="button">👤 <span id="bdUserEmail"></span></button>
+          <div class="profile-dropdown" id="bdProfileDropdown">
+            <a href="profile.html">السيرة الذاتية</a>
+            <a href="settings.html">الإعدادات</a>
+            <a href="#" id="bdLogout">تسجيل الخروج</a>
+          </div>
+        </div>
+      </div>
+    </header>
+    <main class="content">
+      <div class="container dashboard-page">
+        <section class="dashboard-welcome card">
+          <div>
+            <span class="rd-badge" id="accountRole">مساحة حسابك</span>
+            <h2 id="welcomeTitle">أهلاً بك</h2>
+            <p id="welcomeDescription">تُعرض هنا المعلومات المتاحة لحسابك فقط.</p>
+          </div>
+          <a class="btn btn-primary" href="projects.html">إدارة المشاريع</a>
+        </section>
+
+        <section id="adminOverview" hidden>
+          <div class="dashboard-stats" id="adminStats" aria-live="polite"></div>
+          <div class="dashboard-grid">
+            <section class="card">
+              <div class="card-header"><div><h2>المشاريع حسب المرحلة</h2><p class="small">توزيع حقيقي من بيانات المنصة المتاحة للإدارة.</p></div></div>
+              <div id="stageChart" class="dashboard-bars" aria-live="polite"></div>
+              <p id="stageSummary" class="dashboard-insight"></p>
+            </section>
+            <section class="card">
+              <div class="card-header"><div><h2>المشاريع حسب النوع</h2><p class="small">تصنيف المشاريع المسجلة حالياً.</p></div></div>
+              <div id="typeChart" class="dashboard-bars" aria-live="polite"></div>
+              <p id="typeSummary" class="dashboard-insight"></p>
+            </section>
+          </div>
+        </section>
+
+        <section class="card" id="projectsSection" hidden>
+          <div class="card-header">
+            <div><h2 id="projectsHeading">مشاريعك</h2><p id="projectsDescription" class="small">تفاصيل المشاريع التي لديك صلاحية الوصول إليها.</p></div>
+            <span id="projectCount" class="badge badge-blue">0</span>
+          </div>
+          <div id="projectCards" class="dashboard-projects" aria-live="polite"></div>
+        </section>
+
+        <section class="card dashboard-empty" id="noProjectState" hidden>
+          <div class="dashboard-empty-mark" aria-hidden="true">✦</div>
+          <h2>ابدأ من حيث يناسبك</h2>
+          <p>يمكنك إعداد سيرتك الذاتية أو التسوق كعميل دون إنشاء مشروع. أدوات تحليل المشروع ستظهر بعد إنشاء أول مشروع.</p>
+          <div class="flex gap-8 dashboard-actions">
+            <a class="btn btn-primary" href="projects.html">إنشاء مشروع</a>
+            <a class="btn btn-secondary" href="profile.html">إنشاء سيرتي الذاتية</a>
+            <a class="btn btn-secondary" href="commerce.html">الطلبات والمدفوعات</a>
+          </div>
+        </section>
+        <p id="dashboardStatus" class="small" role="status" aria-live="polite">جارٍ تحميل مساحة حسابك…</p>
+      </div>
+    </main>
+    <footer class="app-footer" id="bdFooter">Business Discovery — جميع الحقوق محفوظة</footer>
+  </div>
+</div>
+<script src="assets/js/common.js"></script>
+<script src="assets/js/layout.js"></script>
+<script>
+  BD.requireAuth();
+
+  const stageLabels = {
+    idea: 'فكرة',
+    validation: 'التحقق من الفكرة',
+    mvp: 'المنتج الأولي',
+    launched: 'تم الإطلاق',
+    growth: 'النمو',
+    unspecified: 'غير محددة'
+  };
+  const typeLabels = {
+    saas: 'خدمة برمجية',
+    ecommerce: 'تجارة إلكترونية',
+    services: 'خدمات',
+    retail: 'تجارة / متجر',
+    marketplace: 'منصة وساطة',
+    other: 'أخرى',
+    unspecified: 'غير محدد'
+  };
+  const roleLabels = {
+    owner: 'مالك المشروع',
+    project_manager: 'مدير المشروع',
+    project_assistant: 'مساعد المشروع',
+    participant: 'مشارك',
+    member: 'عضو'
+  };
+  const numberFormat = new Intl.NumberFormat('ar');
+
+  function element(tag, text, className) {
+    const node = document.createElement(tag);
+    if (text !== undefined) node.textContent = text;
+    if (className) node.className = className;
+    return node;
+  }
+
+  function renderStats(stats) {
+    const host = document.getElementById('adminStats');
+    host.replaceChildren();
+    [['المستخدمون', stats.users], ['المشاريع', stats.projects], ['المهام', stats.tasks]].forEach(([label, value]) => {
+      const card = element('article', undefined, 'card dashboard-stat');
+      card.append(element('span', label, 'small'), element('strong', numberFormat.format(value), 'dashboard-stat-value'));
+      host.appendChild(card);
+    });
+  }
+
+  function renderBars(hostId, summaryId, counts, labels) {
+    const host = document.getElementById(hostId);
+    const entries = Object.entries(counts || {}).map(([key, value]) => [key, Number(value)])
+      .filter(([, value]) => Number.isSafeInteger(value) && value >= 0);
+    const total = entries.reduce((sum, [, value]) => sum + value, 0);
+    host.replaceChildren();
+    if (!total) {
+      host.appendChild(element('p', 'لا توجد بيانات كافية لعرض توزيع بعد.', 'small'));
+      document.getElementById(summaryId).textContent = 'سيظهر التحليل عند تسجيل المشاريع.';
+      return;
+    }
+
+    entries.forEach(([key, value]) => {
+      const row = element('div', undefined, 'dashboard-bar-row');
+      const label = element('span', labels[key] || key, 'dashboard-bar-label');
+      const track = element('span', undefined, 'dashboard-bar-track');
+      const fill = element('span', undefined, 'dashboard-bar-fill');
+      fill.style.width = (value / total * 100).toFixed(1) + '%';
+      track.appendChild(fill);
+      row.append(label, track, element('strong', numberFormat.format(value), 'dashboard-bar-value'));
+      host.appendChild(row);
+    });
+
+    const leading = entries.reduce((max, entry) => entry[1] > max[1] ? entry : max);
+    document.getElementById(summaryId).textContent = 'الأكثر تمثيلاً: ' +
+      (labels[leading[0]] || leading[0]) + ' (' + numberFormat.format(leading[1]) + ' من ' +
+      numberFormat.format(total) + ').';
+  }
+
+  function renderProjects(projects) {
+    const host = document.getElementById('projectCards');
+    host.replaceChildren();
+    projects.forEach((project) => {
+      const card = element('article', undefined, 'dashboard-project-card');
+      card.append(element('h3', project.name));
+      if (project.description) card.appendChild(element('p', project.description));
+      const details = [
+        ['نوع المشروع', typeLabels[project.projectType] || project.projectType],
+        ['المرحلة', stageLabels[project.stage] || project.stage],
+        ['المجال', project.industry],
+        ['السوق المستهدف', project.targetMarket],
+        ['المشكلة', project.problem]
+      ].filter(([, value]) => value);
+      if (details.length) {
+        const list = element('dl', undefined, 'dashboard-project-details');
+        details.forEach(([label, value]) => list.append(element('dt', label), element('dd', value)));
+        card.appendChild(list);
+      }
+      card.appendChild(element('span', 'صلاحيتك: ' + (roleLabels[project.role] || 'عضو'), 'badge badge-blue'));
+      host.appendChild(card);
+    });
+  }
+
+  async function loadDashboard() {
+    const status = document.getElementById('dashboardStatus');
+    try {
+      const [{ user }, projectResult, profileResult] = await Promise.all([
+        BD.api('/api/auth/me'),
+        BD.api('/api/projects?limit=50'),
+        BD.api('/api/profile')
+      ]);
+      const projects = projectResult.projects || [];
+      const profile = profileResult.profile || {};
+      const name = profile.displayName || user.displayName || user.email;
+      const isAdmin = ['site_admin', 'main_super_admin'].includes(user.role);
+      document.getElementById('welcomeTitle').textContent = 'أهلاً بك، ' + name;
+      document.getElementById('accountRole').textContent = user.role === 'main_super_admin'
+        ? 'المسؤول الرئيسي'
+        : user.role === 'site_admin' ? 'مسؤول المنصة' : 'مساحة حسابك';
+      document.getElementById('projectsHeading').textContent = isAdmin ? 'مشاريعك' : 'مشاريعك المتاحة';
+      document.getElementById('projectCount').textContent = numberFormat.format(projects.length);
+      if (projects.length) {
+        renderProjects(projects);
+        document.getElementById('projectsSection').hidden = false;
+      } else {
+        document.getElementById('noProjectState').hidden = true;
+      }
+
+      if (isAdmin) {
+        const { stats } = await BD.api('/api/admin/stats');
+        renderStats(stats);
+        renderBars('stageChart', 'stageSummary', stats.projectStages, stageLabels);
+        renderBars('typeChart', 'typeSummary', stats.projectTypes, typeLabels);
+        document.getElementById('adminOverview').hidden = false;
+        document.getElementById('welcomeDescription').textContent =
+          'نظرة عامة وإحصاءات مباشرة للمنصة، مع بيانات مشاريعك الشخصية منفصلة عن إحصاءات جميع المستخدمين.';
+      } else {
+        document.getElementById('welcomeDescription').textContent = projects.length
+          ? 'هذه قائمة بالمشاريع التي تملكها أو تمت إضافتك إليها. بيانات المشاريع خاصة بأعضائها.'
+          : 'لا تحتاج إلى مشروع لإنشاء سيرتك الذاتية أو استخدام حسابك كعميل.';
+        if (!projects.length) document.getElementById('noProjectState').hidden = false;
+      }
+      status.textContent = '';
+    } catch (error) {
+      status.textContent = error.message || 'تعذر تحميل بيانات لوحة التحكم.';
+      status.style.color = 'var(--danger)';
+      console.error('Unable to load account dashboard:', error);
+    }
+  }
+
+  loadDashboard();
+</script>
+</body>
+</html>

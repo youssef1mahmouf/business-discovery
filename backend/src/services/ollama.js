@@ -45,7 +45,7 @@ async function requestOllama(config, pathname, options = {}, fetchImpl = globalT
 }
 
 async function getOllamaStatus(config, fetchImpl) {
-  const model = String(config.ollamaModel || 'llama3.2');
+  const model = String(config.ollamaModel || 'qwen3:4b');
   try {
     const payload = await requestOllama(config, '/api/tags', {}, fetchImpl);
     const models = modelNames(payload);
@@ -75,7 +75,7 @@ async function chatWithOllama(config, messages, options = {}, fetchImpl) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: config.ollamaModel || 'llama3.2',
+      model: config.ollamaModel || 'qwen3:4b',
       stream: false,
       ...(options.format ? { format: options.format } : {}),
       options: {
