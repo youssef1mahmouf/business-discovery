@@ -11,9 +11,10 @@
     "provision:super-admin": "node scripts/promote-super-admin.js"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "cors": "^2.8.5",
-    "express": "^4.21.2",
     "exceljs": "^4.4.0",
+    "express": "^4.21.2",
     "helmet": "^8.0.0",
     "mammoth": "^1.9.0",
     "mongodb": "^6.21.0",
