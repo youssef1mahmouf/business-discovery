@@ -106,8 +106,10 @@ async function updatePublicNavigation(){
   const cta = document.querySelector('.rd-nav-cta');
   if (!cta) return;
   const homepageSignup = document.querySelectorAll('.homepage-signup');
+  const homepageCta = document.querySelector('.home-cta');
   if (!getToken()) return;
   homepageSignup.forEach((element) => { element.hidden = true; });
+  if (homepageCta) homepageCta.hidden = true;
   const payload = tokenPayload();
   let name = payload && payload.email ? payload.email.split('@')[0] : 'حسابي';
   try {
@@ -120,6 +122,7 @@ async function updatePublicNavigation(){
     if (error.status === 401 || error.status === 403) {
       setToken(null);
       homepageSignup.forEach((element) => { element.hidden = false; });
+      if (homepageCta) homepageCta.hidden = false;
       return;
     }
     console.error('Unable to verify homepage account navigation:', error);

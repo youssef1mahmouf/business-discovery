@@ -267,7 +267,7 @@ The design must be responsive and visually consistent with the website.
 
 ## E. 3D Visual Design
 
-The current 3D implementation is inadequate: it appears mostly as a black background with a few disconnected dots.
+The homepage uses a Three.js project-planning scene rather than a decorative globe.
 The target design should be a meaningful, high-quality 3D visual experience.
 Requirements:
 - Proper composition and depth.
@@ -279,6 +279,14 @@ Requirements:
 - Compatibility with the supported platforms.
 If the 3D visual includes controls around the object, ensure that top, bottom, left, and right controls actually work.
 Do not claim that an interactive 3D feature is complete if it is only a static background.
+
+### Current homepage experience
+- The Arabic homepage combines the project-planning Three.js scene with a concise introduction, feature cards, real public statistics, and a three-step getting-started flow.
+- Drag with a mouse or touch to rotate the scene; keyboard arrows and visible rotate/reset controls provide alternatives. Hovering a scene element announces its label.
+- If WebGL is unavailable or reduced motion is enabled, a CSS project map remains visible instead of a blank canvas.
+- The layout stacks at tablet and mobile widths; homepage registration calls to action are hidden for signed-in accounts.
+- Other pages retain a restrained ambient Three.js network, shared dark/light theme support, and consistent depth for buttons, cards, and navigation.
+- Public statistics come only from the public statistics endpoint; the page does not invent display values.
 
 ---
 

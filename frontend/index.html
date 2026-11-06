@@ -1,144 +1,269 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Business Discovery</title>
-<link rel="stylesheet" href="assets/css/main.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080b18">
+  <meta name="description" content="خطّط مشروعك، افهم احتياجاته، وتعاون مع فريقك باستخدام Business Discovery.">
+  <title>Business Discovery | من الفكرة إلى خطة واضحة</title>
+  <link rel="stylesheet" href="assets/css/main.css">
 </head>
-<body>
-<div class="rd-shell">
-  <div class="rd-bg"></div>
-  <div class="rd-grid-overlay"></div>
-  <div class="rd-blob b1"></div>
-  <div class="rd-blob b2"></div>
-  <div class="rd-blob b3"></div>
-  <nav class="rd-nav">
-    <div class="rd-logo"><span class="rd-logo-mark">BD</span><span>Business Discovery</span></div>
-    <div class="rd-nav-links">
-      <a href="index.html">الرئيسية</a>
-      <a href="#features">المنصة</a>
-      <a href="#workflow">كيف تعمل</a>
-      <a href="#stats">إحصاءات حقيقية</a>
-    </div>
-    <div class="rd-nav-cta">
-      <a class="rd-btn ghost" href="login.html">تسجيل الدخول</a>
-    </div>
-  </nav>
-  <main class="rd-container">
-    <section class="rd-hero">
-      <div class="rd-hero-text">
-        <span class="rd-badge">✨ منصة اكتشاف الأعمال</span>
-        <h1>حوّل فكرتك إلى خطة عمل واضحة</h1>
-        <p>نظّم تفاصيل مشروعك، افهم احتياجاته خطوة بخطوة، وتعاون مع فريقك في مساحة واحدة. ابدأ بمشروع أو أنشئ سيرتك الذاتية فقط.</p>
-        <div class="rd-hero-actions">
-          <a class="rd-btn primary homepage-signup" href="register.html">ابدأ الآن</a>
-          <a class="rd-btn ghost" href="#workflow">اكتشف طريقة العمل</a>
+<body class="home-page">
+  <a class="home-skip-link" href="#main">انتقل إلى المحتوى</a>
+  <div class="rd-shell home-shell">
+    <div class="rd-bg" aria-hidden="true"></div>
+    <div class="rd-grid-overlay" aria-hidden="true"></div>
+    <div class="rd-blob b1" aria-hidden="true"></div>
+    <div class="rd-blob b2" aria-hidden="true"></div>
+
+    <header class="home-header">
+      <nav class="rd-nav home-nav" aria-label="التنقل الرئيسي">
+        <a class="rd-logo home-brand" href="index.html" aria-label="Business Discovery — الرئيسية">
+          <span class="rd-logo-mark">BD</span>
+          <span>Business Discovery</span>
+        </a>
+        <div class="rd-nav-links home-nav-links">
+          <a href="#features">المنصة</a>
+          <a href="#workflow">كيف تعمل</a>
+          <a href="#stats">أرقام المنصة</a>
         </div>
-      </div>
-      <div class="rd-hero-visual">
-        <canvas id="hero3d"></canvas>
-        <div class="rd-float-card c1">01 · مساحة مشروعك<small>الفكرة، السوق، والمرحلة</small></div>
-        <div class="rd-float-card c2">02 · تحليل منظّم<small>معلوماتك تبقى ضمن صلاحيات فريقك</small></div>
-      </div>
-    </section>
-    <section class="rd-section" id="features">
-      <div class="rd-section-title">
-        <h2>كل ما تحتاجه في مكان واحد</h2>
-        <p>أدوات قوية لإدارة أعمالك وشراكاتك</p>
-      </div>
-      <div class="rd-features">
-        <div class="rd-feature"><div class="rd-feature-icon">📁</div><h3>المشاريع</h3><p>إنشاء وإدارة المشاريع والأعضاء بسهولة.</p></div>
-        <div class="rd-feature"><div class="rd-feature-icon">👥</div><h3>الأصدقاء</h3><p>إرسال وقبول طلبات الصداقة والتواصل.</p></div>
-        <div class="rd-feature"><div class="rd-feature-icon">✅</div><h3>المهام</h3><p>تتبع المهام والتكليفات والمواعيد.</p></div>
-        <div class="rd-feature"><div class="rd-feature-icon">🔔</div><h3>الإشعارات</h3><p>إشعارات فورية للأحداث المهمة.</p></div>
-      </div>
-    </section>
-    <section class="rd-section" id="stats">
-      <div class="rd-stats">
-        <div class="rd-stat"><div class="num" id="publicUsers">—</div><div class="lbl">عضو مسجل</div></div>
-        <div class="rd-stat"><div class="num" id="publicProjects">—</div><div class="lbl">مشروع نشط</div></div>
-        <div class="rd-stat"><div class="num" id="publicTasks">—</div><div class="lbl">مهمة مسجلة</div></div>
-        <div class="rd-stat"><div class="num" id="publicPartnerships">—</div><div class="lbl">شراكة مؤكدة</div></div>
-      </div>
-      <p id="publicStatsStatus" class="small text-center" role="status" aria-live="polite"></p>
-    </section>
-    <section class="rd-section" id="workflow">
-      <div class="rd-section-title">
-        <h2>ابدأ بالخطوة المناسبة لك</h2>
-        <p>إنشاء مشروع اختياري؛ يمكنك استخدام حسابك وسيرتك الذاتية دون مشروع.</p>
-      </div>
-      <div class="rd-process">
-        <article class="rd-process-step"><strong>١ · أنشئ حسابك</strong><p>أضف بياناتك المهنية إذا رغبت، أو ابدأ بحساب عميل بسيط.</p></article>
-        <article class="rd-process-step"><strong>٢ · أضف مشروعاً عند الجاهزية</strong><p>تظهر أدوات المشروع والتقييم والتحليل بعد إضافة مشروع تملكه أو الانضمام إليه.</p></article>
-        <article class="rd-process-step"><strong>٣ · تابع بياناتك الفعلية</strong><p>لوحات الحساب تعرض معلوماتك المصرح بها، ولوحة الإدارة تعرض أرقام المنصة الحقيقية.</p></article>
-      </div>
-    </section>
-  </main>
-  <footer class="rd-footer">Business Discovery &copy; 2026 — جميع الحقوق محفوظة</footer>
-</div>
-<script src="assets/vendor/gsap.js"></script>
-<script src="assets/js/common.js"></script>
-<script type="module">
-  import { initHero3D } from './src/animations/three-scene.js';
-  import { initLenis } from './src/animations/lenis.js';
-  import { splitReveal } from './src/animations/split-type.js';
-  import { createIcon } from './src/utils/lucide.js';
+        <div class="rd-nav-cta home-nav-actions">
+          <a class="rd-btn ghost home-login" href="login.html">تسجيل الدخول</a>
+          <a class="rd-btn primary homepage-signup home-nav-signup" href="register.html">إنشاء حساب</a>
+        </div>
+      </nav>
+    </header>
 
-  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    <main class="rd-container home-main" id="main">
+      <section class="home-hero" aria-labelledby="homeTitle">
+        <div class="home-hero-copy">
+          <span class="rd-badge home-eyebrow"><span class="home-eyebrow-dot" aria-hidden="true"></span> مساحة عملية لاكتشاف الأعمال</span>
+          <h1 id="homeTitle">ابدأ بفكرة.<br><span>وابنِ خطتك بثقة.</span></h1>
+          <p class="home-intro">اجمع تفاصيل مشروعك، قيّم جاهزيته، ونظّم خطواتك مع فريقك في مكان واحد. لا تحتاج إلى مشروع لتبدأ؛ يمكنك إنشاء حسابك وسيرتك المهنية أولاً.</p>
+          <div class="rd-hero-actions home-actions">
+            <a class="rd-btn primary homepage-signup home-primary-action" href="register.html">
+              <span>ابدأ مجاناً</span><span aria-hidden="true">←</span>
+            </a>
+            <a class="rd-btn ghost home-secondary-action" href="#workflow">تعرّف على المنصة</a>
+          </div>
+          <div class="home-assurances" aria-label="مزايا المنصة">
+            <span><i aria-hidden="true">✓</i> مشروعك اختياري</span>
+            <span><i aria-hidden="true">✓</i> بيانات وصلاحيات واضحة</span>
+            <span><i aria-hidden="true">✓</i> ابدأ من خطوتك الحالية</span>
+          </div>
+        </div>
 
-  const hero = initHero3D('hero3d', { color: 0x35D5F2, innerColor: 0x8B5CF6, particleCount: 150 });
+        <div class="rd-hero-visual home-scene" aria-label="تصور ثلاثي الأبعاد لمراحل تخطيط المشروع">
+          <div class="home-scene-topline" aria-hidden="true">
+            <span class="home-scene-kicker">مساحة التخطيط</span>
+            <span class="home-scene-live"><i></i> تفاعلي</span>
+          </div>
+          <div class="rd-scene-fallback" aria-hidden="true">
+            <div class="rd-fallback-center">مساحة المشروع<span>خطة العمل</span></div>
+            <div class="rd-fallback-node idea">الفكرة</div>
+            <div class="rd-fallback-node market">السوق</div>
+            <div class="rd-fallback-node delivery">التنفيذ</div>
+            <div class="rd-fallback-path path-one"></div>
+            <div class="rd-fallback-path path-two"></div>
+            <div class="rd-fallback-path path-three"></div>
+          </div>
+          <canvas id="hero3d" tabindex="0" aria-label="مشهد ثلاثي الأبعاد لمسار المشروع. اسحب لتدوير المشهد أو استخدم مفاتيح الأسهم." aria-describedby="sceneStatus"></canvas>
+          <div class="home-scene-labels" aria-hidden="true">
+            <span class="home-scene-label label-idea">01 <b>الفكرة</b></span>
+            <span class="home-scene-label label-market">02 <b>السوق</b></span>
+            <span class="home-scene-label label-delivery">03 <b>التنفيذ</b></span>
+          </div>
+          <div class="rd-scene-caption" id="sceneStatus" role="status" aria-live="polite">اسحب لاستكشاف مساحة التخطيط</div>
+          <div class="rd-scene-controls" role="group" aria-label="التحكم بالمشهد">
+            <button type="button" data-scene-turn="-1" aria-label="تدوير المشهد لليسار">↶</button>
+            <button type="button" data-scene-reset>إعادة ضبط</button>
+            <button type="button" data-scene-turn="1" aria-label="تدوير المشهد لليمين">↷</button>
+          </div>
+        </div>
+      </section>
 
-  if (!reduce) initLenis({ duration: 1.2 });
-  loadPublicStats();
+      <section class="home-section" id="features" aria-labelledby="featuresTitle">
+        <div class="home-section-heading">
+          <span class="home-section-kicker">مساحة واحدة، خطوات أوضح</span>
+          <h2 id="featuresTitle">من تنظيم الفكرة إلى متابعة العمل</h2>
+          <p>أدوات عملية تساعدك على بناء صورة أوضح عن مشروعك والتعاون حوله.</p>
+        </div>
+        <div class="home-feature-grid">
+          <article class="home-feature-card">
+            <div class="home-feature-icon" aria-hidden="true"><span class="rd-feature-icon"></span></div>
+            <span class="home-card-index">01</span>
+            <h3>مساحة للمشروع</h3>
+            <p>اجمع وصف المشروع ومرحلته وأعضاءه في مساحة منظمة واحدة.</p>
+          </article>
+          <article class="home-feature-card">
+            <div class="home-feature-icon" aria-hidden="true"><span class="rd-feature-icon"></span></div>
+            <span class="home-card-index">02</span>
+            <h3>تقييم يساعدك على الفهم</h3>
+            <p>أجب عن أسئلة منظّمة لتحديد الجوانب التي تحتاج إلى مزيد من الدراسة.</p>
+          </article>
+          <article class="home-feature-card">
+            <div class="home-feature-icon" aria-hidden="true"><span class="rd-feature-icon"></span></div>
+            <span class="home-card-index">03</span>
+            <h3>تنسيق العمل مع الفريق</h3>
+            <p>نظّم المهام والمشاركين وتابع التحديثات ضمن صلاحيات واضحة.</p>
+          </article>
+          <article class="home-feature-card">
+            <div class="home-feature-icon" aria-hidden="true"><span class="rd-feature-icon"></span></div>
+            <span class="home-card-index">04</span>
+            <h3>ملف مهني مستقل</h3>
+            <p>أنشئ سيرتك الذاتية واحتفظ بملفك المهني حتى قبل إضافة مشروع.</p>
+          </article>
+        </div>
+      </section>
 
-  if (!reduce && window.gsap) {
-    try { splitReveal('.rd-hero-text h1', window.gsap, { delay: 0.2, stagger: 0.03, duration: 0.5 }); }
-    catch (e) { console.warn('SplitType failed', e); }
-  }
+      <section class="home-stats-section" id="stats" aria-labelledby="statsTitle">
+        <div class="home-stats-heading">
+          <div>
+            <span class="home-section-kicker">بشفافية</span>
+            <h2 id="statsTitle">أرقام المنصة الفعلية</h2>
+          </div>
+          <p>تُحمّل الإحصاءات من بيانات المنصة، ولا تُعرض أرقام تقديرية.</p>
+        </div>
+        <div class="rd-stats home-stats">
+          <div class="rd-stat home-stat"><div class="num" id="publicUsers">—</div><div class="lbl">عضو مسجل</div></div>
+          <div class="rd-stat home-stat"><div class="num" id="publicProjects">—</div><div class="lbl">مشروع نشط</div></div>
+          <div class="rd-stat home-stat"><div class="num" id="publicTasks">—</div><div class="lbl">مهمة مسجلة</div></div>
+          <div class="rd-stat home-stat"><div class="num" id="publicPartnerships">—</div><div class="lbl">شراكة مؤكدة</div></div>
+        </div>
+        <p id="publicStatsStatus" class="home-stats-status" role="status" aria-live="polite"></p>
+      </section>
 
-  document.querySelectorAll('.rd-feature-icon').forEach((el, i) => {
-    const names = ['Folder', 'Users', 'CheckCircle', 'Bell'];
-    const icon = createIcon(names[i] || 'Star', { size: 24, color: 'currentColor' });
-    el.innerHTML = '';
-    el.appendChild(icon);
-  });
+      <section class="home-section home-workflow-section" id="workflow" aria-labelledby="workflowTitle">
+        <div class="home-section-heading">
+          <span class="home-section-kicker">ابدأ على مهل</span>
+          <h2 id="workflowTitle">مسار بسيط يناسب احتياجك</h2>
+          <p>اختر ما تحتاجه الآن، وأضف المزيد عندما تكون مستعداً.</p>
+        </div>
+        <ol class="home-workflow">
+          <li class="home-step-card">
+            <span class="home-step-number">01</span>
+            <div><h3>أنشئ حسابك</h3><p>أضف بياناتك الأساسية، ويمكنك استكمال ملفك المهني لاحقاً.</p></div>
+          </li>
+          <li class="home-step-card">
+            <span class="home-step-number">02</span>
+            <div><h3>اختر مسارك</h3><p>أنشئ مشروعاً، انضم إلى فريق، أو استخدم السيرة الذاتية دون مشروع.</p></div>
+          </li>
+          <li class="home-step-card">
+            <span class="home-step-number">03</span>
+            <div><h3>تابع عملك</h3><p>ارجع إلى لوحة التحكم لمتابعة ما يخص حسابك ومشاريعك.</p></div>
+          </li>
+        </ol>
+      </section>
 
-  if (!reduce && window.gsap) {
-    try {
-      window.gsap.from('.rd-hero-text > :not(h1)', { opacity: 0, y: 30, duration: 0.8, stagger: 0.12, ease: 'power3.out' });
-      window.gsap.from('.rd-feature', { opacity: 0, y: 40, duration: 0.7, stagger: 0.1, delay: 0.3, ease: 'power3.out' });
-      window.gsap.from('.rd-float-card', { opacity: 0, scale: 0.8, duration: 0.6, delay: 0.6, stagger: 0.15 });
-    } catch (e) { console.warn(e); }
-  }
+      <section class="home-cta" aria-labelledby="ctaTitle">
+        <div>
+          <span class="home-section-kicker">خطوتك التالية تبدأ منك</span>
+          <h2 id="ctaTitle">هل أنت مستعد لتنظيم فكرتك؟</h2>
+          <p>أنشئ حسابك وابدأ بالأدوات التي تحتاجها الآن.</p>
+        </div>
+        <a class="rd-btn primary homepage-signup home-primary-action" href="register.html"><span>إنشاء حساب مجاني</span><span aria-hidden="true">←</span></a>
+      </section>
+    </main>
 
-  window.addEventListener('beforeunload', () => { if (hero) hero.dispose(); });
+    <footer class="home-footer">
+      <a class="rd-logo home-brand" href="index.html"><span class="rd-logo-mark">BD</span><span>Business Discovery</span></a>
+      <span class="rd-footer">Business Discovery © 2026 — جميع الحقوق محفوظة</span>
+      <a href="login.html">تسجيل الدخول</a>
+    </footer>
+  </div>
 
-  async function loadPublicStats() {
-    const fields = {
-      users: document.getElementById('publicUsers'),
-      projects: document.getElementById('publicProjects'),
-      tasks: document.getElementById('publicTasks'),
-      partnerships: document.getElementById('publicPartnerships'),
-    };
-    const status = document.getElementById('publicStatsStatus');
-    try {
-      const response = await fetch('/api/public/stats');
-      if (!response.ok) throw new Error('Public statistics request failed: ' + response.status);
-      const { stats } = await response.json();
-      Object.entries(fields).forEach(([key, element]) => {
-        const value = stats && stats[key];
-        if (!element || !Number.isSafeInteger(value) || value < 0) {
-          throw new Error('Public statistics response is invalid.');
-        }
-        element.textContent = new Intl.NumberFormat('en').format(value);
-      });
-      if (status) status.textContent = '';
-    } catch (error) {
-      Object.values(fields).forEach((element) => { if (element) element.textContent = '—'; });
-      if (status) status.textContent = 'الإحصاءات غير متاحة حالياً';
-      console.error('Unable to load public statistics:', error);
+  <script src="assets/vendor/gsap.js"></script>
+  <script src="assets/js/common.js"></script>
+  <script type="module">
+    import { initHero3D } from './src/animations/three-scene.js';
+    import { initLenis } from './src/animations/lenis.js';
+    import { createIcon } from './src/utils/lucide.js';
+
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const hero = initHero3D('hero3d', {
+      variant: 'business',
+      color: 0x35d5f2,
+      innerColor: 0x8b5cf6,
+      rotationSpeed: 0.00045,
+      pixelRatioCap: 1.5,
+    });
+    const sceneCanvas = document.getElementById('hero3d');
+    const sceneVisual = sceneCanvas.closest('.home-scene');
+    const sceneStatus = document.getElementById('sceneStatus');
+
+    if (hero && hero.renderer) {
+      sceneVisual.classList.add('has-3d');
+    } else {
+      sceneCanvas.tabIndex = -1;
+      sceneCanvas.setAttribute('aria-hidden', 'true');
+      sceneVisual.querySelector('.rd-scene-controls').hidden = true;
     }
-  }
-</script>
+
+    sceneCanvas.addEventListener('scenehover', (event) => {
+      if (sceneStatus) {
+        sceneStatus.textContent = event.detail.label || 'اسحب لاستكشاف مساحة التخطيط';
+      }
+    });
+    document.querySelectorAll('[data-scene-turn]').forEach((button) => {
+      button.addEventListener('click', () => {
+        if (hero) hero.rotateBy(Number(button.dataset.sceneTurn) * 0.45);
+      });
+    });
+    document.querySelector('[data-scene-reset]').addEventListener('click', () => {
+      if (hero) hero.resetView();
+      if (sceneStatus) sceneStatus.textContent = 'اسحب لاستكشاف مساحة التخطيط';
+    });
+
+    document.querySelectorAll('.home-feature-icon .rd-feature-icon').forEach((element, index) => {
+      const icons = ['FolderKanban', 'ClipboardCheck', 'UsersRound', 'ContactRound'];
+      element.appendChild(createIcon(icons[index], { size: 23, color: 'currentColor' }));
+    });
+
+    if (!reduceMotion) {
+      initLenis({ duration: 1.1 });
+      if (window.gsap) {
+        window.gsap.from('.home-hero-copy > *', {
+          opacity: 0,
+          y: 18,
+          duration: 0.7,
+          stagger: 0.08,
+          ease: 'power2.out',
+          clearProps: 'all',
+        });
+      }
+    }
+
+    loadPublicStats();
+    window.addEventListener('beforeunload', () => {
+      if (hero) hero.dispose();
+    }, { once: true });
+
+    async function loadPublicStats() {
+      const fields = {
+        users: document.getElementById('publicUsers'),
+        projects: document.getElementById('publicProjects'),
+        tasks: document.getElementById('publicTasks'),
+        partnerships: document.getElementById('publicPartnerships'),
+      };
+      const status = document.getElementById('publicStatsStatus');
+      try {
+        const response = await fetch('/api/public/stats');
+        if (!response.ok) throw new Error('Public statistics request failed: ' + response.status);
+        const { stats } = await response.json();
+        Object.entries(fields).forEach(([key, element]) => {
+          const value = stats && stats[key];
+          if (!Number.isSafeInteger(value) || value < 0) {
+            throw new Error('Public statistics response is invalid.');
+          }
+          element.textContent = new Intl.NumberFormat('en').format(value);
+        });
+        if (status) status.textContent = '';
+      } catch (error) {
+        Object.values(fields).forEach((element) => { element.textContent = '—'; });
+        if (status) status.textContent = 'الإحصاءات غير متاحة حالياً';
+        console.error('Unable to load public statistics:', error);
+      }
+    }
+  </script>
 </body>
 </html>
