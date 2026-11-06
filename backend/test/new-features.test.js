@@ -377,6 +377,26 @@ test('role dashboards and system information are served as dedicated pages', asy
   }
 });
 
+test('commerce tools are available as separate pages with the shared commerce client', async (t) => {
+  const app = await setup(t);
+  const pages = [
+    ['/commerce.html', 'commerce-summary.html'],
+    ['/commerce-summary.html', 'commerceSummary'],
+    ['/commerce-settings.html', 'sellerSettingsForm'],
+    ['/commerce-products.html', 'productForm'],
+    ['/commerce-import.html', 'productImportFile'],
+    ['/commerce-orders.html', 'ordersList'],
+    ['/commerce-platform-settings.html', 'adminPaymentForm']
+  ];
+  for (const [pathname, content] of pages) {
+    const response = await app.request(null, pathname);
+    assert.equal(response.status, 200, pathname);
+    const html = await response.text();
+    assert.match(html, new RegExp(content), pathname);
+    assert.match(html, /assets\/js\/commerce\.js/, pathname);
+  }
+});
+
 test('missing frontend paths return a real 404 page instead of the homepage', async (t) => {
   const app = await setup(t);
   const response = await app.request(null, '/a-page-that-does-not-exist.html');

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>منتجاتي | Business Discovery</title>
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="bdSidebar"><div class="sidebar-brand"><div class="brand-icon">BD</div><span class="brand-text">Business Discovery</span></div><button class="sidebar-toggle" id="bdCollapseBtn" type="button" aria-label="طي القائمة">⇔</button><nav class="sidebar-nav" id="bdSidebarNav"></nav><div class="sidebar-footer">© 2026</div></aside>
+  <div class="sidebar-overlay" id="bdOverlay"></div>
+  <div class="main-area">
+    <header class="topbar" id="bdTopbar"><button class="mobile-menu-btn" id="bdMenuBtn" type="button" aria-label="فتح القائمة">☰</button><div class="topbar-left"><h1 class="page-title" id="bdPageTitle"></h1></div><div class="topbar-actions"><a href="notifications.html" class="icon-btn" aria-label="الإشعارات">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a><div class="profile-menu"><button class="profile-btn" id="bdProfileBtn" type="button">👤 <span id="bdUserEmail"></span></button><div class="profile-dropdown" id="bdProfileDropdown"><a href="settings.html">الإعدادات</a><a href="#" id="bdLogout">تسجيل الخروج</a></div></div></div></header>
+    <main class="content" id="bdContent"><div class="container">
+      <nav class="commerce-page-nav card" aria-label="صفحات المتجر">
+        <a href="commerce.html">المتجر والعمليات</a><a href="commerce-summary.html">ملخص المبيعات</a><a href="commerce-settings.html">إعدادات الاستلام</a><a href="commerce-products.html" aria-current="page">منتجاتي</a><a href="commerce-import.html">استيراد المنتجات</a><a href="commerce-orders.html">الطلبات والتحويلات</a>
+      </nav>
+      <section class="card" id="products">
+        <div class="card-header"><h2>منتجاتي</h2><span id="productCount" class="badge badge-blue">0</span></div>
+        <div id="productList" aria-live="polite"></div>
+        <h3 class="mt-16">إضافة منتج</h3>
+        <form id="productForm" class="profile-form-grid">
+          <div><label class="label" for="productName">اسم المنتج</label><input class="input" id="productName" maxlength="160" required></div>
+          <div><label class="label" for="productPrice">السعر بالجنيه المصري</label><input class="input" id="productPrice" type="number" min="0.01" step="0.01" required></div>
+          <div class="wide"><label class="label" for="productDescription">الوصف</label><textarea class="input" id="productDescription" rows="3" maxlength="2000"></textarea></div>
+          <div><button class="btn btn-primary" type="submit">إضافة المنتج</button></div>
+        </form>
+        <p id="productStatus" class="small" role="status" aria-live="polite"></p>
+      </section>
+    </div></main>
+    <footer class="app-footer">Business Discovery</footer>
+  </div>
+</div>
+<script src="assets/js/common.js"></script><script src="assets/js/layout.js"></script><script src="assets/js/commerce.js"></script>
+</body>
+</html>

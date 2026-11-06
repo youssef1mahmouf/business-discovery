@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ملخص المبيعات | Business Discovery</title>
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="bdSidebar"><div class="sidebar-brand"><div class="brand-icon">BD</div><span class="brand-text">Business Discovery</span></div><button class="sidebar-toggle" id="bdCollapseBtn" type="button" aria-label="طي القائمة">⇔</button><nav class="sidebar-nav" id="bdSidebarNav"></nav><div class="sidebar-footer">© 2026</div></aside>
+  <div class="sidebar-overlay" id="bdOverlay"></div>
+  <div class="main-area">
+    <header class="topbar" id="bdTopbar"><button class="mobile-menu-btn" id="bdMenuBtn" type="button" aria-label="فتح القائمة">☰</button><div class="topbar-left"><h1 class="page-title" id="bdPageTitle"></h1></div><div class="topbar-actions"><a href="notifications.html" class="icon-btn" aria-label="الإشعارات">🔔<span class="badge-count" id="bdNotifCount" style="display:none"></span></a><div class="profile-menu"><button class="profile-btn" id="bdProfileBtn" type="button">👤 <span id="bdUserEmail"></span></button><div class="profile-dropdown" id="bdProfileDropdown"><a href="settings.html">الإعدادات</a><a href="#" id="bdLogout">تسجيل الخروج</a></div></div></div></header>
+    <main class="content" id="bdContent"><div class="container">
+      <nav class="commerce-page-nav card" aria-label="صفحات المتجر">
+        <a href="commerce.html">المتجر والعمليات</a><a href="commerce-summary.html" aria-current="page">ملخص المبيعات</a><a href="commerce-settings.html">إعدادات الاستلام</a><a href="commerce-products.html">منتجاتي</a><a href="commerce-import.html">استيراد المنتجات</a><a href="commerce-orders.html">الطلبات والتحويلات</a>
+      </nav>
+      <section class="card">
+        <div class="card-header"><div><h2>ملخص المبيعات</h2><p>يعتمد على التحويلات التي راجعها البائع يدوياً فقط.</p></div></div>
+        <div id="commerceSummary" aria-live="polite">جارٍ تحميل الملخص…</div>
+      </section>
+    </div></main>
+    <footer class="app-footer">Business Discovery</footer>
+  </div>
+</div>
+<script src="assets/js/common.js"></script><script src="assets/js/layout.js"></script><script src="assets/js/commerce.js"></script>
+</body>
+</html>

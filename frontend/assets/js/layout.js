@@ -24,7 +24,7 @@
     } catch(e){ return null; }
   }
   function pageTitles(){
-    const map = { 'index.html':'الرئيسية','dashboard.html':'لوحة التحكم','projects.html':'المشاريع','participants.html':'المشاركون','friends.html':'الأصدقاء','partners.html':'الشركاء','tasks.html':'المهام','notifications.html':'الإشعارات','chat.html':'الدردشة','settings.html':'الإعدادات','system.html':'معلومات النظام','admin.html':'الإدارة','profile.html':'السيرة الذاتية','assessment.html':'تقييم المشروع','assistant.html':'مساعد الأعمال','commerce.html':'المنتجات والمدفوعات','register.html':'إنشاء حساب' };
+    const map = { 'index.html':'الرئيسية','dashboard.html':'لوحة التحكم','projects.html':'المشاريع','participants.html':'المشاركون','friends.html':'الأصدقاء','partners.html':'الشركاء','tasks.html':'المهام','notifications.html':'الإشعارات','chat.html':'الدردشة','settings.html':'الإعدادات','system.html':'معلومات النظام','admin.html':'الإدارة','profile.html':'السيرة الذاتية','assessment.html':'تقييم المشروع','assistant.html':'مساعد الأعمال','commerce.html':'المنتجات والمدفوعات','commerce-summary.html':'ملخص المبيعات','commerce-settings.html':'إعدادات الاستلام','commerce-products.html':'منتجاتي','commerce-import.html':'استيراد منتجات للمراجعة','commerce-orders.html':'الطلبات والتحويلات','commerce-platform-settings.html':'إعدادات دفع المنصة','register.html':'إنشاء حساب' };
     const name = (location.pathname.split('/').pop() || 'index.html');
     return map[name] || document.title || 'Business Discovery';
   }
@@ -80,7 +80,7 @@
 
     const current = (location.pathname.split('/').pop() || 'dashboard.html');
     nav.innerHTML = items.map((item) => {
-      const active = item.href === current ? 'active' : '';
+      const active = item.href === current || (item.href === 'commerce.html' && current.indexOf('commerce-') === 0) ? 'active' : '';
       return '<a class="nav-item ' + active + '" href="' + item.href + '"><span class="nav-icon">' +
         icons[item.icon] + '</span><span class="nav-label">' + item.label + '</span></a>';
     }).join('');

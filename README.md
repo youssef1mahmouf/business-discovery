@@ -37,7 +37,7 @@ Current scope verified from source code:
 - Email/password authentication with signed tokens.
 - Role-based authorization: regular_user, site_admin, main_super_admin.
 - Backend database role is the source of truth for authorization.
-- 20 application pages plus a custom 404 page, including role-aware dashboards, private CV/profile management, project assessment, an Ollama planning assistant, system information, product management, and a public shop.
+- 26 application pages plus a custom 404 page, including role-aware dashboards, private CV/profile management, project assessment, an Ollama planning assistant, system information, separate commerce management pages, and a public shop.
 - 18 MongoDB collections, including project assessments, products, and orders.
 - Project-linked task completion requires project-manager approval.
 - Product and order workflows are limited to Egyptian pounds and manually verified InstaPay transfers; no payment is confirmed automatically.
@@ -49,10 +49,10 @@ The private profile can be shared only through a revocable random-token link and
 ## 2. Technology Stack
 
 ### Frontend
-- Static HTML pages (20 application pages, plus a custom 404 page; responsive glass interface with Three.js visual scenes and reduced-motion support).
-- Vanilla JavaScript (frontend/assets/js/common.js, frontend/assets/js/layout.js).
+- Static HTML pages (26 application pages, plus a custom 404 page; responsive glass interface with Three.js visual scenes and reduced-motion support).
+- Vanilla JavaScript (`frontend/assets/js/common.js`, `frontend/assets/js/layout.js`, `frontend/assets/js/commerce.js`).
 - CSS (frontend/assets/css/main.css) — centralized design system with CSS variables, glassmorphism, reusable components.
-- Vendor libraries: GSAP, Lenis, Three.js, Lucide, SplitType.
+- Local vendor libraries: Three.js for interactive 3D scenes, GSAP for page motion and card interactions, Lenis for smooth scrolling, and Lucide icons. Shared design and motion preferences work across the site; reduced-motion preferences disable decorative animation.
 
 ### Backend
 - Node.js (built-in http module).
@@ -1613,7 +1613,7 @@ Admin:
 
 ## 8. Frontend
 
-Main pages (18 functional HTML files; `404.html` is the not-found page):
+Main pages (`404.html` is the not-found page):
 
 - `index.html` — landing page
 - `login.html`, `register.html` — authentication
@@ -1629,7 +1629,13 @@ Main pages (18 functional HTML files; `404.html` is the not-found page):
 - `register.html` — account details, CV/profile information, and optional first-project creation
 - `assessment.html` — the 100-question project assessment
 - `assistant.html` — project-scoped Ollama chat and recommendations
-- `commerce.html` — products, import drafts, seller settings, orders, and payment administration
+- `commerce.html` — commerce navigation hub
+- `commerce-summary.html` — confirmed sales summary
+- `commerce-settings.html` — seller payment-receiving settings
+- `commerce-products.html` — product creation and management
+- `commerce-import.html` — product import preview and draft review
+- `commerce-orders.html` — orders and manual transfer verification
+- `commerce-platform-settings.html` — main-super-admin payment provider and commission settings
 - `shop.html` — public seller storefront and manual-transfer checkout
 
 Authentication state:

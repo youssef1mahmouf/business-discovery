@@ -25,6 +25,7 @@ export class ThreeSceneManager {
     this.animationFrame = null;
     this.disposed = false;
     this.targetRotation = { x: -0.24, y: -0.24 };
+    this.pointerOffset = { x: 0, y: 0 };
     this.drag = null;
     this.rings = [];
     this.interactiveMeshes = [];
@@ -37,6 +38,7 @@ export class ThreeSceneManager {
     this.boundPointerMove = this.onPointerMove.bind(this);
     this.boundPointerUp = this.onPointerUp.bind(this);
     this.boundKeyDown = this.onKeyDown.bind(this);
+    this.boundViewportPointerMove = this.onViewportPointerMove.bind(this);
     this.boundVisibilityChange = () => {
       if (document.hidden) {
         if (this.animationFrame !== null) cancelAnimationFrame(this.animationFrame);
@@ -86,6 +88,9 @@ export class ThreeSceneManager {
       this.canvas.addEventListener('keydown', this.boundKeyDown);
       window.addEventListener('resize', this.boundResize, { passive: true });
       document.addEventListener('visibilitychange', this.boundVisibilityChange);
+      if (this.options.pointerTracking) {
+        window.addEventListener('pointermove', this.boundViewportPointerMove, { passive: true });
+      }
       this.animate();
       return true;
     } catch (error) {
@@ -300,6 +305,11 @@ export class ThreeSceneManager {
     }
   }
 
+  onViewportPointerMove(event) {
+    this.pointerOffset.x = ((event.clientY / Math.max(window.innerHeight, 1)) - 0.5) * 0.1;
+    this.pointerOffset.y = ((event.clientX / Math.max(window.innerWidth, 1)) - 0.5) * 0.14;
+  }
+
   updateHover() {
     if (!this.camera || !this.interactiveMeshes.length || this.drag) return;
     this.raycaster.setFromCamera(this.pointerPosition, this.camera);
@@ -368,8 +378,10 @@ export class ThreeSceneManager {
     if (this.disposed || !this.renderer || document.hidden) return;
     this.animationFrame = requestAnimationFrame(this.boundAnimate);
     this.targetRotation.y += this.options.rotationSpeed;
-    this.group.rotation.x += (this.targetRotation.x - this.group.rotation.x) * 0.045;
-    this.group.rotation.y += (this.targetRotation.y - this.group.rotation.y) * 0.045;
+    const pointerX = this.options.pointerTracking ? this.pointerOffset.x : 0;
+    const pointerY = this.options.pointerTracking ? this.pointerOffset.y : 0;
+    this.group.rotation.x += (this.targetRotation.x + pointerX - this.group.rotation.x) * 0.045;
+    this.group.rotation.y += (this.targetRotation.y + pointerY - this.group.rotation.y) * 0.045;
     this.rings.forEach((ring, index) => {
       ring.rotation.z += this.options.rotationSpeed * (index % 2 ? -0.8 : 0.65);
     });
@@ -387,6 +399,7 @@ export class ThreeSceneManager {
     this.canvas.removeEventListener('pointercancel', this.boundPointerUp);
     this.canvas.removeEventListener('keydown', this.boundKeyDown);
     window.removeEventListener('resize', this.boundResize);
+    window.removeEventListener('pointermove', this.boundViewportPointerMove);
     document.removeEventListener('visibilitychange', this.boundVisibilityChange);
 
     if (this.scene) {

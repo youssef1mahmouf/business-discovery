@@ -167,7 +167,8 @@ function initPageScene(){
         innerColor,
         particleCount: 48,
         pixelRatioCap: 1.15,
-        rotationSpeed: 0.00035,
+        rotationSpeed: 0.00018,
+        pointerTracking: true,
       });
       if (!scene.init()) canvas.remove();
       window.addEventListener('beforeunload', () => scene.dispose(), { once: true });
@@ -176,6 +177,76 @@ function initPageScene(){
       canvas.remove();
       console.error('Unable to load the page background scene:', error);
     });
+}
+
+function loadLocalScript(relativePath) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = new URL(relativePath, commonScriptUrl).href;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error('Unable to load local animation library: ' + relativePath));
+    document.head.appendChild(script);
+  });
+}
+
+function initSharedMotion() {
+  if (document.body.classList.contains('home-page')) return;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  import(new URL('../../src/animations/lenis.js', commonScriptUrl).href)
+    .then(({ initLenis, destroyLenis }) => {
+      if (initLenis()) {
+        window.addEventListener('beforeunload', destroyLenis, { once: true });
+      }
+    })
+    .catch((error) => console.error('Unable to initialize smooth page scrolling:', error));
+
+  loadLocalScript('../vendor/gsap.js')
+    .then(() => {
+      if (!window.gsap) throw new Error('GSAP loaded without exposing its animation API.');
+      const gsap = window.gsap;
+      const sections = Array.from(document.querySelectorAll(
+        '.main-area .content > .container > .card, .main-area .content > .container > section:not([hidden]), .rd-auth-card'
+      )).filter((element) => !element.hidden);
+
+      if (sections.length) {
+        gsap.from(sections, {
+          autoAlpha: 0,
+          y: 16,
+          duration: 0.55,
+          stagger: 0.07,
+          ease: 'power2.out',
+          clearProps: 'opacity,visibility,transform',
+        });
+      }
+
+      document.querySelectorAll('.settings-card, .dashboard-stat').forEach((card) => {
+        card.addEventListener('pointermove', (event) => {
+          if (event.pointerType === 'touch') return;
+          const bounds = card.getBoundingClientRect();
+          const x = (event.clientX - bounds.left) / bounds.width - 0.5;
+          const y = (event.clientY - bounds.top) / bounds.height - 0.5;
+          gsap.to(card, {
+            rotationY: x * 3,
+            rotationX: y * -3,
+            y: -3,
+            duration: 0.25,
+            overwrite: 'auto',
+          });
+        });
+        card.addEventListener('pointerleave', () => {
+          gsap.to(card, {
+            rotationX: 0,
+            rotationY: 0,
+            y: 0,
+            duration: 0.35,
+            ease: 'power2.out',
+            overwrite: 'auto',
+          });
+        });
+      });
+    })
+    .catch((error) => console.error('Unable to initialize shared page animations:', error));
 }
 
 function updateFooterText() {
@@ -191,4 +262,5 @@ document.addEventListener('DOMContentLoaded', () => {
   updateFooterText();
   updatePublicNavigation();
   initPageScene();
+  initSharedMotion();
 });
