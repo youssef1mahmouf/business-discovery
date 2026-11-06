@@ -1,5 +1,6 @@
 window.BD_API_BASE = window.BD_API_BASE || (location.hostname === 'localhost' ? 'http://localhost:3000' : '');
 const API = window.BD_API_BASE;
+const commonScriptUrl = document.currentScript ? document.currentScript.src : document.baseURI;
 const storedTheme = localStorage.getItem('bd_theme');
 if (storedTheme === 'light') document.documentElement.dataset.theme = 'light';
 function getToken(){ return localStorage.getItem('bd_token'); }
@@ -158,7 +159,8 @@ function initPageScene(){
   const palette = palettes.find(([pattern]) => pattern.test(path));
   const color = palette ? palette[1] : 0x35d5f2;
   const innerColor = palette ? palette[2] : 0x8b5cf6;
-  import('/src/animations/three-scene.js')
+  const sceneModuleUrl = new URL('../../src/animations/three-scene.js', commonScriptUrl);
+  import(sceneModuleUrl.href)
     .then(({ ThreeSceneManager }) => {
       const scene = new ThreeSceneManager(canvas, {
         color,

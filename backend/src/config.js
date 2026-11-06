@@ -68,8 +68,18 @@ function validateConfig(env = process.env) {
     throw e;
   }
 
-  // SMTP email configuration (optional; required for password recovery)
+  // Email configuration (optional; required for password recovery).
+  const emailProvider = String(env.EMAIL_PROVIDER || 'smtp').trim().toLowerCase();
+  if (!['smtp', 'brevo'].includes(emailProvider)) {
+    const e = new Error('EMAIL_PROVIDER must be smtp or brevo');
+    e.name = 'ConfigValidationError';
+    throw e;
+  }
   const smtpConfig = {
+    provider: emailProvider,
+    apiKey: String(env.BREVO_API_KEY || '').trim(),
+    fromEmail: String(env.BREVO_FROM_EMAIL || '').trim(),
+    fromName: String(env.BREVO_FROM_NAME || '').trim(),
     host: String(env.SMTP_HOST || '').trim(),
     port: Number(env.SMTP_PORT || 587),
     user: String(env.SMTP_USER || '').trim(),

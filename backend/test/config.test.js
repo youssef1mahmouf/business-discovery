@@ -24,6 +24,35 @@ test('development uses safe local defaults', () => {
   assert.equal(config.dbName, 'business_discovery');
   assert.equal(config.ollamaModel, 'qwen3:4b');
   assert.equal(config.jsonFallbackDir, path.resolve(__dirname, '..', 'data', 'fallback'));
+  assert.equal(config.smtpConfig.provider, 'smtp');
+});
+
+test('Brevo email settings are loaded without requiring secrets in the repository', () => {
+  const config = validateConfig({
+    MONGODB_URI: 'mongodb://127.0.0.1:27017/test',
+    EMAIL_PROVIDER: 'brevo',
+    BREVO_API_KEY: 'test-api-key',
+    BREVO_FROM_EMAIL: 'noreply@example.com',
+    BREVO_FROM_NAME: 'Business Discovery'
+  });
+  assert.deepEqual(config.smtpConfig, {
+    provider: 'brevo',
+    apiKey: 'test-api-key',
+    fromEmail: 'noreply@example.com',
+    fromName: 'Business Discovery',
+    host: '',
+    port: 587,
+    user: '',
+    pass: '',
+    from: ''
+  });
+});
+
+test('email provider configuration rejects unsupported values', () => {
+  assert.throws(() => validateConfig({
+    MONGODB_URI: 'mongodb://127.0.0.1:27017/test',
+    EMAIL_PROVIDER: 'unknown'
+  }), /EMAIL_PROVIDER must be smtp or brevo/);
 });
 
 test('relative JSON fallback directory is stable from repository root', () => {

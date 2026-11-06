@@ -3,21 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="bd-site-base" content="/business-discovery/">
+  <script>
+    const configuredBase = document.querySelector('meta[name="bd-site-base"]').content;
+    const siteBase = location.hostname === 'youssef1mahmouf.github.io' ? configuredBase : '/';
+    const baseElement = document.createElement('base');
+    baseElement.href = siteBase;
+    document.head.appendChild(baseElement);
+  </script>
   <title>الصفحة غير موجودة | Business Discovery</title>
-  <link rel="stylesheet" href="/assets/css/main.css">
+  <link rel="stylesheet" href="assets/css/main.css">
 </head>
 <body>
   <main class="rd-auth">
     <section class="rd-auth-card">
-      <a class="rd-logo" href="/"><span class="rd-logo-mark">BD</span><span>Business Discovery</span></a>
+      <a class="rd-logo" href="index.html"><span class="rd-logo-mark">BD</span><span>Business Discovery</span></a>
       <h1>الصفحة غير موجودة</h1>
       <p class="sub">قد يكون الرابط قديماً أو أن الصفحة نُقلت. اختر إحدى الصفحات التالية للمتابعة.</p>
       <div class="flex gap-8">
-        <a class="rd-btn primary" href="/">الرئيسية</a>
-        <a class="rd-btn ghost" href="/login.html">تسجيل الدخول</a>
+        <a class="rd-btn primary" href="index.html">الرئيسية</a>
+        <a class="rd-btn ghost" href="login.html">تسجيل الدخول</a>
       </div>
     </section>
   </main>
-  <script src="/assets/js/common.js"></script>
+  <script src="assets/js/common.js"></script>
 </body>
 </html>

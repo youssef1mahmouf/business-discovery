@@ -59,7 +59,9 @@ function register(router, ctx) {
     const identifier = String(body.identifier || body.email || body.username || '').trim().toLowerCase();
     const password = String(body.password || '');
     const users = ctx.db.get('users');
-    const user = await users.findOne({ email: identifier }) || await users.findOne({ username: identifier });
+    const user = await users.findOne({
+      $or: [{ email: identifier }, { username: identifier }]
+    });
     if (!user || !verifyPassword(password, user.passwordHash)) {
       return sendJson(res, 401, { error: 'invalid_credentials' }, origin);
     }

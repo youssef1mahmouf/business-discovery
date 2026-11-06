@@ -7,7 +7,7 @@ const { ObjectId } = require('mongodb');
 const { HybridMongoDatabase } = require('../src/db/mongo');
 const { clone, deepEqual, matches } = require('../src/db/hybrid-collection');
 const { createApp } = require('../src/app');
-const { signToken } = require('../src/services/auth');
+const { hashPassword, signToken } = require('../src/services/auth');
 
 function networkError() {
   const error = new Error('test database is unavailable');
@@ -171,6 +171,53 @@ test('existing account routes continue to register and authenticate during an ou
   });
   assert.equal(login.status, 200);
   assert.equal((await login.json()).user.email, 'api-offline@example.com');
+});
+
+test('persisted JSON users can sign in by email or username while MongoDB is unavailable', async (t) => {
+  const backend = createBackend();
+  const directory = temporaryDirectory(t);
+  const manager = await createManager(t, backend, directory);
+  await manager.collections.users.insertOne({
+    email: 'json-user@example.com',
+    username: 'json_user',
+    passwordHash: hashPassword('correct-password'),
+    role: 'regular_user'
+  });
+  await manager.close();
+
+  const restarted = await createManager(t, backend, directory);
+  const secret = 'fallback-login-test-secret-with-at-least-32-characters';
+  const server = createApp({
+    config: { frontendOrigin: '*', tokenSecret: secret, accessTokenTtlSeconds: 900 },
+    db: {
+      get: (name) => restarted.collections[name],
+      getStatus: () => restarted.status(),
+      retrySync: () => restarted.retrySync()
+    }
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const url = `http://127.0.0.1:${server.address().port}/api/auth/login`;
+
+  for (const identifier of ['json-user@example.com', 'JSON_USER']) {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier, password: 'correct-password' })
+    });
+    assert.equal(response.status, 200);
+    const account = await response.json();
+    assert.equal(account.user.email, 'json-user@example.com');
+    assert.ok(account.token);
+  }
+
+  const rejected = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifier: 'json_user', password: 'incorrect-password' })
+  });
+  assert.equal(rejected.status, 401);
+  assert.deepEqual(await rejected.json(), { error: 'invalid_credentials' });
 });
 
 test('administrator storage status and retry endpoints expose pending sync safely', async (t) => {

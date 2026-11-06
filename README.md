@@ -136,6 +136,11 @@ Frontend pages call the backend REST API using fetch. The backend validates the 
 - Reduced-motion support.
 - Light/dark theme support via data-theme attribute.
 
+### GitHub Pages
+- `.github/workflows/pages.yml` publishes the contents of `frontend/` as the Pages site root on pushes to `main` and on manual workflow dispatch.
+- Frontend assets and page-to-page links use document-relative URLs; frontend module imports resolve relative to their importing files. The custom `404.html` sets the repository base path from its `bd-site-base` metadata so deep-link errors still load site assets and navigation.
+- GitHub Pages is static hosting and does not run the Node API. API-backed features require a separately hosted backend and a deployment-provided `window.BD_API_BASE` configured before `assets/js/common.js`; no production API origin is currently specified in this repository.
+
 ---
 
 ## 6. Authentication & Authorization
@@ -1650,11 +1655,12 @@ npm install --prefix backend
 
 Environment:
 
-- Copy `backend/.env.example` to `backend/.env`.
+- Copy the repository's `.env.example` to `.env` at the repository root (or configure the equivalent backend environment variables).
 - Configure values without committing secrets.
 - `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, and `OLLAMA_TIMEOUT_MS` configure the local Ollama model used for project suggestions and PDF/DOCX import extraction.
 - Start the Ollama service and install the configured model (for example, `ollama serve` and `ollama pull qwen3:4b`) on the machine reachable from the backend. The assistant page reports server/model status.
-- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` configure password-recovery email delivery.
+- Set `EMAIL_PROVIDER=brevo`, `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, and optionally `BREVO_FROM_NAME` to send password-recovery email through the Brevo transactional email API. Create the API key in Brevo and use a sender address verified in that Brevo account; keep the key only in the local environment file or deployment secrets.
+- Alternatively, set `EMAIL_PROVIDER=smtp` and configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` for an SMTP relay. The built-in SMTP transport supports unauthenticated, unencrypted relays only; use Brevo API for secure hosted email.
 
 Start backend:
 ```

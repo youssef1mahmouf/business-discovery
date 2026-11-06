@@ -1,11 +1,63 @@
 const net = require('net');
 
+function createBrevoClient(emailConfig, fetchImplementation = globalThis.fetch) {
+  if (!emailConfig.apiKey) {
+    return {
+      send: async () => {
+        throw new Error('BREVO_API_KEY is not configured. Email delivery is unavailable.');
+      },
+    };
+  }
+  if (!emailConfig.fromEmail) {
+    return {
+      send: async () => {
+        throw new Error('BREVO_FROM_EMAIL is not configured. Email delivery is unavailable.');
+      },
+    };
+  }
+  if (typeof fetchImplementation !== 'function') {
+    throw new Error('A Fetch API implementation is required for Brevo email delivery.');
+  }
+
+  async function send({ to, subject, text }) {
+    const response = await fetchImplementation('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'api-key': emailConfig.apiKey,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        sender: {
+          name: emailConfig.fromName || 'Business Discovery',
+          email: emailConfig.fromEmail,
+        },
+        to: [{ email: to }],
+        subject,
+        textContent: text,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = new Error('Brevo email request failed with status ' + response.status + '.');
+      error.status = response.status;
+      throw error;
+    }
+    return { ok: true };
+  }
+
+  return { send };
+}
+
 /**
  * Minimal SMTP client using Node's built-in net module.
- * Supports plain SMTP (no AUTH, no TLS) for development/initial setup.
- * For production with AUTH/TLS, configure nodemailer or equivalent.
+ * Supports plain SMTP without AUTH or TLS for local relays.
  */
 function createSmtpClient(smtpConfig) {
+  if (smtpConfig.provider === 'brevo') {
+    return createBrevoClient(smtpConfig, smtpConfig.fetch);
+  }
+
   const host = smtpConfig.host;
   const port = smtpConfig.port || 25;
 
@@ -77,4 +129,4 @@ function createSmtpClient(smtpConfig) {
   return { send };
 }
 
-module.exports = { createSmtpClient };
+module.exports = { createSmtpClient, createBrevoClient };
