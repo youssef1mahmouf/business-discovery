@@ -1,27 +1,6 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const fs = require('fs');
-const path = require('path');
-const { createRouter } = require('./middleware/router');
-const { sendJson } = require('./middleware/http');
-const authRoutes = require('./routes/auth');
-const projectRoutes = require('./routes/projects');
-const friendRoutes = require('./routes/friends');
-const taskRoutes = require('./routes/tasks');
-const adminRoutes = require('./routes/admin');
-const chatRoutes = require('./routes/chat');
-const publicRoutes = require('./routes/public');
-const profileRoutes = require('./routes/profile');
-const assessmentRoutes = require('./routes/assessments');
-const assistantRoutes = require('./routes/assistant');
-const commerceRoutes = require('./routes/commerce');
-const notification = require('./services/notification');
-const { scheduleDailyReport, scheduleMonthlyReport, checkInventoryAlerts } = require('./services/jobs');
-const FRONTEND_DIR = path.resolve(__dirname, '..', '..', 'frontend');
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
 const { createRouter } = require('./middleware/router');
 const { sendJson } = require('./middleware/http');
 const authRoutes = require('./routes/auth');
@@ -84,7 +63,18 @@ function serveStatic(req, res) {
   const ext = path.extname(filePath).toLowerCase();
   const mime = MIME[ext] || 'application/octet-stream';
   try {
-    const data = fs.readFileSync(filePath);
+    let data = fs.readFileSync(filePath);
+    
+    // Inject Vercel Analytics for HTML files
+    if (ext === '.html') {
+      const analyticsScript = `<script>
+  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+</script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>`;
+      data = data.toString().replace('</head>', analyticsScript);
+    }
+    
     res.writeHead(200, { 'Content-Type': mime });
     res.end(data);
     return true;
@@ -99,8 +89,18 @@ function serveStatic(req, res) {
 function sendStaticNotFound(res) {
   const notFoundPath = path.join(FRONTEND_DIR, '404.html');
   try {
+    let data = fs.readFileSync(notFoundPath).toString();
+    
+    // Inject Vercel Analytics into 404 page
+    const analyticsScript = `<script>
+  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+</script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>`;
+    data = data.replace('</head>', analyticsScript);
+    
     res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(fs.readFileSync(notFoundPath));
+    res.end(data);
   } catch (error) {
     console.error('Unable to load frontend 404 page:', error.code || error.name || 'Error');
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
