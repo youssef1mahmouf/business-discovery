@@ -40,7 +40,7 @@ function register(router, ctx) {
   if (adminEmails.length === 0) {
     return sendJson(res, 400, { error: 'no_admin_emails_configured' }, origin);
   }
-  const reportData = await ctx.db.get('orders').aggregate([...]).toArray();
+  const reportData = await ctx.db.get('orders').aggregate([{ $sort: { createdAt: -1 } }]).toArray();
   await sendDailyReport(reportData, adminEmails);
   sendJson(res, 200, { ok: true, message: 'Daily report scheduled' }, origin);
 });

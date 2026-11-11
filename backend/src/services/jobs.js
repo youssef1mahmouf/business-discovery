@@ -1,6 +1,3 @@
-const { sendDailyReport, sendMonthlyReport, NOTIFICATION_TYPES } = require('./notification');
-const { ObjectId } = require('mongodb');
-
 /**
  * Timezone configuration
  * Using Africa/Cairo timezone consistently as specified
@@ -46,8 +43,11 @@ function getCairoTimeString() {
  * @param {Array} adminEmails - List of admin email addresses
  */
 async function scheduleDailyReport(ctx, adminEmails) {
-  const reportData = await ctx.db.get('orders').aggregate([...]).toArray();
+  const reportData = await ctx.db.get('orders')
+    .aggregate([{ $sort: { createdAt: -1 } }])
+    .toArray();
   // TODO: Implement full aggregation
+  const { sendDailyReport } = require('./notification');
   await sendDailyReport(reportData, adminEmails);
 }
 
@@ -58,8 +58,11 @@ async function scheduleDailyReport(ctx, adminEmails) {
  * @param {Object} period - { startDate, endDate }
  */
 async function scheduleMonthlyReport(ctx, adminEmails, period) {
-  const reportData = await ctx.db.get('orders').aggregate([...]).toArray();
+  const reportData = await ctx.db.get('orders')
+    .aggregate([{ $sort: { createdAt: -1 } }])
+    .toArray();
   // TODO: Implement full aggregation
+  const { sendMonthlyReport } = require('./notification');
   await sendMonthlyReport(reportData, adminEmails, period);
 }
 
