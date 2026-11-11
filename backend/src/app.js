@@ -84,9 +84,9 @@ function sendStaticNotFound(res) {
   return true;
 }
 
-function applySecurityHeaders(req, res) {
+function applySecurityHeaders(req, res, config) {
   if (req.method !== 'OPTIONS') {
-    const headers = securityHeaders(ctx.config);
+    const headers = securityHeaders(config);
     for (const [key, value] of Object.entries(headers)) {
       res.setHeader(key, value);
     }
@@ -119,7 +119,7 @@ function createApp(ctx) {
       res.end();
       return;
     }
-    applySecurityHeaders(req, res);
+    applySecurityHeaders(req, res, config);
     const url = req.url.split('?')[0];
     if (req.method === 'GET' && url === '/api/health') {
       return sendJson(res, 200, { ok: true, service: 'business-discovery' }, origin);
