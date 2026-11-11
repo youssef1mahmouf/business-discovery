@@ -16,6 +16,9 @@ const assistantRoutes = require('./routes/assistant');
 const commerceRoutes = require('./routes/commerce');
 const notification = require('./services/notification-schema');
 const { scheduleDailyReport, scheduleMonthlyReport, checkInventoryAlerts } = require('./services/jobs');
+const { securityHeaders, requireCSRF, generateCSRFToken, timingSafeEqual } = require('./middleware/security');
+const { sanitizeQuery } = require('./middleware/sanitize');
+
 const FRONTEND_DIR = path.resolve(__dirname, '..', '..', 'frontend');
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -33,13 +36,8 @@ const MIME = {
 function serveStatic(req, res) {
   if (req.method !== 'GET') return false;
   let urlPath;
-  try {
-    urlPath = decodeURIComponent(req.url.split('?')[0]);
-  } catch {
-    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('Invalid URL path');
-    return true;
-  }
+  try { urlPath = decodeURIComponent(req.url.split('?')[0]); }
+  catch { res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('Invalid URL path'); return true; }
   const relativePath = urlPath.replace(/^[/\\]+/, '') || 'index.html';
   const filePath = path.resolve(FRONTEND_DIR, relativePath);
   const resolvedRelativePath = path.relative(FRONTEND_DIR, filePath);
@@ -48,11 +46,9 @@ function serveStatic(req, res) {
       resolvedRelativePath.startsWith('..' + path.sep)) {
     return sendStaticNotFound(res);
   }
-
   let stat;
-  try {
-    stat = fs.statSync(filePath);
-  } catch (error) {
+  try { stat = fs.statSync(filePath); }
+  catch (error) {
     if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return sendStaticNotFound(res);
     console.error('Unable to inspect frontend file:', error.code || error.name || 'Error');
     res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -60,7 +56,6 @@ function serveStatic(req, res) {
     return true;
   }
   if (!stat.isFile()) return sendStaticNotFound(res);
-
   const ext = path.extname(filePath).toLowerCase();
   const mime = MIME[ext] || 'application/octet-stream';
   try {
@@ -89,7 +84,18 @@ function sendStaticNotFound(res) {
   return true;
 }
 
+function applySecurityHeaders(req, res) {
+  if (req.method !== 'OPTIONS') {
+    const headers = securityHeaders(ctx.config);
+    for (const [key, value] of Object.entries(headers)) {
+      res.setHeader(key, value);
+    }
+  }
+}
+
 function createApp(ctx) {
+  ctx.csrfTokens = { tokens: new Map() };
+  const origin = ctx.config.frontendOrigin === '*' ? '*' : ctx.config.frontendOrigin;
   const router = createRouter();
   authRoutes.register(router, ctx);
   projectRoutes.register(router, ctx);
@@ -103,23 +109,50 @@ function createApp(ctx) {
   assistantRoutes.register(router, ctx);
   commerceRoutes.register(router, ctx);
 
-  const origin = ctx.config.frontendOrigin === '*' ? '*' : ctx.config.frontendOrigin;
-
   const server = http.createServer(async (req, res) => {
     if (req.method === 'OPTIONS') {
       res.writeHead(204, {
         'Access-Control-Allow-Origin': origin,
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-CSRF-Token',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS'
       });
       res.end();
       return;
     }
+    applySecurityHeaders(req, res);
     const url = req.url.split('?')[0];
     if (req.method === 'GET' && url === '/api/health') {
       return sendJson(res, 200, { ok: true, service: 'business-discovery' }, origin);
     }
     if (url.startsWith('/api/')) {
+      if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+        let body = '';
+        req.on('data', (chunk) => { body += chunk; });
+        req.on('end', async () => {
+          try {
+            let parsed = {};
+            if (body) parsed = JSON.parse(body);
+            parsed = sanitizeQuery(parsed);
+            req.body = parsed;
+            if (!requireCSRF(req, res, origin)) return;
+            const handled = await router.handle(req, res, ctx);
+            if (!handled) sendJson(res, 404, { error: 'not_found' }, origin);
+          } catch (err) {
+            console.error('Request failed:', err && err.message ? err.message : err);
+            sendJson(res, 500, { error: 'server_error' }, origin);
+          }
+        });
+        return;
+      } else if (req.method === 'GET' || req.method === 'DELETE') {
+        const token = req.headers['x-csrf-token'] || req.headers['x-xsrf-token'];
+        if (token && ctx.csrfTokens && typeof ctx.csrfTokens.validate === 'function') {
+          if (!ctx.csrfTokens.validate(token)) {
+            res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ error: 'csrf_token_invalid' }));
+            return;
+          }
+        }
+      }
       try {
         const handled = await router.handle(req, res, ctx);
         if (!handled) sendJson(res, 404, { error: 'not_found' }, origin);
@@ -129,7 +162,6 @@ function createApp(ctx) {
       }
       return;
     }
-    // static frontend
     if (serveStatic(req, res)) return;
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('Not found');

@@ -96,7 +96,6 @@ function register(router, ctx) {
       return sendSecureJson(res, 423, { error: 'account_locked', retryAfter: Math.ceil((lockout.lockedUntil - Date.now()) / 1000) });
     }
 
-    const users = ctx.db.get('users');
     const user = await users.findOne({ email: identifier });
     if (!user || !verifyPassword(password, user.passwordHash)) {
       recordFailedLogin(identifier);
@@ -105,13 +104,11 @@ function register(router, ctx) {
     clearFailedLogin(identifier);
     const role = normalizeRole(user);
     const token = signToken({ sub: String(user._id), email: user.email, role }, ctx.config.tokenSecret, ctx.config.accessTokenTtlSeconds);
+
     const csrfToken = ctx.csrfTokens ? ctx.csrfTokens.generate(String(user._id)) : null;
     const cookies = [];
-    if (csrfToken) cookies.push(setCookie(res, 'csrf_token', csrfToken, { httpOnly: false, sameSite: 'Strict', path: '/' }));
     await users.updateOne({ _id: user._id }, { $set: { loginAttempts: 0, lastLoginAt: new Date().toISOString() } });
     return sendSecureJson(res, 200, { token, csrfToken, user: { id: String(user._id), email: user.email, username: user.username, role: normalizeRole(user), emailVerified: !!user.emailVerified } }, cookies);
-    const role = normalizeRole(user);
-    const token = signToken({ sub: String(user._id), email: user.email, role }, ctx.config.tokenSecret, ctx.config.accessTokenTtlSeconds);
     return sendJson(res, 200, { token, user: { id: String(user._id), email: user.email, role, mustChangePassword: !!user.mustChangePassword } }, origin);
   });
 
@@ -122,12 +119,26 @@ function register(router, ctx) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       return sendJson(res, 400, { error: 'invalid_input' }, origin);
     }
-    const email = String(body.email || '').trim().toLowerCase();
+
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return sendJson(res, 400, { error: 'invalid_input' }, origin);
     }
-    const users = ctx.db.get('users');
-    const user = await users.findOne({ email });
+    const email = String(body.email || '').trim().toLowerCase();
+    if (!isValidEmail(email)) {
+      return sendSecureJson(res, 400, { error: 'invalid_input' });
+    }
+    // Sanitize input to prevent attacks
+    body = sanitizeQuery(body);
+    if (!user) {
+      return sendSecureJson(res, 404, { error: 'user_not_found' });
+    }
+    const token = signToken({
+      sub: String(user._id),
+      email: user.email,
+      role: normalizeRole(user),
+      type: 'recovery-verify'
+    }, ctx.config.tokenSecret, ctx.config.accessTokenTtlSeconds);
+    return sendSecureJson(res, 200, { token });
     if (!user) {
       // Generic response - do not reveal whether email exists
       return sendJson(res, 200, { ok: true });
@@ -182,7 +193,6 @@ function register(router, ctx) {
     await userStates.updateOne({ token: hashedToken }, { $set: { used: true } });
     // Hash the new password and update user
     const passwordHash = hashPassword(newPassword);
-    const users = ctx.db.get('users');
     await users.updateOne({ email: record.email }, { $set: { passwordHash, updatedAt: new Date().toISOString() } });
     return sendJson(res, 200, { ok: true });
   });
@@ -251,6 +261,37 @@ function register(router, ctx) {
     }
     if (new Date() > new Date(record.expiresAt)) {
       await userStates.updateOne({ email, code: hashedCode }, { $set: { used: true } });
+  // Generate a cryptographically secure temporary password
+  router.post('/api/auth/generate-temp-password', async (req, res) => {
+    if (!rateLimit(req, res, 60000, 5)) return;
+    let body;
+    try { body = await parseBody(req); } catch { return sendSecureJson(res, 400, { error: 'invalid_json' }); }
+    const token = String(body.token || '').trim();
+    if (!token) return sendSecureJson(res, 400, { error: 'invalid_input' });
+    const payload = verifyToken(token, ctx.config.tokenSecret);
+    if (!payload || payload.type !== 'recovery-verify') {
+      return sendSecureJson(res, 401, { error: 'invalid_or_expired_token' });
+    }
+    const email = String(payload.sub || '').toLowerCase();
+    if (!isValidEmail(email)) {
+      return sendSecureJson(res, 400, { error: 'invalid_input' });
+    }
+    if (!user) {
+      return sendSecureJson(res, 404, { error: 'user_not_found' });
+    }
+    const tempPassword = crypto.randomBytes(12).toString('base64url').slice(0, 16);
+    const passwordHash = hashPassword(tempPassword);
+    await users.updateOne({ email }, {
+      $set: {
+        passwordHash,
+        mustChangePassword: true,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+    const userStates = ctx.db.get('user_states');
+    await userStates.updateMany({ email, type: 'recovery', used: false }, { $set: { used: true } });
+    return sendSecureJson(res, 200, { temporaryPassword: tempPassword });
+  });
       return sendJson(res, 400, { error: 'invalid_or_expired_code' }, origin);
     }
     // Mark code as used
@@ -278,8 +319,6 @@ function register(router, ctx) {
       return sendJson(res, 401, { error: 'invalid_or_expired_token' }, origin);
     }
     const email = String(payload.sub || '').toLowerCase();
-    const users = ctx.db.get('users');
-    const user = await users.findOne({ email });
     if (!user) {
       return sendJson(res, 404, { error: 'user_not_found' }, origin);
     }
@@ -320,7 +359,6 @@ function register(router, ctx) {
     if (newPassword.length < 8) {
       return sendJson(res, 400, { error: 'password_too_short' }, origin);
     }
-    const users = ctx.db.get('users');
     const dbUser = await users.findOne({ email: user.email });
     if (!dbUser || !verifyPassword(oldPassword, dbUser.passwordHash)) {
       return sendJson(res, 401, { error: 'invalid_credentials' }, origin);
