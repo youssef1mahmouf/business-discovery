@@ -37,7 +37,7 @@ cp backend/.env.example backend/.env
 Edit `backend/.env`:
 
 | Variable | Description | Required |
-|---|---|---|
+| --- | --- | --- |
 | `PORT` | Port to listen on (default 3000) | No |
 | `TOKEN_SECRET` | Random secret for signing tokens (min 32 chars in production) | Yes (production) |
 | `FRONTEND_ORIGIN` | CORS origin (use your domain in production, `*` in dev) | Yes (production) |
@@ -147,6 +147,7 @@ open http://your-server:3000/
 ```
 
 Expected responses:
+
 - `/api/health` → `{"ok":true,"service":"business-discovery"}`
 - `/api/public/stats` → `{"stats":{...}}`
 - Frontend home page loads with the Business Discovery hero section
@@ -171,4 +172,5 @@ Expected responses:
 
 ## Support
 
-Repository: https://github.com/youssef1mahmouf/business-discovery
+Repository:
+<https://github.com/youssef1mahmouf/business-discovery>
