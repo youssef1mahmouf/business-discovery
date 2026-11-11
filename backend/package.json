@@ -13,10 +13,13 @@
   "dependencies": {
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.1.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
+    "csurf": "^1.11.0",
     "exceljs": "^4.4.0",
     "express": "^4.21.2",
-    "helmet": "^8.0.0",
+    "express-mongo-sanitize": "^2.2.0",
+    "helmet": "^8.3.0",
     "mammoth": "^1.9.0",
     "mongodb": "^6.21.0",
     "pdfjs-dist": "^5.4.394"

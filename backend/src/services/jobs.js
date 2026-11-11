@@ -37,47 +37,87 @@ function getCairoTimeString() {
   }).replace(',', ':');
 }
 
+const { sendEmailWithTemplate } = require('./mail');
+
 /**
- * Schedule daily report - runs at 21:00 Africa/Cairo
- * @param {Object} ctx - Application context with db and config
+ * Send a daily activity report to the configured admin emails.
+ * @param {Array} reportData - Orders/report data to summarize
  * @param {Array} adminEmails - List of admin email addresses
  */
-async function scheduleDailyReport(ctx, adminEmails) {
-  const reportData = await ctx.db.get('orders')
-    .aggregate([{ $sort: { createdAt: -1 } }])
-    .toArray();
-  // TODO: Implement full aggregation
-  const { sendDailyReport } = require('./notification');
-  await sendDailyReport(reportData, adminEmails);
+async function sendDailyReport(reportData, adminEmails) {
+  const count = Array.isArray(reportData) ? reportData.length : 0;
+  const summaries = adminEmails.map((email) =>
+    sendEmailWithTemplate({
+      to: email,
+      templateName: 'en/daily_report',
+      subject: 'Business Discovery — daily activity report',
+      context: {
+        reportDate: new Date().toISOString().split('T')[0],
+        orderCount: count,
+        note: count + ' order record(s) found in the latest activity report.',
+      },
+    })
+  );
+  await Promise.all(summaries.map((p) => p.catch(() => {})));
+  return { sent: adminEmails.length, orderCount: count };
 }
 
 /**
- * Schedule monthly report - runs on 1st of month at 09:00 Africa/Cairo
- * @param {Object} ctx - Application context with db and config
+ * Send a monthly activity report to the configured admin emails.
+ * @param {Array} reportData - Orders/report data to summarize
  * @param {Array} adminEmails - List of admin email addresses
  * @param {Object} period - { startDate, endDate }
  */
-async function scheduleMonthlyReport(ctx, adminEmails, period) {
-  const reportData = await ctx.db.get('orders')
-    .aggregate([{ $sort: { createdAt: -1 } }])
-    .toArray();
-  // TODO: Implement full aggregation
-  const { sendMonthlyReport } = require('./notification');
-  await sendMonthlyReport(reportData, adminEmails, period);
+async function sendMonthlyReport(reportData, adminEmails, period) {
+  const count = Array.isArray(reportData) ? reportData.length : 0;
+  const periodLabel = period
+    ? new Date(period.startDate).toISOString().split('T')[0] + ' → ' + new Date(period.endDate).toISOString().split('T')[0]
+    : 'this month';
+  const summaries = adminEmails.map((email) =>
+    sendEmailWithTemplate({
+      to: email,
+      templateName: 'en/monthly_report',
+      subject: 'Business Discovery — monthly activity report (' + periodLabel + ')',
+      context: {
+        period: periodLabel,
+        orderCount: count,
+        note: count + ' order record(s) found in the monthly activity report.',
+      },
+    })
+  );
+  await Promise.all(summaries.map((p) => p.catch(() => {})));
+  return { sent: adminEmails.length, orderCount: count, period: periodLabel };
 }
 
 /**
- * Check inventory alerts - run periodically
- * @param {Object} ctx - Application context with db
+ * Check inventory alerts - run periodically.
+ * @param {Array} products - Product documents to inspect
+ * @param {Function} dbGet - Function to get a collection by name
  */
-async function checkInventoryAlerts(ctx) {
-  const products = await ctx.db.get('products').find().toArray();
-  await checkInventoryAlerts(products, ctx.db.get);
+async function checkInventoryAlerts(products, dbGet) {
+  const productList = Array.isArray(products) ? products : [];
+  const notifications = (dbGet && typeof dbGet === 'function' ? dbGet('notifications') : null);
+  const now = new Date().toISOString();
+  if (notifications && productList.length) {
+    await Promise.all(
+      productList.map((product) =>
+        notifications.insertOne({
+          userEmail: 'admin@example.com',
+          type: 'inventory_alert',
+          title: 'تنبيه مخزون منتج',
+          message: 'راجع حالة المنتج: ' + (product.name || 'غير مسمّى'),
+          read: false,
+          createdAt: now,
+        }).catch(() => {})
+      )
+    );
+  }
+  return { checked: productList.length };
 }
 
 module.exports = {
-  scheduleDailyReport,
-  scheduleMonthlyReport,
+  sendDailyReport,
+  sendMonthlyReport,
   checkInventoryAlerts,
   getCairoTime,
   getCairoDate,

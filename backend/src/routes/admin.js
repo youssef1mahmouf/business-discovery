@@ -1,5 +1,10 @@
 const { sendJson, parseBody } = require('../middleware/http');
 const { requireAdmin } = require('../middleware/auth');
+const {
+  scheduleDailyReport,
+  scheduleMonthlyReport,
+  checkInventoryAlerts,
+} = require('../services/jobs');
 
 function distribution(rows, allowedStages) {
   const counts = Object.fromEntries(allowedStages.map((stage) => [stage, 0]));
@@ -64,6 +69,14 @@ router.get('/api/admin/inventory-alerts', async (req, res) => {
   await checkInventoryAlerts(products, ctx.db.get);
   sendJson(res, 200, { ok: true, message: 'Inventory alerts checked' }, origin);
 });
+
+  router.get('/api/admin/storage-status', async (req, res) => {
+    const u = await requireAdmin(req, res, ctx, origin); if (!u) return;
+    const status = typeof ctx.db.getStatus === 'function'
+      ? await ctx.db.getStatus()
+      : { mongoConnected: false, mongoUsable: false, storage: 'uninitialized', pendingRecords: 0, conflictedRecords: 0, lastSyncAt: null, lastError: null };
+    return sendJson(res, 200, { status }, origin);
+  });
 
   router.post('/api/admin/storage-sync/retry', async (req,res) => {
     const u = await requireAdmin(req,res,ctx,origin); if(!u) return;
