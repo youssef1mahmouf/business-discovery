@@ -10,7 +10,7 @@
 2. [Technology Stack](#2-technology-stack)
 3. [Repository Structure](#3-repository-structure)
 4. [Application Architecture](#4-application-architecture)
-6. [Authentication & Authorization](#6-authentication--authorization)
+5. [Authentication & Authorization](#6-authentication--authorization)
 [Registration Flow](#b-registration-flow)
 [Homepage and Modern Visual Redesign](#c-homepage-and-modern-visual-redesign)
 [Homepage Hero and Visual Content](#d-homepage-hero-and-visual-content)
@@ -21,9 +21,9 @@
 [Main Super Admin Security](#i-main-super-admin-security)
 [Role-Aware Dashboard and Projectless Accounts](#17-role-aware-dashboard-and-projectless-accounts)
 [System Information](#18-system-information)
-14. [Conflicts & Unresolved Decisions](#14-conflicts--unresolved-decisions)
-15. [Documentation Governance](#15-documentation-governance)
-16. [Appendix: Source Documents](#16-appendix-source-documents)
+6. [Conflicts & Unresolved Decisions](#14-conflicts--unresolved-decisions)
+7. [Documentation Governance](#15-documentation-governance)
+8. [Appendix: Source Documents](#16-appendix-source-documents)
 
 ---
 ## 1. Project Overview
