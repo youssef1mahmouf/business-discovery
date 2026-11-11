@@ -84,18 +84,20 @@ function sendStaticNotFound(res) {
   return true;
 }
 
-function applySecurityHeaders(req, res, config) {
-  if (req.method !== 'OPTIONS') {
-    const headers = securityHeaders(config);
-    for (const [key, value] of Object.entries(headers)) {
-      res.setHeader(key, value);
-    }
-  }
-}
-
 function createApp(ctx) {
   ctx.csrfTokens = { tokens: new Map() };
   const origin = ctx.config.frontendOrigin === '*' ? '*' : ctx.config.frontendOrigin;
+  
+  // Security headers function that has access to ctx.config via closure
+  function applySecurityHeaders(req, res) {
+    if (req.method !== 'OPTIONS') {
+      const headers = securityHeaders(ctx.config);
+      for (const [key, value] of Object.entries(headers)) {
+        res.setHeader(key, value);
+      }
+    }
+  }
+
   const router = createRouter();
   authRoutes.register(router, ctx);
   projectRoutes.register(router, ctx);
@@ -119,7 +121,7 @@ function createApp(ctx) {
       res.end();
       return;
     }
-    applySecurityHeaders(req, res, config);
+    applySecurityHeaders(req, res);
     const url = req.url.split('?')[0];
     if (req.method === 'GET' && url === '/api/health') {
       return sendJson(res, 200, { ok: true, service: 'business-discovery' }, origin);

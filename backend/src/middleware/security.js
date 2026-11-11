@@ -114,9 +114,17 @@ function limitBodySize(maxBytes = 1024 * 1024) {
  * Require a valid CSRF token for state-changing methods (POST, PUT, DELETE).
  * The token must match the one stored in a cookie (double-submit pattern).
  */
-function requireCSRF(req, res, origin) {
+function requireCSRF(req, res, origin, skipAuth = false) {
   if (req.method === 'OPTIONS') return true;
   if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) return true;
+
+  if (skipAuth) {
+    // For auth routes, just check if tokens exist but don't fail
+    const cookieToken = getCookie(req, 'csrf_token');
+    const headerToken = req.headers['x-csrf-token'] || req.headers['x-xsrf-token'];
+    // If no tokens, allow through (client will handle token management)
+    if (!cookieToken && !headerToken) return true;
+  }
 
   const cookieToken = getCookie(req, 'csrf_token');
   const headerToken = req.headers['x-csrf-token'] || req.headers['x-xsrf-token'];
