@@ -1,6 +1,16 @@
 const crypto = require('crypto');
+const { validatePassword } = require('../middleware/sanitize');
 
 const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
+const PASSWORD_HISTORY_SIZE = 5;
+
+/**
+ * Validate password strength before hashing.
+ * Returns { ok: boolean, errors: string[] }.
+ */
+function validatePasswordStrength(password) {
+  return validatePassword(password);
+}
 
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');

@@ -1,38 +1,64 @@
-const { hashPassword, verifyPassword, signToken, normalizeRole } = require('../services/auth');
+const { hashPassword, verifyPassword, signToken, validatePasswordStrength, normalizeRole } = require('../services/auth');
 const { sendJson, parseBody } = require('../middleware/http');
-const { rateLimit } = require('../middleware/rateLimit');
+const { rateLimit, recordFailedLogin, isLockedOut, clearFailedLogin } = require('../middleware/rateLimit');
 const { requireAuth } = require('../middleware/auth');
 const { normalizeProfile } = require('../services/profile');
+const { sanitizeQuery, isValidEmail, isValidUsername, stripPrototypePollution } = require('../middleware/sanitize');
+const { securityHeaders, setCookie } = require('../middleware/security');
 
 function register(router, ctx) {
   const origin = ctx.config.frontendOrigin === '*' ? '*' : ctx.config.frontendOrigin;
 
-  router.post('/api/auth/register', async (req, res) => {
-    if (!rateLimit(req, res, 60000, 20)) return;
-    let body;
-    try { body = await parseBody(req); } catch { return sendJson(res, 400, { error: 'invalid_json' }, origin); }
-    if (!body || typeof body !== 'object' || Array.isArray(body)) {
-      return sendJson(res, 400, { error: 'invalid_input' }, origin);
+  function sendSecureJson(res, status, body, cookies = []) {
+    const headers = securityHeaders(ctx.config);
+    headers['Content-Type'] = 'application/json; charset=utf-8';
+    if (origin !== '*') {
+      headers['Access-Control-Allow-Credentials'] = 'true';
     }
+    if (cookies && cookies.length) {
+      headers['Set-Cookie'] = Array.isArray(cookies) ? cookies : [cookies];
+    }
+    res.writeHead(status, headers);
+    res.end(JSON.stringify(body));
+  }
+
+  router.post('/api/auth/register', async (req, res) => {
+    if (!rateLimit(req, res, 60000, 10)) return;
+    let body;
+    try { body = await parseBody(req); } catch { return sendSecureJson(res, 400, { error: 'invalid_json' }); }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return sendSecureJson(res, 400, { error: 'invalid_input' });
+    }
+    body = stripPrototypePollution(body);
+    body = sanitizeQuery(body);
+
     const email = String(body.email || '').trim().toLowerCase();
     const password = String(body.password || '');
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 8) {
-      return sendJson(res, 400, { error: 'invalid_input' }, origin);
+    if (!isValidEmail(email)) {
+      return sendSecureJson(res, 400, { error: 'invalid_email' });
     }
+    const pwResult = validatePasswordStrength(password);
+    if (!pwResult.ok) {
+      return sendSecureJson(res, 400, { error: 'weak_password', details: pwResult.errors });
+    }
+
     let username;
     let profile;
     if (body.username !== undefined || body.profile !== undefined) {
-      username = String(body.username || body.profile && body.profile.username || '').trim().toLowerCase();
-      if (!/^[a-z0-9_]{3,30}$/.test(username)) return sendJson(res, 400, { error: 'invalid_username' }, origin);
+      username = String(body.username || (body.profile && body.profile.username) || '').trim().toLowerCase();
+      if (!isValidUsername(username)) return sendSecureJson(res, 400, { error: 'invalid_username' });
       profile = normalizeProfile({ ...(body.profile || {}), username });
-      if (!profile || !profile.displayName) return sendJson(res, 400, { error: 'invalid_profile' }, origin);
+      if (!profile || !profile.displayName) return sendSecureJson(res, 400, { error: 'invalid_profile' });
     }
     const users = ctx.db.get('users');
     const role = 'regular_user';
     const user = {
       email,
+      emailVerified: false,
       passwordHash: hashPassword(password),
       role,
+      loginAttempts: 0,
+      lockedUntil: 0,
       ...(username ? { username, displayName: profile.displayName, profile } : {}),
       createdAt: new Date().toISOString()
     };
@@ -41,30 +67,49 @@ function register(router, ctx) {
       user._id = r.insertedId;
     } catch (e) {
       if (e && e.code === 11000) {
-        return sendJson(res, 409, { error: e.keyPattern && e.keyPattern.username ? 'username_in_use' : 'email_in_use' }, origin);
+        return sendSecureJson(res, 409, { error: e.keyPattern && e.keyPattern.username ? 'username_in_use' : 'email_in_use' });
       }
       throw e;
     }
     const token = signToken({ sub: String(user._id), email: user.email, role: normalizeRole(user) }, ctx.config.tokenSecret, ctx.config.accessTokenTtlSeconds);
-    return sendJson(res, 200, { token, user: { id: String(user._id), email: user.email, username: user.username, role: normalizeRole(user) } }, origin);
+    const csrfToken = ctx.csrfTokens ? ctx.csrfTokens.generate(String(user._id)) : null;
+    const cookies = [];
+    if (csrfToken) cookies.push(setCookie(res, 'csrf_token', csrfToken, { httpOnly: false, sameSite: 'Strict', path: '/' }));
+    return sendSecureJson(res, 200, { token, csrfToken, user: { id: String(user._id), email: user.email, username: user.username, role: normalizeRole(user) } }, cookies);
   });
 
   router.post('/api/auth/login', async (req, res) => {
-    if (!rateLimit(req, res, 60000, 20)) return;
+    if (!rateLimit(req, res, 60000, 10)) return;
     let body;
-    try { body = await parseBody(req); } catch { return sendJson(res, 400, { error: 'invalid_json' }, origin); }
+    try { body = await parseBody(req); } catch { return sendSecureJson(res, 400, { error: 'invalid_json' }); }
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
-      return sendJson(res, 400, { error: 'invalid_input' }, origin);
+      return sendSecureJson(res, 400, { error: 'invalid_input' });
     }
+    body = stripPrototypePollution(body);
+    body = sanitizeQuery(body);
+
     const identifier = String(body.identifier || body.email || body.username || '').trim().toLowerCase();
     const password = String(body.password || '');
-    const users = ctx.db.get('users');
-    const user = await users.findOne({
-      $or: [{ email: identifier }, { username: identifier }]
-    });
-    if (!user || !verifyPassword(password, user.passwordHash)) {
-      return sendJson(res, 401, { error: 'invalid_credentials' }, origin);
+
+    const lockout = isLockedOut(identifier);
+    if (lockout.locked) {
+      return sendSecureJson(res, 423, { error: 'account_locked', retryAfter: Math.ceil((lockout.lockedUntil - Date.now()) / 1000) });
     }
+
+    const users = ctx.db.get('users');
+    const user = await users.findOne({ email: identifier });
+    if (!user || !verifyPassword(password, user.passwordHash)) {
+      recordFailedLogin(identifier);
+      return sendSecureJson(res, 401, { error: 'invalid_credentials' });
+    }
+    clearFailedLogin(identifier);
+    const role = normalizeRole(user);
+    const token = signToken({ sub: String(user._id), email: user.email, role }, ctx.config.tokenSecret, ctx.config.accessTokenTtlSeconds);
+    const csrfToken = ctx.csrfTokens ? ctx.csrfTokens.generate(String(user._id)) : null;
+    const cookies = [];
+    if (csrfToken) cookies.push(setCookie(res, 'csrf_token', csrfToken, { httpOnly: false, sameSite: 'Strict', path: '/' }));
+    await users.updateOne({ _id: user._id }, { $set: { loginAttempts: 0, lastLoginAt: new Date().toISOString() } });
+    return sendSecureJson(res, 200, { token, csrfToken, user: { id: String(user._id), email: user.email, username: user.username, role: normalizeRole(user), emailVerified: !!user.emailVerified } }, cookies);
     const role = normalizeRole(user);
     const token = signToken({ sub: String(user._id), email: user.email, role }, ctx.config.tokenSecret, ctx.config.accessTokenTtlSeconds);
     return sendJson(res, 200, { token, user: { id: String(user._id), email: user.email, role, mustChangePassword: !!user.mustChangePassword } }, origin);
